@@ -5,6 +5,7 @@ import { ref, get, child, push } from "firebase/database";
 
 const BarcodeScanner = ({ onScanSuccess }) => {
   const [scanStatus, setScanStatus] = useState('Scanning...');
+  const [isPopupOpen, setIsPopupOpen] = useState(false); // State to manage popup visibility
   const [dialogMessage, setDialogMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null); // Store scanned product details
 
@@ -29,6 +30,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
         dateScanned: currentDate, // Add timestamp
       });
       setDialogMessage(`Item added successfully on ${currentDate}`);
+      setIsPopupOpen(false); // Close popup after action
       setScannedProduct(null); // Clear the scanned product data
     } catch (error) {
       console.error("Error saving scanned item:", error);
@@ -48,13 +50,16 @@ const BarcodeScanner = ({ onScanSuccess }) => {
         console.log("Product found:", product);
         setScannedProduct({ barcode, ...product }); // Store product details
         setDialogMessage(`Product found: ${product.name}. Do you want to add it?`);
+        setIsPopupOpen(true); // Open popup
       } else {
         console.log("Product not found for barcode:", barcode);
         setDialogMessage("Product not found in the database.");
+        setIsPopupOpen(false);
       }
     } catch (error) {
       console.error("Error retrieving product information:", error); // Log detailed error
       setDialogMessage("Error retrieving product information.");
+      setIsPopupOpen(false);
     }
   };
 
@@ -100,25 +105,63 @@ const BarcodeScanner = ({ onScanSuccess }) => {
     <div>
       <div id="barcode-scanner" />
       <p>{scanStatus}</p>
-      {dialogMessage && (
-        <div style={{ border: '1px solid #ccc', padding: '10px', marginTop: '10px' }}>
-          <p>{dialogMessage}</p>
-          {/* Show Add Item button only if the product is valid */}
-          {scannedProduct && dialogMessage.includes("Do you want to add it?") && (
+
+      {/* Popup Modal */}
+      {isPopupOpen && (
+        <div style={popupStyles.overlay}>
+          <div style={popupStyles.popup}>
+            <h3>Product Found</h3>
+            <p>{dialogMessage}</p>
             <button
+              style={popupStyles.button}
               onClick={() => {
                 saveScannedItem(scannedProduct.barcode, scannedProduct); // Save to /SoldItems
-                setDialogMessage(null); // Close dialog after action
               }}
             >
               Yes, Add
             </button>
-          )}
-          <button onClick={() => setDialogMessage(null)}>Close</button>
+            <button
+              style={popupStyles.button}
+              onClick={() => setIsPopupOpen(false)} // Close popup
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
+};
+
+// Inline styles for the popup
+const popupStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  popup: {
+    backgroundColor: '#fff',
+    padding: '20px',
+    borderRadius: '5px',
+    boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.25)',
+    textAlign: 'center',
+  },
+  button: {
+    margin: '10px',
+    padding: '10px 20px',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    fontSize: '16px',
+  },
 };
 
 export default BarcodeScanner;

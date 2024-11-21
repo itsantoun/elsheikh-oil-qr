@@ -76,7 +76,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
       'barcode-scanner',
       {
         fps: 10,
-        qrbox: { width: 400, height: 200 }, // Wider box for barcodes
+        qrbox: { width: 700, height: 400 }, // Wider box for barcodes
         formatsToSupport: [
             'QR_CODE',    // QR Code
             'CODE_128',   // Common barcode format

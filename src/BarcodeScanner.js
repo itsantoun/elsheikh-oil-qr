@@ -8,7 +8,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
   const [dialogMessage, setDialogMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null); // Store scanned product details
 
-  // Save scanned item to SoldItems table
+  // Save scanned item to /SoldItems table
   const saveScannedItem = async (barcode, product) => {
     const soldItemsRef = ref(database, 'SoldItems');
     const currentDate = new Date().toISOString(); // Get current date and time
@@ -29,21 +29,22 @@ const BarcodeScanner = ({ onScanSuccess }) => {
         dateScanned: currentDate, // Add timestamp
       });
       setDialogMessage(`Item added successfully on ${currentDate}`);
+      setScannedProduct(null); // Clear the scanned product data
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to SoldItems.");
     }
   };
 
-  // Fetch product details
+  // Fetch product details from /Products database
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
     try {
-      const snapshot = await get(child(dbRef, `Products/${barcode}`)); // Check in Products
+      const snapshot = await get(child(dbRef, `Products/${barcode}`)); // Check in /Products
       if (snapshot.exists()) {
         const product = snapshot.val();
         console.log("Product found:", product);
-        setScannedProduct({ barcode, ...product });
+        setScannedProduct({ barcode, ...product }); // Store product details
         setDialogMessage(`Product found: ${product.name}. Do you want to add it?`);
       } else {
         console.log("Product not found for barcode:", barcode);
@@ -75,7 +76,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
 
     const handleScanSuccess = (decodedText, decodedResult) => {
       setScanStatus(`Scanned code: ${decodedText}`);
-      fetchProductDetails(decodedText); // Fetch product information
+      fetchProductDetails(decodedText); // Fetch product information from /Products
       if (onScanSuccess) onScanSuccess(decodedText, decodedResult); // Optional callback
     };
 
@@ -100,12 +101,12 @@ const BarcodeScanner = ({ onScanSuccess }) => {
       {dialogMessage && (
         <div style={{ border: '1px solid #ccc', padding: '10px', marginTop: '10px' }}>
           <p>{dialogMessage}</p>
+          {/* Show Add Item button only if the product is valid */}
           {scannedProduct && dialogMessage.includes("Do you want to add it?") && (
             <button
               onClick={() => {
-                saveScannedItem(scannedProduct.barcode, scannedProduct);
+                saveScannedItem(scannedProduct.barcode, scannedProduct); // Save to /SoldItems
                 setDialogMessage(null); // Close dialog after action
-                setScannedProduct(null); // Clear product data
               }}
             >
               Yes, Add

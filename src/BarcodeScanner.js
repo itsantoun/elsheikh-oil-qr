@@ -38,9 +38,11 @@ const BarcodeScanner = ({ onScanSuccess }) => {
 
   // Fetch product details from /products database
   const fetchProductDetails = async (barcode) => {
-    const dbRef = ref(database);
+    const dbRef = ref(database); // Firebase database reference
     try {
-      const snapshot = await get(child(dbRef, `products/${barcode}`)); // Check in /products
+      console.log(`Fetching product for barcode: ${barcode}`);
+      const snapshot = await get(child(dbRef, `products/${barcode}`)); // Query for /products/<barcode>
+  
       if (snapshot.exists()) {
         const product = snapshot.val();
         console.log("Product found:", product);
@@ -51,7 +53,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
         setDialogMessage("Product not found in the database.");
       }
     } catch (error) {
-      console.error("Error fetching product:", error);
+      console.error("Error retrieving product information:", error); // Log detailed error
       setDialogMessage("Error retrieving product information.");
     }
   };

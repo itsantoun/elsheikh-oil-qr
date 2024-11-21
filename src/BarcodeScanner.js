@@ -16,15 +16,15 @@ const BarcodeScanner = ({ onScanSuccess }) => {
     try {
       console.log("Saving item to SoldItems:", {
         barcode,
-        name: product.name,
         category: product.category,
+        name: product.name,
         price: product.price,
         dateScanned: currentDate,
       });
       await push(soldItemsRef, {
         barcode,
-        name: product.name,
         category: product.category,
+        name: product.name,
         price: product.price,
         dateScanned: currentDate, // Add timestamp
       });
@@ -36,11 +36,11 @@ const BarcodeScanner = ({ onScanSuccess }) => {
     }
   };
 
-  // Fetch product details from /Products database
+  // Fetch product details from /products database
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
     try {
-      const snapshot = await get(child(dbRef, `Products/${barcode}`)); // Check in /Products
+      const snapshot = await get(child(dbRef, `products/${barcode}`)); // Check in /products
       if (snapshot.exists()) {
         const product = snapshot.val();
         console.log("Product found:", product);
@@ -76,7 +76,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
 
     const handleScanSuccess = (decodedText, decodedResult) => {
       setScanStatus(`Scanned code: ${decodedText}`);
-      fetchProductDetails(decodedText); // Fetch product information from /Products
+      fetchProductDetails(decodedText); // Fetch product information from /products
       if (onScanSuccess) onScanSuccess(decodedText, decodedResult); // Optional callback
     };
 

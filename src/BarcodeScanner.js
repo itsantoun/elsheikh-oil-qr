@@ -7,6 +7,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
   const [scanStatus, setScanStatus] = useState('Scanning...');
   const [isPopupOpen, setIsPopupOpen] = useState(false); // State to manage popup visibility
   const [dialogMessage, setDialogMessage] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null); // State for success message
   const [scannedProduct, setScannedProduct] = useState(null); // Store scanned product details
 
   // Save scanned item to /SoldItems table
@@ -29,7 +30,14 @@ const BarcodeScanner = ({ onScanSuccess }) => {
         price: product.price,
         dateScanned: currentDate, // Add timestamp
       });
-      setDialogMessage(`Item added successfully on ${currentDate}`);
+
+      // Set success message
+      setSuccessMessage(`Item "${product.name}" added successfully on ${currentDate}`);
+      setTimeout(() => {
+        setSuccessMessage(null); // Clear success message after 3 seconds
+      }, 3000);
+
+      setDialogMessage(null); // Clear dialog message
       setIsPopupOpen(false); // Close popup after action
       setScannedProduct(null); // Clear the scanned product data
     } catch (error) {
@@ -106,6 +114,13 @@ const BarcodeScanner = ({ onScanSuccess }) => {
       <div id="barcode-scanner" />
       <p>{scanStatus}</p>
 
+      {/* Success Message */}
+      {successMessage && (
+        <div style={popupStyles.success}>
+          <p>{successMessage}</p>
+        </div>
+      )}
+
       {/* Popup Modal */}
       {isPopupOpen && (
         <div style={popupStyles.overlay}>
@@ -133,7 +148,7 @@ const BarcodeScanner = ({ onScanSuccess }) => {
   );
 };
 
-// Inline styles for the popup
+// Inline styles for the popup and success message
 const popupStyles = {
   overlay: {
     position: 'fixed',
@@ -161,6 +176,18 @@ const popupStyles = {
     borderRadius: '5px',
     cursor: 'pointer',
     fontSize: '16px',
+  },
+  success: {
+    position: 'fixed',
+    top: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    backgroundColor: '#4caf50',
+    color: '#fff',
+    padding: '10px 20px',
+    borderRadius: '5px',
+    zIndex: 1000,
+    boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.25)',
   },
 };
 

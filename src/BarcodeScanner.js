@@ -76,14 +76,15 @@ const BarcodeScanner = ({ onScanSuccess }) => {
       'barcode-scanner',
       {
         fps: 10,
-        qrbox: { width: 400, height: 200 }, // Wider aspect ratio for barcodes
+        qrbox: { width: 400, height: 200 }, // Wider box for barcodes
         formatsToSupport: [
-          'CODE_128',
-          'CODE_39',
-          'EAN_13',
-          'EAN_8',
-          'UPC_A',
-          'UPC_E',
+            'QR_CODE',    // QR Code
+            'CODE_128',   // Common barcode format
+            'CODE_39',    // Another common barcode format
+            'EAN_13',     // European Article Number (13-digit)
+            'EAN_8',      // European Article Number (8-digit)
+            'UPC_A',      // Universal Product Code (12-digit)
+            'UPC_E',      // Compressed UPC
         ],
       },
       false

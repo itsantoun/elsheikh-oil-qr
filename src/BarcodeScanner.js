@@ -1,99 +1,112 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { database } from './firebase'; // Import Firebase database instance
+import { database, auth } from './firebase'; // Import Firebase instances
 import { ref, get, child, push } from "firebase/database";
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 
-const BarcodeScanner = ({ onScanSuccess }) => {
+const BarcodeScanner = () => {
   const [scanStatus, setScanStatus] = useState('Scanning...');
-  const [isPopupOpen, setIsPopupOpen] = useState(false); // State to manage popup visibility
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [dialogMessage, setDialogMessage] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null); // State for success message
-  const [scannedProduct, setScannedProduct] = useState(null); // Store scanned product details
+  const [successMessage, setSuccessMessage] = useState(null);
+  const [scannedProduct, setScannedProduct] = useState(null);
+  const [user, setUser] = useState(null); // State to track user login status
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
 
-  // Save scanned item to /SoldItems table
+  // Handle Login
+  const handleLogin = async () => {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      setUser(userCredential.user); // Set logged-in user
+      setLoginError('');
+    } catch (error) {
+      setLoginError("Failed to log in. Please check your credentials.");
+      console.error("Login error:", error);
+    }
+  };
+
+  // Handle Logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null); // Clear user state on logout
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  // Observe Authentication State
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser); // Set user state on authentication state change
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Save scanned item to Firebase
   const saveScannedItem = async (barcode, product) => {
     const soldItemsRef = ref(database, 'SoldItems');
-    const currentDate = new Date().toISOString(); // Get current date and time
+    const currentDate = new Date().toISOString();
 
     try {
-      console.log("Saving item to SoldItems:", {
+      await push(soldItemsRef, {
         barcode,
         category: product.category,
         name: product.name,
         price: product.price,
         dateScanned: currentDate,
       });
-      await push(soldItemsRef, {
-        barcode,
-        category: product.category,
-        name: product.name,
-        price: product.price,
-        dateScanned: currentDate, // Add timestamp
-      });
 
-      // Set success message
       setSuccessMessage(`Item "${product.name}" added successfully on ${currentDate}`);
-      setTimeout(() => {
-        setSuccessMessage(null); // Clear success message after 3 seconds
-      }, 3000);
-
-      setDialogMessage(null); // Clear dialog message
-      setIsPopupOpen(false); // Close popup after action
-      setScannedProduct(null); // Clear the scanned product data
+      setTimeout(() => setSuccessMessage(null), 3000);
+      setDialogMessage(null);
+      setIsPopupOpen(false);
+      setScannedProduct(null);
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to SoldItems.");
     }
   };
 
-  // Fetch product details from /products database
+  // Fetch product details
   const fetchProductDetails = async (barcode) => {
-    const dbRef = ref(database); // Firebase database reference
+    const dbRef = ref(database);
     try {
-      console.log(`Fetching product for barcode: ${barcode}`);
-      const snapshot = await get(child(dbRef, `products/${barcode}`)); // Query for /products/<barcode>
-  
+      const snapshot = await get(child(dbRef, `products/${barcode}`));
       if (snapshot.exists()) {
         const product = snapshot.val();
-        console.log("Product found:", product);
-        setScannedProduct({ barcode, ...product }); // Store product details
+        setScannedProduct({ barcode, ...product });
         setDialogMessage(`Product found: ${product.name}. Do you want to add it?`);
-        setIsPopupOpen(true); // Open popup
+        setIsPopupOpen(true);
       } else {
-        console.log("Product not found for barcode:", barcode);
         setDialogMessage("Product not found in the database.");
         setIsPopupOpen(false);
       }
     } catch (error) {
-      console.error("Error retrieving product information:", error); // Log detailed error
+      console.error("Error retrieving product information:", error);
       setDialogMessage("Error retrieving product information.");
       setIsPopupOpen(false);
     }
   };
 
   useEffect(() => {
+    if (!user) return; // Don't initialize scanner if user is not logged in
+
     const scanner = new Html5QrcodeScanner(
       'barcode-scanner',
       {
         fps: 10,
-        qrbox: { width: 700, height: 400 }, // Wider box for barcodes
-        formatsToSupport: [
-            'QR_CODE',    // QR Code
-            'CODE_128',   // Common barcode format
-            'CODE_39',    // Another common barcode format
-            'EAN_13',     // European Article Number (13-digit)
-            'EAN_8',      // European Article Number (8-digit)
-            'UPC_A',      // Universal Product Code (12-digit)
-            'UPC_E',      // Compressed UPC
-        ],
+        qrbox: { width: 700, height: 400 },
+        formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'EAN_13', 'EAN_8', 'UPC_A', 'UPC_E'],
       },
       false
     );
 
-    const handleScanSuccess = (decodedText, decodedResult) => {
+    const handleScanSuccess = (decodedText) => {
       setScanStatus(`Scanned code: ${decodedText}`);
-      fetchProductDetails(decodedText); // Fetch product information from /products
-      if (onScanSuccess) onScanSuccess(decodedText, decodedResult); // Optional callback
+      fetchProductDetails(decodedText);
     };
 
     const handleScanFailure = (error) => {
@@ -104,52 +117,62 @@ const BarcodeScanner = ({ onScanSuccess }) => {
     scanner.render(handleScanSuccess, handleScanFailure);
 
     return () => {
-      scanner.clear().catch((error) => {
-        console.error('Failed to clear scanner:', error);
-      });
+      scanner.clear().catch((error) => console.error('Failed to clear scanner:', error));
     };
-  }, [onScanSuccess]);
+  }, [user]);
 
   return (
     <div>
-      <div id="barcode-scanner" />
-      <p>{scanStatus}</p>
-
-      {/* Success Message */}
-      {successMessage && (
-        <div style={popupStyles.success}>
-          <p>{successMessage}</p>
+      {!user ? (
+        <div>
+          <h2>Login</h2>
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button onClick={handleLogin}>Login</button>
+          {loginError && <p style={{ color: 'red' }}>{loginError}</p>}
         </div>
-      )}
-
-      {/* Popup Modal */}
-      {isPopupOpen && (
-        <div style={popupStyles.overlay}>
-          <div style={popupStyles.popup}>
-            <h3>Product Found</h3>
-            <p>{dialogMessage}</p>
-            <button
-              style={popupStyles.button}
-              onClick={() => {
-                saveScannedItem(scannedProduct.barcode, scannedProduct); // Save to /SoldItems
-              }}
-            >
-              Yes, Add
-            </button>
-            <button
-              style={popupStyles.button}
-              onClick={() => setIsPopupOpen(false)} // Close popup
-            >
-              Cancel
-            </button>
-          </div>
+      ) : (
+        <div>
+          <button onClick={handleLogout}>Logout</button>
+          <div id="barcode-scanner" />
+          <p>{scanStatus}</p>
+          {successMessage && <div style={popupStyles.success}><p>{successMessage}</p></div>}
+          {isPopupOpen && (
+            <div style={popupStyles.overlay}>
+              <div style={popupStyles.popup}>
+                <h3>Product Found</h3>
+                <p>{dialogMessage}</p>
+                <button
+                  style={popupStyles.button}
+                  onClick={() => saveScannedItem(scannedProduct.barcode, scannedProduct)}
+                >
+                  Yes, Add
+                </button>
+                <button
+                  style={popupStyles.button}
+                  onClick={() => setIsPopupOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-// Inline styles for the popup and success message
 const popupStyles = {
   overlay: {
     position: 'fixed',

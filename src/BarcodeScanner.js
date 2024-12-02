@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { database, auth } from './firebase'; // Import Firebase instances
+import { database, auth } from './firebase';
 import { ref, get, child, push } from "firebase/database";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 
@@ -10,7 +10,7 @@ const BarcodeScanner = () => {
   const [dialogMessage, setDialogMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null);
-  const [user, setUser] = useState(null); // State to track user login status
+  const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -19,11 +19,10 @@ const BarcodeScanner = () => {
   const handleLogin = async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      setUser(userCredential.user); // Set logged-in user
+      setUser(userCredential.user);
       setLoginError('');
     } catch (error) {
-      setLoginError("Failed to log in. Please check your credentials.");
-      console.error("Login error:", error);
+      setLoginError("Invalid email or password. Please try again.");
     }
   };
 
@@ -31,46 +30,18 @@ const BarcodeScanner = () => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      setUser(null); // Clear user state on logout
+      setUser(null);
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error("Logout failed:", error);
     }
   };
 
-  // Observe Authentication State
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser); // Set user state on authentication state change
-    });
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => setUser(currentUser));
     return () => unsubscribe();
   }, []);
 
-  // Save scanned item to Firebase
-  const saveScannedItem = async (barcode, product) => {
-    const soldItemsRef = ref(database, 'SoldItems');
-    const currentDate = new Date().toISOString();
-
-    try {
-      await push(soldItemsRef, {
-        barcode,
-        category: product.category,
-        name: product.name,
-        price: product.price,
-        dateScanned: currentDate,
-      });
-
-      setSuccessMessage(`Item "${product.name}" added successfully on ${currentDate}`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      setDialogMessage(null);
-      setIsPopupOpen(false);
-      setScannedProduct(null);
-    } catch (error) {
-      console.error("Error saving scanned item:", error);
-      setDialogMessage("Error saving item to SoldItems.");
-    }
-  };
-
-  // Fetch product details
+  // Fetch Product Details
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
     try {
@@ -81,87 +52,74 @@ const BarcodeScanner = () => {
         setDialogMessage(`Product found: ${product.name}. Do you want to add it?`);
         setIsPopupOpen(true);
       } else {
-        setDialogMessage("Product not found in the database.");
+        setDialogMessage("Product not found.");
         setIsPopupOpen(false);
       }
     } catch (error) {
-      console.error("Error retrieving product information:", error);
       setDialogMessage("Error retrieving product information.");
       setIsPopupOpen(false);
     }
   };
 
   useEffect(() => {
-    if (!user) return; // Don't initialize scanner if user is not logged in
+    if (!user) return;
 
     const scanner = new Html5QrcodeScanner(
       'barcode-scanner',
-      {
-        fps: 10,
-        qrbox: { width: 700, height: 400 },
-        formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'EAN_13', 'EAN_8', 'UPC_A', 'UPC_E'],
-      },
+      { fps: 10, qrbox: { width: 300, height: 300 } },
       false
     );
 
-    const handleScanSuccess = (decodedText) => {
-      setScanStatus(`Scanned code: ${decodedText}`);
-      fetchProductDetails(decodedText);
-    };
+    scanner.render(
+      (decodedText) => fetchProductDetails(decodedText),
+      (error) => setScanStatus('No code detected. Please try again.')
+    );
 
-    const handleScanFailure = (error) => {
-      setScanStatus('No code found. Please try again.');
-      console.warn(`Scan error: ${error}`);
-    };
-
-    scanner.render(handleScanSuccess, handleScanFailure);
-
-    return () => {
-      scanner.clear().catch((error) => console.error('Failed to clear scanner:', error));
-    };
+    return () => scanner.clear().catch(console.error);
   }, [user]);
 
   return (
-    <div>
+    <div style={styles.container}>
       {!user ? (
-        <div>
-          <h2>Login</h2>
+        <div style={styles.loginContainer}>
+          <h2 style={styles.title}>Login</h2>
           <input
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            style={styles.input}
           />
           <input
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            style={styles.input}
           />
-          <button onClick={handleLogin}>Login</button>
-          {loginError && <p style={{ color: 'red' }}>{loginError}</p>}
+          <button onClick={handleLogin} style={styles.button}>Login</button>
+          {loginError && <p style={styles.error}>{loginError}</p>}
         </div>
       ) : (
         <div>
-          <button onClick={handleLogout}>Logout</button>
-          <div id="barcode-scanner" />
-          <p>{scanStatus}</p>
-          {successMessage && <div style={popupStyles.success}><p>{successMessage}</p></div>}
+          <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
+          <div id="barcode-scanner" style={styles.scanner}></div>
+          <p style={styles.status}>{scanStatus}</p>
+          {successMessage && <div style={styles.successMessage}>{successMessage}</div>}
           {isPopupOpen && (
-            <div style={popupStyles.overlay}>
-              <div style={popupStyles.popup}>
-                <h3>Product Found</h3>
-                <p>{dialogMessage}</p>
+            <div style={styles.popupOverlay}>
+              <div style={styles.popup}>
+                <h3 style={styles.popupTitle}>Product Found</h3>
+                <p style={styles.popupText}>{dialogMessage}</p>
                 <button
-                  style={popupStyles.button}
-                  onClick={() => saveScannedItem(scannedProduct.barcode, scannedProduct)}
+                  style={styles.popupButton}
+                  onClick={() => {
+                    setIsPopupOpen(false);
+                  }}
                 >
                   Yes, Add
                 </button>
-                <button
-                  style={popupStyles.button}
-                  onClick={() => setIsPopupOpen(false)}
-                >
+                <button style={styles.popupButton} onClick={() => setIsPopupOpen(false)}>
                   Cancel
                 </button>
               </div>
@@ -173,8 +131,89 @@ const BarcodeScanner = () => {
   );
 };
 
-const popupStyles = {
-  overlay: {
+const styles = {
+  container: {
+    fontFamily: 'Arial, sans-serif',
+    padding: '20px',
+    backgroundColor: '#f9f9f9',
+    height: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loginContainer: {
+    width: '100%',
+    maxWidth: '400px',
+    backgroundColor: '#fff',
+    padding: '20px',
+    borderRadius: '10px',
+    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+    textAlign: 'center',
+  },
+  title: {
+    fontSize: '24px',
+    marginBottom: '20px',
+    color: '#333',
+    fontWeight: 'bold',
+  },
+  input: {
+    width: '100%',
+    padding: '12px',
+    marginBottom: '10px',
+    borderRadius: '5px',
+    border: '1px solid #ddd',
+    fontSize: '16px',
+    boxSizing: 'border-box',
+  },
+  button: {
+    width: '100%',
+    padding: '12px',
+    backgroundColor: '#007bff',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    fontWeight: 'bold',
+    transition: 'background-color 0.3s',
+  },
+  buttonHover: {
+    backgroundColor: '#0056b3',
+  },
+  logoutButton: {
+    padding: '10px',
+    backgroundColor: '#f44336',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '5px',
+    cursor: 'pointer',
+    marginBottom: '20px',
+  },
+  scanner: {
+    width: '100%',
+    maxWidth: '400px',
+    height: '300px',
+    marginBottom: '20px',
+  },
+  status: {
+    fontSize: '16px',
+    color: '#555',
+  },
+  error: {
+    color: '#f44336',
+    marginTop: '10px',
+    fontSize: '14px',
+  },
+  successMessage: {
+    backgroundColor: '#4caf50',
+    color: '#fff',
+    padding: '10px',
+    borderRadius: '5px',
+    textAlign: 'center',
+    marginTop: '10px',
+  },
+  popupOverlay: {
     position: 'fixed',
     top: 0,
     left: 0,
@@ -189,29 +228,30 @@ const popupStyles = {
   popup: {
     backgroundColor: '#fff',
     padding: '20px',
-    borderRadius: '5px',
-    boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.25)',
+    borderRadius: '10px',
     textAlign: 'center',
+    width: '80%',
+    maxWidth: '300px',
   },
-  button: {
-    margin: '10px',
-    padding: '10px 20px',
-    border: 'none',
-    borderRadius: '5px',
-    cursor: 'pointer',
+  popupTitle: {
+    marginBottom: '10px',
+    fontSize: '20px',
+    color: '#333',
+  },
+  popupText: {
+    marginBottom: '20px',
     fontSize: '16px',
+    color: '#555',
   },
-  success: {
-    position: 'fixed',
-    top: '20px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    backgroundColor: '#4caf50',
-    color: '#fff',
+  popupButton: {
     padding: '10px 20px',
+    margin: '5px',
     borderRadius: '5px',
-    zIndex: 1000,
-    boxShadow: '0px 0px 10px rgba(0, 0, 0, 0.25)',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#fff',
+    backgroundColor: '#007bff',
   },
 };
 

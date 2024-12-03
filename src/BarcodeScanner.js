@@ -68,33 +68,46 @@ const BarcodeScanner = () => {
       timeoutId = setTimeout(() => func(...args), delay);
     };
   }
-  
- useEffect(() => {
-  if (!user) return;
 
-  // Initialize scanner with optimized settings
-  const scanner = new Html5QrcodeScanner(
-    'barcode-scanner',
-    {
-      fps: 20, // Increase frame rate for faster scanning
-      qrbox: { width: 350, height: 350 }, // Larger scanning box
-      disableFlip: false, // Enable flip for better recognition
-    },
-    false
-  );
+  useEffect(() => {
+    if (!user) return;
+
+    // Initialize scanner with optimized settings for QR codes and barcodes
+    const scanner = new Html5QrcodeScanner(
+      'barcode-scanner',
+      {
+        fps: 15, // Optimize for good performance
+        qrbox: { width: 400, height: 200 }, // Wider scanning box for barcodes
+        formatsToSupport: [
+          'QR_CODE',
+          'CODE_128',
+          'CODE_39',
+          'EAN_13',
+          'EAN_8',
+          'UPC_A',
+          'UPC_E',
+        ], // Include various barcode formats
+        disableFlip: false, // Enable flip for better recognition
+      },
+      false
+    );
 
     const debounceFetchProductDetails = debounce((barcode) => fetchProductDetails(barcode), 500);
 
-  scanner.render(
-    (decodedText) => {
-      setScanStatus('Code detected, processing...');
-      debounceFetchProductDetails(decodedText); // Debounce fetch to reduce load
-    },
-    (error) => setScanStatus('No code detected. Adjust the QR code and try again.')
-  );
+    scanner.render(
+      (decodedText) => {
+        console.log(`Scanned Code: ${decodedText}`); // Debugging log
+        setScanStatus('Code detected, processing...');
+        debounceFetchProductDetails(decodedText);
+      },
+      (error) => {
+        console.error('Scan error:', error);
+        setScanStatus('No code detected. Adjust the QR code or barcode and try again.');
+      }
+    );
 
-  return () => scanner.clear().catch(console.error);
-}, [user]);
+    return () => scanner.clear().catch(console.error);
+  }, [user]);
 
   return (
     <div style={styles.container}>
@@ -122,7 +135,7 @@ const BarcodeScanner = () => {
         <div style={styles.scannerContainer}>
           <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
           <div id="barcode-scanner" style={styles.scanner}>
-            <p style={styles.scannerText}>QR Code Scanner</p>
+            <p style={styles.scannerText}>QR Code and Barcode Scanner</p>
           </div>
           <p style={styles.status}>{scanStatus}</p>
           {successMessage && <div style={styles.successMessage}>{successMessage}</div>}

@@ -61,7 +61,6 @@ const BarcodeScanner = () => {
           console.log(`Scanned Code: ${result.text}`);
           setScanStatus('Barcode detected! Processing...');
           fetchProductDetails(result.text);
-          codeReader.reset();
         } else if (error) {
           setScanStatus('Align the barcode and hold steady.');
         }
@@ -89,6 +88,37 @@ const BarcodeScanner = () => {
     } catch (error) {
       setDialogMessage("Error retrieving product information.");
       setIsPopupOpen(false);
+    }
+  };
+
+  const saveScannedItem = async (product) => {
+    if (!product || !product.barcode) {
+      console.error("Invalid product data:", product);
+      setDialogMessage("Error: Invalid product data.");
+      return;
+    }
+
+    const soldItemsRef = ref(database, 'SoldItems');
+
+    try {
+      const currentDate = new Date().toISOString(); // Get current timestamp
+      const newItem = {
+        barcode: product.barcode,
+        name: product.name,
+        category: product.category || 'Unknown',
+        price: product.price || 0,
+        dateScanned: currentDate,
+      };
+
+      await push(soldItemsRef, newItem); // Push new item to SoldItems
+      setSuccessMessage(`Item "${product.name}" added successfully!`);
+      setTimeout(() => setSuccessMessage(null), 3000); // Clear success message
+      setIsPopupOpen(false); // Close popup
+      setDialogMessage(null);
+      setScannedProduct(null); // Clear scanned product
+    } catch (error) {
+      console.error("Error saving scanned item:", error);
+      setDialogMessage("Error saving item to the database.");
     }
   };
 
@@ -127,7 +157,7 @@ const BarcodeScanner = () => {
                 <p className="popup-text">{dialogMessage}</p>
                 <button
                   className="popup-button"
-                  onClick={() => setIsPopupOpen(false)}
+                  onClick={() => saveScannedItem(scannedProduct)}
                 >
                   Yes, Add
                 </button>

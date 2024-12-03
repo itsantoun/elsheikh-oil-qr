@@ -61,22 +61,40 @@ const BarcodeScanner = () => {
     }
   };
 
-  useEffect(() => {
-    if (!user) return;
+  function debounce(func, delay) {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    };
+  }
+  
+ useEffect(() => {
+  if (!user) return;
 
-    const scanner = new Html5QrcodeScanner(
-      'barcode-scanner',
-      { fps: 10, qrbox: { width: 300, height: 300 } },
-      false
-    );
+  // Initialize scanner with optimized settings
+  const scanner = new Html5QrcodeScanner(
+    'barcode-scanner',
+    {
+      fps: 20, // Increase frame rate for faster scanning
+      qrbox: { width: 350, height: 350 }, // Larger scanning box
+      disableFlip: false, // Enable flip for better recognition
+    },
+    false
+  );
 
-    scanner.render(
-      (decodedText) => fetchProductDetails(decodedText),
-      (error) => setScanStatus('No code detected. Please try again.')
-    );
+    const debounceFetchProductDetails = debounce((barcode) => fetchProductDetails(barcode), 500);
 
-    return () => scanner.clear().catch(console.error);
-  }, [user]);
+  scanner.render(
+    (decodedText) => {
+      setScanStatus('Code detected, processing...');
+      debounceFetchProductDetails(decodedText); // Debounce fetch to reduce load
+    },
+    (error) => setScanStatus('No code detected. Adjust the QR code and try again.')
+  );
+
+  return () => scanner.clear().catch(console.error);
+}, [user]);
 
   return (
     <div style={styles.container}>

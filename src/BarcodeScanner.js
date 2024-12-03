@@ -101,9 +101,11 @@ const BarcodeScanner = () => {
           {loginError && <p style={styles.error}>{loginError}</p>}
         </div>
       ) : (
-        <div>
+        <div style={styles.scannerContainer}>
           <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
-          <div id="barcode-scanner" style={styles.scanner}></div>
+          <div id="barcode-scanner" style={styles.scanner}>
+            <p style={styles.scannerText}>QR Code Scanner</p>
+          </div>
           <p style={styles.status}>{scanStatus}</p>
           {successMessage && <div style={styles.successMessage}>{successMessage}</div>}
           {isPopupOpen && (
@@ -113,13 +115,14 @@ const BarcodeScanner = () => {
                 <p style={styles.popupText}>{dialogMessage}</p>
                 <button
                   style={styles.popupButton}
-                  onClick={() => {
-                    setIsPopupOpen(false);
-                  }}
+                  onClick={() => setIsPopupOpen(false)}
                 >
                   Yes, Add
                 </button>
-                <button style={styles.popupButton} onClick={() => setIsPopupOpen(false)}>
+                <button
+                  style={{ ...styles.popupButton, backgroundColor: '#f44336' }}
+                  onClick={() => setIsPopupOpen(false)}
+                >
                   Cancel
                 </button>
               </div>
@@ -139,54 +142,128 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     height: '100vh',
-    backgroundColor: '#f9f9f9',
-    padding: '10px',
+    backgroundColor: '#f4f4f4',
+    padding: '20px',
     boxSizing: 'border-box',
   },
   loginContainer: {
     width: '100%',
     maxWidth: '350px',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
     padding: '20px',
-    borderRadius: '15px',
+    borderRadius: '10px',
     boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
     textAlign: 'center',
   },
+  scannerContainer: {
+    width: '100%',
+    maxWidth: '400px',
+    textAlign: 'center',
+  },
   title: {
-    fontSize: '26px',
+    fontSize: '24px',
     marginBottom: '20px',
     color: '#333',
-    fontWeight: 'bold',
   },
   input: {
     width: '100%',
-    padding: '14px',
+    padding: '12px',
     marginBottom: '15px',
-    borderRadius: '10px',
-    border: '1px solid #ddd',
+    borderRadius: '5px',
+    border: '1px solid #ccc',
     fontSize: '16px',
-    boxSizing: 'border-box',
     outline: 'none',
-    transition: 'border 0.2s',
-  },
-  inputFocus: {
-    border: '1px solid #007bff',
   },
   button: {
     width: '100%',
-    padding: '14px',
+    padding: '12px',
     backgroundColor: '#007bff',
-    color: '#ffffff',
+    color: '#fff',
     border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
+    borderRadius: '5px',
     fontSize: '16px',
+    cursor: 'pointer',
     fontWeight: 'bold',
     marginTop: '10px',
-    transition: 'background-color 0.3s',
   },
-  buttonHover: {
-    backgroundColor: '#0056b3',
+  logoutButton: {
+    padding: '10px',
+    backgroundColor: '#f44336',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '5px',
+    marginBottom: '10px',
+    cursor: 'pointer',
+    fontSize: '14px',
+  },
+  scanner: {
+    width: '100%',
+    height: '300px',
+    border: '1px solid #ccc',
+    borderRadius: '10px',
+    backgroundColor: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerText: {
+    color: '#888',
+    fontSize: '16px',
+  },
+  status: {
+    fontSize: '16px',
+    color: '#555',
+    marginTop: '10px',
+  },
+  successMessage: {
+    backgroundColor: '#4caf50',
+    color: '#fff',
+    padding: '10px',
+    borderRadius: '5px',
+    marginTop: '10px',
+    textAlign: 'center',
+  },
+  popupOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  popup: {
+    backgroundColor: '#fff',
+    padding: '20px',
+    borderRadius: '10px',
+    textAlign: 'center',
+    width: '90%',
+    maxWidth: '300px',
+    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)',
+  },
+  popupTitle: {
+    marginBottom: '10px',
+    fontSize: '18px',
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  popupText: {
+    fontSize: '16px',
+    marginBottom: '20px',
+    color: '#555',
+  },
+  popupButton: {
+    padding: '10px 20px',
+    margin: '5px',
+    borderRadius: '5px',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '14px',
+    color: '#fff',
+    backgroundColor: '#007bff',
   },
   error: {
     color: '#f44336',
@@ -194,4 +271,5 @@ const styles = {
     fontSize: '14px',
   },
 };
+
 export default BarcodeScanner;

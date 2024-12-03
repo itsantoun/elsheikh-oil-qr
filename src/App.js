@@ -1,5 +1,5 @@
 import React from 'react';
-import BarcodeScanner from './BarcodeScanner';
+import BarcodeScanner from './Pages/BarcodeScanner';
 
 const App = () => {
   const handleScanSuccess = (decodedText, decodedResult) => {

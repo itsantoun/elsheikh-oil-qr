@@ -9,7 +9,6 @@ const BarcodeScanner = () => {
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [dialogMessage, setDialogMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
-  const [errorMessage, setErrorMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null);
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
@@ -41,29 +40,6 @@ const BarcodeScanner = () => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => setUser(currentUser));
     return () => unsubscribe();
   }, []);
-
-  // Save Product to SoldItems
-  const saveToSoldItems = async (product) => {
-    try {
-      const soldItemsRef = ref(database, 'SoldItems');
-      await push(soldItemsRef, {
-        barcode: product.barcode,
-        name: product.name,
-        price: product.price,
-        timestamp: new Date().toISOString(),
-      });
-
-      setSuccessMessage(`Item "${product.name}" added successfully!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      setScannedProduct(null);
-      setDialogMessage(null);
-      setIsPopupOpen(false);
-    } catch (error) {
-      console.error("Failed to add item to SoldItems:", error);
-      setErrorMessage("Failed to add item. Please try again.");
-      setTimeout(() => setErrorMessage(null), 3000);
-    }
-  };
 
   // Fetch Product Details
   const fetchProductDetails = async (barcode) => {
@@ -132,7 +108,6 @@ const BarcodeScanner = () => {
           </div>
           <p style={styles.status}>{scanStatus}</p>
           {successMessage && <div style={styles.successMessage}>{successMessage}</div>}
-          {errorMessage && <div style={styles.errorMessage}>{errorMessage}</div>}
           {isPopupOpen && (
             <div style={styles.popupOverlay}>
               <div style={styles.popup}>
@@ -140,7 +115,7 @@ const BarcodeScanner = () => {
                 <p style={styles.popupText}>{dialogMessage}</p>
                 <button
                   style={styles.popupButton}
-                  onClick={() => saveToSoldItems(scannedProduct)}
+                  onClick={() => setIsPopupOpen(false)}
                 >
                   Yes, Add
                 </button>

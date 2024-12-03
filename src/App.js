@@ -27,13 +27,16 @@ import Login from './Pages/login'
 
 const App = () => {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/scanner" element={<BarcodeScanner />} />
-        <Route path="/admin" element={<Admin />} />
-      </Routes>
-    </Router>
+    <>
+    <p>hello</p>
+    </>
+    // <Router>
+    //   <Routes>
+    //     <Route path="/" element={<Login />} />
+    //     <Route path="/scanner" element={<BarcodeScanner />} />
+    //     <Route path="/admin" element={<Admin />} />
+    //   </Routes>
+    // </Router>
   );
 };
 

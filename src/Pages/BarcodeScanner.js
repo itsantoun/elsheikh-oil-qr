@@ -196,7 +196,7 @@ const BarcodeScanner = () => {
   useEffect(() => {
     const codeReader = new BrowserMultiFormatReader();
     const videoElement = scannerRef.current;
-
+ 
     codeReader
       .decodeFromVideoDevice(null, videoElement, (result, error) => {
         if (result) {

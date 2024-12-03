@@ -3,9 +3,10 @@ import { BrowserMultiFormatReader } from '@zxing/library';
 import { database, auth } from './firebase';
 import { ref, get, child, push } from "firebase/database";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import './BarcodeScanner.css'; // Import the CSS file
 
 const BarcodeScanner = () => {
-  const [scanStatus, setScanStatus] = useState('Scanning...');
+  const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [dialogMessage, setDialogMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -14,8 +15,7 @@ const BarcodeScanner = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-
-  const scannerRef = React.useRef(null); // Ref for video element
+  const scannerRef = React.useRef(null);
 
   // Handle Login
   const handleLogin = async () => {
@@ -43,7 +43,36 @@ const BarcodeScanner = () => {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Product Details
+  useEffect(() => {
+    if (!user) return;
+
+    const codeReader = new BrowserMultiFormatReader();
+    const videoElement = scannerRef.current;
+
+    const videoConstraints = {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: 'environment',
+    };
+
+    codeReader
+      .decodeFromVideoDevice(null, videoElement, (result, error) => {
+        if (result) {
+          console.log(`Scanned Code: ${result.text}`);
+          setScanStatus('Barcode detected! Processing...');
+          fetchProductDetails(result.text);
+          codeReader.reset();
+        } else if (error) {
+          setScanStatus('Align the barcode and hold steady.');
+        }
+      })
+      .catch((err) => console.error('Camera initialization failed:', err));
+
+    return () => {
+      codeReader.reset();
+    };
+  }, [user]);
+
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
     try {
@@ -63,72 +92,47 @@ const BarcodeScanner = () => {
     }
   };
 
-  useEffect(() => {
-    if (!user) return;
-
-    const codeReader = new BrowserMultiFormatReader();
-    const videoElement = scannerRef.current;
-
-    codeReader
-      .decodeFromVideoDevice(null, videoElement, (result, error) => {
-        if (result) {
-          console.log(`Scanned Code: ${result.text}`);
-          setScanStatus('Code detected, processing...');
-          fetchProductDetails(result.text);
-          codeReader.reset(); // Stop scanning after success
-        } else if (error) {
-          console.error('Scan error:', error.message);
-          setScanStatus('No code detected. Adjust the QR code or barcode and try again.');
-        }
-      })
-      .catch((err) => console.error('Camera initialization failed:', err));
-
-    return () => {
-      codeReader.reset(); // Clean up when component unmounts
-    };
-  }, [user]);
-
   return (
-    <div style={styles.container}>
+    <div className="container">
       {!user ? (
-        <div style={styles.loginContainer}>
-          <h2 style={styles.title}>Login</h2>
+        <div className="login-container">
+          <h2 className="title">Login</h2>
           <input
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={styles.input}
+            className="input"
           />
           <input
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={styles.input}
+            className="input"
           />
-          <button onClick={handleLogin} style={styles.button}>Login</button>
-          {loginError && <p style={styles.error}>{loginError}</p>}
+          <button onClick={handleLogin} className="button">Login</button>
+          {loginError && <p className="error">{loginError}</p>}
         </div>
       ) : (
-        <div style={styles.scannerContainer}>
-          <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
-          <video ref={scannerRef} style={styles.scanner}></video>
-          <p style={styles.status}>{scanStatus}</p>
-          {successMessage && <div style={styles.successMessage}>{successMessage}</div>}
+        <div className="scanner-container">
+          <button onClick={handleLogout} className="logout-button">Logout</button>
+          <video ref={scannerRef} className="scanner"></video>
+          <p className="status">{scanStatus}</p>
+          {successMessage && <div className="success-message">{successMessage}</div>}
           {isPopupOpen && (
-            <div style={styles.popupOverlay}>
-              <div style={styles.popup}>
-                <h3 style={styles.popupTitle}>Product Found</h3>
-                <p style={styles.popupText}>{dialogMessage}</p>
+            <div className="popup-overlay">
+              <div className="popup">
+                <h3 className="popup-title">Product Found</h3>
+                <p className="popup-text">{dialogMessage}</p>
                 <button
-                  style={styles.popupButton}
+                  className="popup-button"
                   onClick={() => setIsPopupOpen(false)}
                 >
                   Yes, Add
                 </button>
                 <button
-                  style={{ ...styles.popupButton, backgroundColor: '#f44336' }}
+                  className="popup-button cancel"
                   onClick={() => setIsPopupOpen(false)}
                 >
                   Cancel
@@ -140,144 +144,6 @@ const BarcodeScanner = () => {
       )}
     </div>
   );
-};
-
-const styles = {
-  container: {
-    fontFamily: 'Arial, sans-serif',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100vh',
-    backgroundColor: '#f4f4f4',
-    padding: '20px',
-    boxSizing: 'border-box',
-  },
-  loginContainer: {
-    width: '100%',
-    maxWidth: '350px',
-    backgroundColor: '#fff',
-    padding: '20px',
-    borderRadius: '10px',
-    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
-    textAlign: 'center',
-  },
-  scannerContainer: {
-    width: '100%',
-    maxWidth: '400px',
-    textAlign: 'center',
-  },
-  title: {
-    fontSize: '24px',
-    marginBottom: '20px',
-    color: '#333',
-  },
-  input: {
-    width: '100%',
-    padding: '12px',
-    marginBottom: '15px',
-    borderRadius: '5px',
-    border: '1px solid #ccc',
-    fontSize: '16px',
-    outline: 'none',
-  },
-  button: {
-    width: '100%',
-    padding: '12px',
-    backgroundColor: '#007bff',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '5px',
-    fontSize: '16px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-    marginTop: '10px',
-  },
-  logoutButton: {
-    padding: '10px',
-    backgroundColor: '#f44336',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '5px',
-    marginBottom: '10px',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  scanner: {
-    width: '100%',
-    height: '300px',
-    border: '1px solid #ccc',
-    borderRadius: '10px',
-    backgroundColor: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scannerText: {
-    color: '#888',
-    fontSize: '16px',
-  },
-  status: {
-    fontSize: '16px',
-    color: '#555',
-    marginTop: '10px',
-  },
-  successMessage: {
-    backgroundColor: '#4caf50',
-    color: '#fff',
-    padding: '10px',
-    borderRadius: '5px',
-    marginTop: '10px',
-    textAlign: 'center',
-  },
-  popupOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  popup: {
-    backgroundColor: '#fff',
-    padding: '20px',
-    borderRadius: '10px',
-    textAlign: 'center',
-    width: '90%',
-    maxWidth: '300px',
-    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)',
-  },
-  popupTitle: {
-    marginBottom: '10px',
-    fontSize: '18px',
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  popupText: {
-    fontSize: '16px',
-    marginBottom: '20px',
-    color: '#555',
-  },
-  popupButton: {
-    padding: '10px 20px',
-    margin: '5px',
-    borderRadius: '5px',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '14px',
-    color: '#fff',
-    backgroundColor: '#007bff',
-  },
-  error: {
-    color: '#f44336',
-    marginTop: '10px',
-    fontSize: '14px',
-  },
 };
 
 export default BarcodeScanner;

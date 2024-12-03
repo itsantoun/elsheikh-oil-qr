@@ -1,19 +1,26 @@
-import React from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-
+import React, { useState } from 'react';
 import BarcodeScanner from './Pages/BarcodeScanner';
 import Admin from './Admin/admin';
 import Login from './Pages/login';
 
 const App = () => {
+  const [currentPage, setCurrentPage] = useState('login');
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'scanner':
+        return <BarcodeScanner />;
+      case 'admin':
+        return <Admin />;
+      default:
+        return <Login onLogin={(page) => setCurrentPage(page)} />;
+    }
+  };
+
   return (
-    <Router basename="/elsheikh-oil-qr">
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/scanner" element={<BarcodeScanner />} />
-        <Route path="/admin" element={<Admin />} />
-      </Routes>
-    </Router>
+    <div>
+      {renderPage()}
+    </div>
   );
 };
 

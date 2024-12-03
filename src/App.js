@@ -1,16 +1,16 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Login from './Pages/login'; // Import the Login component
-import Admin from './Admin/admin'; // Import the Admin component
-import BarcodeScanner from './Pages/BarcodeScanner'; // Import the BarcodeScanner component
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+import BarcodeScanner from './Pages/BarcodeScanner';
+import Admin from './Admin/admin';
+import Login from './Pages/login'
 
 const App = () => {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
-        <Route path="/admin" element={<Admin />} />
         <Route path="/scanner" element={<BarcodeScanner />} />
+        <Route path="/admin" element={<Admin />} />
       </Routes>
     </Router>
   );

@@ -17,9 +17,9 @@ function Login() {
 
       // Redirect based on email address
       if (email === 'doris@elsheikh.lb') {
-        window.location.href = '/admin'; // Navigate to Admin page
+        window.location.href = '/admin'; 
       } else {
-        window.location.href = '/scanner'; // Navigate to BarcodeScanner page
+        window.location.href = '/scanner';
       }
     } catch (error) {
       setLoginError("Invalid email or password. Please try again.");

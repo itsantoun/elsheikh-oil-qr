@@ -1,5 +1,6 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+
 import BarcodeScanner from './Pages/BarcodeScanner';
 import Admin from './Admin/admin';
 import Login from './Pages/login';

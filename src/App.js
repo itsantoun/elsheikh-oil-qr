@@ -1,20 +1,18 @@
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Login from './login'; // Import the Login component
+import Admin from './admin'; // Import the Admin component
 import BarcodeScanner from './BarcodeScanner'; // Import the BarcodeScanner component
 
 const App = () => {
-  const handleScanSuccess = (decodedText, decodedResult) => {
-    console.log(`Scanned code: ${decodedText}`);
-    // Implement additional logic here, like updating the UI or saving data
-    alert(`Scanned: ${decodedText}`);
-  };
-
   return (
-    <div>
-      <h1>Barcode Scanner</h1>
-      <p>Scan a barcode to fetch product details from the database.</p>
-      {/* BarcodeScanner component with an optional callback */}
-      <BarcodeScanner onScanSuccess={handleScanSuccess} />
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/admin" element={<Admin />} />
+        <Route path="/scanner" element={<BarcodeScanner />} />
+      </Routes>
+    </Router>
   );
 };
 

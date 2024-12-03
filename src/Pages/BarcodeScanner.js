@@ -181,9 +181,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
-import { database } from './firebase';
+import { database } from '../firebase';
 import { ref, get, child, push } from "firebase/database";
-import './BarcodeScanner.css'; // Import the CSS file
+import '../CSS/BarcodeScanner.css'; // Import the CSS file
 
 const BarcodeScanner = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');

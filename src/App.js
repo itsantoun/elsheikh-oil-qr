@@ -1,18 +1,18 @@
 import React from 'react';
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import BarcodeScanner from './Pages/BarcodeScanner';
-import Admin from './Admin/admin';
-import Login from './Pages/login'
+import BarcodeScanner from './BarcodeScanner';
 
 const App = () => {
+  const handleScanSuccess = (decodedText, decodedResult) => {
+    console.log(`Scanned code: ${decodedText}`);
+    // You can implement additional logic or display the scanned product here
+  };
+
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/scanner" element={<BarcodeScanner />} />
-        <Route path="/admin" element={<Admin />} />
-      </Routes>
-    </Router>
+    <div>
+      <h1>Barcode Scanner</h1>
+      <p>Scan a barcode to fetch product details from the database.</p>
+      <BarcodeScanner onScanSuccess={handleScanSuccess} />
+    </div>
   );
 };
 

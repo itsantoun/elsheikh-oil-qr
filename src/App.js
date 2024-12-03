@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import BarcodeScanner from './BarcodeScanner';
+import BarcodeScanner from './Pages/BarcodeScanner';
 import Admin from './Admin/admin';
 import Login from './Pages/login';
 

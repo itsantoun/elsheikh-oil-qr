@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { BrowserMultiFormatReader } from '@zxing/library';
 import { database, auth } from './firebase';
 import { ref, get, child, push } from "firebase/database";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
@@ -14,6 +14,8 @@ const BarcodeScanner = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  const scannerRef = React.useRef(null); // Ref for video element
 
   // Handle Login
   const handleLogin = async () => {
@@ -61,52 +63,29 @@ const BarcodeScanner = () => {
     }
   };
 
-  function debounce(func, delay) {
-    let timeoutId;
-    return (...args) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func(...args), delay);
-    };
-  }
-
   useEffect(() => {
     if (!user) return;
 
-    // Initialize scanner with optimized settings for QR codes and barcodes
-    const scanner = new Html5QrcodeScanner(
-      'barcode-scanner',
-      {
-        fps: 15, // Optimize for good performance
-        qrbox: { width: 400, height: 200 }, // Wider scanning box for barcodes
-        formatsToSupport: [
-          'QR_CODE',
-          'CODE_128',
-          'CODE_39',
-          'EAN_13',
-          'EAN_8',
-          'UPC_A',
-          'UPC_E',
-        ], // Include various barcode formats
-        disableFlip: false, // Enable flip for better recognition
-      },
-      false
-    );
+    const codeReader = new BrowserMultiFormatReader();
+    const videoElement = scannerRef.current;
 
-    const debounceFetchProductDetails = debounce((barcode) => fetchProductDetails(barcode), 500);
+    codeReader
+      .decodeFromVideoDevice(null, videoElement, (result, error) => {
+        if (result) {
+          console.log(`Scanned Code: ${result.text}`);
+          setScanStatus('Code detected, processing...');
+          fetchProductDetails(result.text);
+          codeReader.reset(); // Stop scanning after success
+        } else if (error) {
+          console.error('Scan error:', error.message);
+          setScanStatus('No code detected. Adjust the QR code or barcode and try again.');
+        }
+      })
+      .catch((err) => console.error('Camera initialization failed:', err));
 
-    scanner.render(
-      (decodedText) => {
-        console.log(`Scanned Code: ${decodedText}`); // Debugging log
-        setScanStatus('Code detected, processing...');
-        debounceFetchProductDetails(decodedText);
-      },
-      (error) => {
-        console.error('Scan error:', error);
-        setScanStatus('No code detected. Adjust the QR code or barcode and try again.');
-      }
-    );
-
-    return () => scanner.clear().catch(console.error);
+    return () => {
+      codeReader.reset(); // Clean up when component unmounts
+    };
   }, [user]);
 
   return (
@@ -134,9 +113,7 @@ const BarcodeScanner = () => {
       ) : (
         <div style={styles.scannerContainer}>
           <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
-          <div id="barcode-scanner" style={styles.scanner}>
-            <p style={styles.scannerText}>QR Code and Barcode Scanner</p>
-          </div>
+          <video ref={scannerRef} style={styles.scanner}></video>
           <p style={styles.status}>{scanStatus}</p>
           {successMessage && <div style={styles.successMessage}>{successMessage}</div>}
           {isPopupOpen && (

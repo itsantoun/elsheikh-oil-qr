@@ -214,7 +214,7 @@ const BarcodeScanner = () => {
   };
 
   const handleLogout = () => {
-    window.location.href = '/elsheikh-oil-qr'; // Redirect to login page
+    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/'; // Redirect to login page
   };
 
   return (

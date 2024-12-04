@@ -19,7 +19,7 @@ const Admin = () => {
 
   const handleLogout = () => {
     setUser(null); // Clear the user context
-    window.location.href = '/elsheikh-oil-qr/'; // Redirect to the login page
+    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/'; // Redirect to the login page
   };
 
   if (!user || user.email !== 'doris@elsheikh.lb') {

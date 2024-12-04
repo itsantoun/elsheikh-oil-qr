@@ -187,7 +187,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ref, get, set, remove } from "firebase/database";
-import { database } from '../firebase';
+import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 
 const FetchProducts = () => {

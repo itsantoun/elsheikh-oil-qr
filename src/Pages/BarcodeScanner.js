@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
-import { database } from '../firebase';
+import { database } from '../Auth/firebase';
 import { ref, get, child, push } from "firebase/database";
 import '../CSS/BarcodeScanner.css'; // Import the CSS file
 

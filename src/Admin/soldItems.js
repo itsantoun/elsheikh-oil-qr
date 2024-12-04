@@ -108,13 +108,13 @@ import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get } from 'firebase/database';
 import { writeFile, utils } from 'xlsx'; // Import xlsx functions
-import { UserContext } from '../Auth/userContext'; // Context to get logged-in user
+import { UserContext } from '../Auth/userContext'; // Import the context
 import '../CSS/soldItems.css';
 
 const SoldItems = () => {
+  const { user } = useContext(UserContext); // Access the logged-in user
   const [soldItems, setSoldItems] = useState([]);
   const [errorMessage, setErrorMessage] = useState(null);
-  const { user } = useContext(UserContext); // Access logged-in user's email
 
   // Fetch Sold Items
   useEffect(() => {
@@ -201,7 +201,7 @@ const SoldItems = () => {
                       : 'N/A'}
                   </td>
                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
-                  <td>{item.scannedBy || 'Unknown'}</td>
+                  <td>{item.scannedBy || 'Not Available'}</td>
                 </tr>
               ))}
             </tbody>

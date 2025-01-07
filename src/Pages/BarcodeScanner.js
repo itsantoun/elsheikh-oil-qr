@@ -210,9 +210,8 @@ const BarcodeScanner = () => {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [zoom, setZoom] = useState(1); // Default zoom level
+  const [zoomLevel, setZoomLevel] = useState(1); // Zoom level state
   const scannerRef = React.useRef(null);
-  const videoTrackRef = React.useRef(null);
 
   const { user } = useContext(UserContext);
 
@@ -273,29 +272,8 @@ const BarcodeScanner = () => {
       })
       .catch((err) => console.error("Camera initialization failed:", err));
 
-    const stream = videoElement.srcObject;
-    if (stream) {
-      const videoTrack = stream.getVideoTracks()[0];
-      videoTrackRef.current = videoTrack;
-    }
-
     return () => codeReader.reset();
   }, [user]);
-
-  const handleZoomChange = (event) => {
-    const newZoom = parseFloat(event.target.value);
-    setZoom(newZoom);
-    const videoTrack = videoTrackRef.current;
-    if (videoTrack && videoTrack.getCapabilities) {
-      const capabilities = videoTrack.getCapabilities();
-      if (capabilities.zoom) {
-        const constraints = { advanced: [{ zoom: newZoom }] };
-        videoTrack.applyConstraints(constraints).catch((error) =>
-          console.error("Zoom adjustment failed:", error)
-        );
-      }
-    }
-  };
 
   const fetchProductDetails = async (barcode) => {
     try {
@@ -363,19 +341,14 @@ const BarcodeScanner = () => {
         </button>
       </div>
       <div className="scanner-container">
-        <video ref={scannerRef} className="scanner"></video>
-        <div className="zoom-control">
-          <label htmlFor="zoom">Zoom:</label>
-          <input
-            type="range"
-            id="zoom"
-            min="1"
-            max="3"
-            step="0.1"
-            value={zoom}
-            onChange={handleZoomChange}
-          />
-        </div>
+        <video
+          ref={scannerRef}
+          className="scanner"
+          style={{
+            transform: `scale(${zoomLevel})`, // Apply zoom to the video element
+            transformOrigin: 'center',
+          }}
+        ></video>
         <p className="status">{scanStatus}</p>
         {successMessage && <div className="success-message">{successMessage}</div>}
         {loading && <div className="loading-message">Loading customers...</div>}
@@ -414,6 +387,19 @@ const BarcodeScanner = () => {
             </div>
           </div>
         )}
+        {/* Zoom Slider */}
+        <div className="zoom-container">
+          <label htmlFor="zoom">Zoom:</label>
+          <input
+            id="zoom"
+            type="range"
+            min="1"
+            max="3"
+            step="0.1"
+            value={zoomLevel}
+            onChange={(e) => setZoomLevel(Number(e.target.value))}
+          />
+        </div>
       </div>
     </div>
   );

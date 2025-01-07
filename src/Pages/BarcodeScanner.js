@@ -374,7 +374,14 @@ const BarcodeScanner = () => {
         const snapshot = await get(customersRef);
         if (snapshot.exists()) {
           const customersData = snapshot.val();
-          setCustomers(Object.entries(customersData).map(([key, value]) => ({ id: key, name: value.name })));
+          console.log("Fetched customers data:", customersData); // Log the fetched data
+          setCustomers(Object.entries(customersData).map(([key, value]) => ({
+            id: key,
+            name: value.name || 'Unknown Customer' // Ensure a name field exists, or fallback to 'Unknown'
+          })));
+        } else {
+          console.log("No customers data found.");
+          setCustomers([]); // Ensure the customers state is set to an empty array if no data exists
         }
       } catch (error) {
         console.error("Error fetching customers:", error);

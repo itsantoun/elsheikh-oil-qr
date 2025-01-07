@@ -290,16 +290,43 @@ const BarcodeScanner = () => {
     };
   }, [user, zoomLevel]);
 
-  const applyZoom = () => {
-    if (scannerRef.current) {
-      scannerRef.current.style.transform = `scale(${zoomLevel})`;
-      scannerRef.current.style.transformOrigin = 'center';
+  const applyZoom = async () => {
+    try {
+      const videoElement = scannerRef.current;
+      const stream = videoElement.srcObject;
+      const [track] = stream.getVideoTracks();
+  
+      const capabilities = track.getCapabilities();
+      if ('zoom' in capabilities) {
+        const constraints = {
+          advanced: [{ zoom: zoomLevel }],
+        };
+        await track.applyConstraints(constraints);
+      } else {
+        console.warn('Zoom capability is not supported by this device.');
+      }
+    } catch (error) {
+      console.error('Failed to apply zoom:', error);
     }
   };
 
-  const changeZoom = (level) => {
-    setZoomLevel(level);
-  };
+  useEffect(() => {
+    applyZoom();
+  }, [zoomLevel]);
+
+ const changeZoom = async (level) => {
+  const videoElement = scannerRef.current;
+  const stream = videoElement.srcObject;
+  const [track] = stream.getVideoTracks();
+  
+  const capabilities = track.getCapabilities();
+  if ('zoom' in capabilities) {
+    const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max);
+    setZoomLevel(newZoomLevel);
+  } else {
+    console.warn('Zoom capability is not supported by this device.');
+  }
+};
 
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);

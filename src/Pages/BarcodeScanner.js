@@ -249,7 +249,7 @@ const BarcodeScanner = () => {
       setDialogMessage(null);
       setScannedProduct(null); // Clear scanned product
       setSelectedCustomer(''); // Reset customer selection
-      setQuantity(1); // Reset quantity
+      setQuantity(0); // Reset quantity
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to the database.");

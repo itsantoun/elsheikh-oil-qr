@@ -210,8 +210,8 @@ const BarcodeScanner = () => {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1); // Zoom level state
   const scannerRef = React.useRef(null);
+  const [zoomLevel, setZoomLevel] = useState(1); // State to hold zoom level
 
   const { user } = useContext(UserContext);
 
@@ -272,8 +272,30 @@ const BarcodeScanner = () => {
       })
       .catch((err) => console.error("Camera initialization failed:", err));
 
-    return () => codeReader.reset();
-  }, [user]);
+    // Get user media and apply zoom setting
+    const setCameraZoom = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const videoTrack = stream.getVideoTracks()[0];
+      const capabilities = videoTrack.getCapabilities();
+      if (capabilities.zoom) {
+        videoTrack.applyConstraints({
+          advanced: [{ zoom: zoomLevel }],
+        });
+      }
+    };
+
+    setCameraZoom();
+
+    return () => {
+      codeReader.reset();
+      // Stop the video stream when the component is unmounted
+      const stream = scannerRef.current?.srcObject;
+      if (stream) {
+        const tracks = stream.getTracks();
+        tracks.forEach(track => track.stop());
+      }
+    };
+  }, [user, zoomLevel]); // Dependency array includes zoomLevel to apply changes
 
   const fetchProductDetails = async (barcode) => {
     try {
@@ -341,14 +363,7 @@ const BarcodeScanner = () => {
         </button>
       </div>
       <div className="scanner-container">
-        <video
-          ref={scannerRef}
-          className="scanner"
-          style={{
-            transform: `scale(${zoomLevel})`, // Apply zoom to the video element
-            transformOrigin: 'center',
-          }}
-        ></video>
+        <video ref={scannerRef} className="scanner"></video>
         <p className="status">{scanStatus}</p>
         {successMessage && <div className="success-message">{successMessage}</div>}
         {loading && <div className="loading-message">Loading customers...</div>}
@@ -387,18 +402,9 @@ const BarcodeScanner = () => {
             </div>
           </div>
         )}
-        {/* Zoom Slider */}
-        <div className="zoom-container">
-          <label htmlFor="zoom">Zoom:</label>
-          <input
-            id="zoom"
-            type="range"
-            min="1"
-            max="3"
-            step="0.1"
-            value={zoomLevel}
-            onChange={(e) => setZoomLevel(Number(e.target.value))}
-          />
+        <div className="zoom-controls">
+          <button onClick={() => setZoomLevel(prev => Math.min(prev + 1, 3))}>Zoom In</button>
+          <button onClick={() => setZoomLevel(prev => Math.max(prev - 1, 1))}>Zoom Out</button>
         </div>
       </div>
     </div>

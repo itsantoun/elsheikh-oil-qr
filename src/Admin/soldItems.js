@@ -45,7 +45,7 @@ const SoldItems = () => {
   useEffect(() => {
     const fetchCustomerData = async () => {
       try {
-        const customersRef = ref(database, 'Customers');
+        const customersRef = ref(database, 'customers');
         const snapshot = await get(customersRef);
         if (snapshot.exists()) {
           const data = snapshot.val();

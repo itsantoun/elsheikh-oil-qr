@@ -114,7 +114,7 @@ const SoldItems = () => {
     // Prepare data for export in the correct order
     const exportData = filteredItems.map((item) => ({
       Date: new Date(item.dateScanned).toLocaleString(),
-      Customer: customerData[item.customerId]?.name || 'N/A', // Use customer name instead of ID
+      Customer: customerData[item.customerId]?.customerName || 'N/A', // Use customerName instead of name
       ProductType: item.category || 'N/A',
       QuantitySold: item.quantity || 0,
       Price: `$${item.price?.toFixed(2) || '0.00'}`,
@@ -201,7 +201,7 @@ const SoldItems = () => {
               {filteredItems.map((item) => (
                 <tr key={item.id}>
                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
-                  <td>{customerData[item.customerId]?.name || 'N/A'}</td> {/* Display customer name */}
+                  <td>{customerData[item.customerId]?.customerName || 'N/A'}</td>
                   <td>{item.category || 'N/A'}</td>
                   <td>{item.quantity || 0}</td>
                   <td>

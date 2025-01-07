@@ -1,203 +1,10 @@
-// import React, { useState, useEffect, useContext } from 'react';
-// import { BrowserMultiFormatReader } from '@zxing/library';
-// import { database } from '../Auth/firebase';
-// import { ref, get, child, push } from "firebase/database";
-// import { UserContext } from '../Auth/userContext';
-// import '../CSS/BarcodeScanner.css';
-
-// const BarcodeScanner = () => {
-//   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
-//   const [isPopupOpen, setIsPopupOpen] = useState(false);
-//   const [dialogMessage, setDialogMessage] = useState(null);
-//   const [successMessage, setSuccessMessage] = useState(null);
-//   const [scannedProduct, setScannedProduct] = useState(null);
-//   const [userName, setUserName] = useState(null);
-//   const [customers, setCustomers] = useState([]);
-//   const [selectedCustomer, setSelectedCustomer] = useState('');
-//   const [quantity, setQuantity] = useState(1);
-//   const [loading, setLoading] = useState(false);
-//   const scannerRef = React.useRef(null);
-
-//   const { user } = useContext(UserContext);
-
-//   useEffect(() => {
-//     const fetchUserName = async () => {
-//       if (user?.uid) {
-//         try {
-//           const userRef = ref(database, `users/${user.uid}`);
-//           const snapshot = await get(userRef);
-//           if (snapshot.exists()) {
-//             setUserName(snapshot.val().name);
-//           } else {
-//             console.warn("User not found.");
-//           }
-//         } catch (error) {
-//           console.error("Error fetching user:", error);
-//         }
-//       }
-//     };
-
-//     const fetchCustomers = async () => {
-//       setLoading(true);
-//       try {
-//         const customersRef = ref(database, 'customers');
-//         const snapshot = await get(customersRef);
-//         if (snapshot.exists()) {
-//           const data = snapshot.val();
-//           setCustomers(
-//             Object.entries(data).map(([key, value]) => ({
-//               id: key,
-//               name: value.name || 'Unknown Customer',
-//             }))
-//           );
-//         } else {
-//           setCustomers([]);
-//         }
-//       } catch (error) {
-//         console.error("Error fetching customers:", error);
-//       } finally {
-//         setLoading(false);
-//       }
-//     };
-
-//     fetchUserName();
-//     fetchCustomers();
-
-//     const codeReader = new BrowserMultiFormatReader();
-//     const videoElement = scannerRef.current;
-
-//     codeReader
-//       .decodeFromVideoDevice(null, videoElement, (result, error) => {
-//         if (result) {
-//           setScanStatus('Barcode detected! Processing...');
-//           fetchProductDetails(result.text);
-//         } else if (error) {
-//           setScanStatus('Align the barcode and hold steady.');
-//         }
-//       })
-//       .catch((err) => console.error("Camera initialization failed:", err));
-
-//     return () => codeReader.reset();
-//   }, [user]);
-
-//   const fetchProductDetails = async (barcode) => {
-//     try {
-//       const snapshot = await get(child(ref(database), `products/${barcode}`));
-//       if (snapshot.exists()) {
-//         const product = snapshot.val();
-//         setScannedProduct({ barcode, ...product });
-//         setDialogMessage(`Product found: ${product.name}. Do you want to add it?`);
-//         setIsPopupOpen(true);
-//       } else {
-//         setDialogMessage("Product not found.");
-//         setIsPopupOpen(false);
-//       }
-//     } catch (error) {
-//       console.error("Error fetching product details:", error);
-//       setDialogMessage("Error retrieving product information.");
-//       setIsPopupOpen(false);
-//     }
-//   };
-
-//   const saveScannedItem = async () => {
-//     if (!scannedProduct || !selectedCustomer || quantity <= 0) {
-//       setDialogMessage("Error: Missing required information.");
-//       return;
-//     }
-
-//     try {
-//       const soldItemsRef = ref(database, 'SoldItems');
-//       await push(soldItemsRef, {
-//         barcode: scannedProduct.barcode,
-//         name: scannedProduct.name,
-//         category: scannedProduct.category || 'Unknown',
-//         price: scannedProduct.price || 0,
-//         dateScanned: new Date().toISOString(),
-//         scannedBy: userName || 'Unknown',
-//         customerId: selectedCustomer,
-//         quantity,
-//       });
-//       setSuccessMessage(`Item "${scannedProduct.name}" added successfully!`);
-//       setTimeout(() => setSuccessMessage(null), 3000);
-//       resetPopup();
-//     } catch (error) {
-//       console.error("Error saving item:", error);
-//       setDialogMessage("Failed to save the item.");
-//     }
-//   };
-
-//   const resetPopup = () => {
-//     setIsPopupOpen(false);
-//     setDialogMessage(null);
-//     setScannedProduct(null);
-//     setSelectedCustomer('');
-//     setQuantity(1);
-//   };
-
-//   const handleLogout = () => {
-//     window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/';
-//   };
-
-//   return (
-//     <div className="container">
-//       <div className="header">
-//         <button className="logout-button" onClick={handleLogout}>
-//           Logout
-//         </button>
-//       </div>
-//       <div className="scanner-container">
-//         <video ref={scannerRef} className="scanner"></video>
-//         <p className="status">{scanStatus}</p>
-//         {successMessage && <div className="success-message">{successMessage}</div>}
-//         {loading && <div className="loading-message">Loading customers...</div>}
-//         {isPopupOpen && (
-//           <div className="popup-overlay">
-//             <div className="popup">
-//               <h3 className="popup-title">Product Found</h3>
-//               <p className="popup-text">{dialogMessage}</p>
-//               <label htmlFor="customer">Select Customer:</label>
-//               <select
-//                 id="customer"
-//                 value={selectedCustomer}
-//                 onChange={(e) => setSelectedCustomer(e.target.value)}
-//               >
-//                 <option value="">--Select Customer--</option>
-//                 {customers.map((customer) => (
-//                   <option key={customer.id} value={customer.id}>
-//                     {customer.name}
-//                   </option>
-//                 ))}
-//               </select>
-//               <label htmlFor="quantity">Quantity:</label>
-//               <input
-//                 type="number"
-//                 id="quantity"
-//                 value={quantity}
-//                 onChange={(e) => setQuantity(Math.max(1, e.target.value))}
-//                 min="1"
-//               />
-//               <button className="popup-button" onClick={saveScannedItem}>
-//                 Yes, Add
-//               </button>
-//               <button className="popup-button cancel" onClick={resetPopup}>
-//                 Cancel
-//               </button>
-//             </div>
-//           </div>
-//         )}
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default BarcodeScanner;
 
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
 import { ref, get, child, push } from "firebase/database";
-import { UserContext } from '../Auth/userContext';
-import '../CSS/BarcodeScanner.css';
+import { UserContext } from '../Auth/userContext'; // Import UserContext
+import '../CSS/BarcodeScanner.css'; // Import the CSS file
 
 const BarcodeScanner = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
@@ -205,54 +12,55 @@ const BarcodeScanner = () => {
   const [dialogMessage, setDialogMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null);
-  const [userName, setUserName] = useState(null);
-  const [customers, setCustomers] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState('');
-  const [quantity, setQuantity] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [userName, setUserName] = useState(null); // State for storing user's name
+  const [customers, setCustomers] = useState([]); // State for storing customers
+  const [selectedCustomer, setSelectedCustomer] = useState(''); // State for selected customer
+  const [quantity, setQuantity] = useState(1); // State for quantity input
+  const [loading, setLoading] = useState(false); // Loading state
   const scannerRef = React.useRef(null);
-  const [zoomLevel, setZoomLevel] = useState(1); // State to hold zoom level
 
-  const { user } = useContext(UserContext);
+  const { user } = useContext(UserContext); // Access the logged-in user's info
 
   useEffect(() => {
     const fetchUserName = async () => {
       if (user?.uid) {
+        const userRef = ref(database, `users/${user.uid}`);
         try {
-          const userRef = ref(database, `users/${user.uid}`);
           const snapshot = await get(userRef);
           if (snapshot.exists()) {
-            setUserName(snapshot.val().name);
+            const userData = snapshot.val();
+            setUserName(userData.name); // Fetch and store the user's name
           } else {
-            console.warn("User not found.");
+            console.error("User not found in the database.");
           }
         } catch (error) {
-          console.error("Error fetching user:", error);
+          console.error("Error fetching user's name:", error);
         }
       }
     };
 
     const fetchCustomers = async () => {
       setLoading(true);
+      const customersRef = ref(database, 'customers');
       try {
-        const customersRef = ref(database, 'customers');
         const snapshot = await get(customersRef);
         if (snapshot.exists()) {
-          const data = snapshot.val();
+          const customersData = snapshot.val();
+          console.log("Fetched customers data:", customersData); // Log the fetched data
           setCustomers(
-            Object.entries(data).map(([key, value]) => ({
+            Object.entries(customersData).map(([key, value]) => ({
               id: key,
-              name: value.name || 'Unknown Customer',
+              name: value.name || 'Unknown Customer', // Ensure a name field exists
             }))
           );
         } else {
+          console.log("No customers data found.");
           setCustomers([]);
         }
       } catch (error) {
         console.error("Error fetching customers:", error);
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     };
 
     fetchUserName();
@@ -264,42 +72,24 @@ const BarcodeScanner = () => {
     codeReader
       .decodeFromVideoDevice(null, videoElement, (result, error) => {
         if (result) {
+          console.log(`Scanned Code: ${result.text}`);
           setScanStatus('Barcode detected! Processing...');
           fetchProductDetails(result.text);
         } else if (error) {
           setScanStatus('Align the barcode and hold steady.');
         }
       })
-      .catch((err) => console.error("Camera initialization failed:", err));
-
-    // Get user media and apply zoom setting
-    const setCameraZoom = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const videoTrack = stream.getVideoTracks()[0];
-      const capabilities = videoTrack.getCapabilities();
-      if (capabilities.zoom) {
-        videoTrack.applyConstraints({
-          advanced: [{ zoom: zoomLevel }],
-        });
-      }
-    };
-
-    setCameraZoom();
+      .catch((err) => console.error('Camera initialization failed: refresh/try again later', err));
 
     return () => {
       codeReader.reset();
-      // Stop the video stream when the component is unmounted
-      const stream = scannerRef.current?.srcObject;
-      if (stream) {
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-      }
     };
-  }, [user, zoomLevel]); // Dependency array includes zoomLevel to apply changes
+  }, [user]);
 
   const fetchProductDetails = async (barcode) => {
+    const dbRef = ref(database);
     try {
-      const snapshot = await get(child(ref(database), `products/${barcode}`));
+      const snapshot = await get(child(dbRef, `products/${barcode}`));
       if (snapshot.exists()) {
         const product = snapshot.val();
         setScannedProduct({ barcode, ...product });
@@ -310,57 +100,54 @@ const BarcodeScanner = () => {
         setIsPopupOpen(false);
       }
     } catch (error) {
-      console.error("Error fetching product details:", error);
       setDialogMessage("Error retrieving product information.");
       setIsPopupOpen(false);
     }
   };
 
   const saveScannedItem = async () => {
-    if (!scannedProduct || !selectedCustomer || quantity <= 0) {
-      setDialogMessage("Error: Missing required information.");
+    if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
+      setDialogMessage("Error: Missing information.");
       return;
     }
 
+    const soldItemsRef = ref(database, 'SoldItems');
+    const currentDate = new Date().toISOString(); // Get current timestamp
+
+    const newItem = {
+      barcode: scannedProduct.barcode,
+      name: scannedProduct.name,
+      category: scannedProduct.category || 'Unknown',
+      price: scannedProduct.price || 0,
+      dateScanned: currentDate,
+      scannedBy: userName || 'Unknown', // Save the logged-in user's name
+      customerId: selectedCustomer,
+      quantity: quantity,
+    };
+
     try {
-      const soldItemsRef = ref(database, 'SoldItems');
-      await push(soldItemsRef, {
-        barcode: scannedProduct.barcode,
-        name: scannedProduct.name,
-        category: scannedProduct.category || 'Unknown',
-        price: scannedProduct.price || 0,
-        dateScanned: new Date().toISOString(),
-        scannedBy: userName || 'Unknown',
-        customerId: selectedCustomer,
-        quantity,
-      });
+      await push(soldItemsRef, newItem); // Push new item to SoldItems
       setSuccessMessage(`Item "${scannedProduct.name}" added successfully!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      resetPopup();
+      setTimeout(() => setSuccessMessage(null), 3000); // Clear success message
+      setIsPopupOpen(false); // Close popup
+      setDialogMessage(null);
+      setScannedProduct(null); // Clear scanned product
+      setSelectedCustomer(''); // Reset customer selection
+      setQuantity(1); // Reset quantity
     } catch (error) {
-      console.error("Error saving item:", error);
-      setDialogMessage("Failed to save the item.");
+      console.error("Error saving scanned item:", error);
+      setDialogMessage("Error saving item to the database.");
     }
   };
 
-  const resetPopup = () => {
-    setIsPopupOpen(false);
-    setDialogMessage(null);
-    setScannedProduct(null);
-    setSelectedCustomer('');
-    setQuantity(1);
-  };
-
   const handleLogout = () => {
-    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/';
+    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/'; // Redirect to login page
   };
 
   return (
     <div className="container">
       <div className="header">
-        <button className="logout-button" onClick={handleLogout}>
-          Logout
-        </button>
+        <button className="logout-button" onClick={handleLogout}>Logout</button>
       </div>
       <div className="scanner-container">
         <video ref={scannerRef} className="scanner"></video>
@@ -372,40 +159,37 @@ const BarcodeScanner = () => {
             <div className="popup">
               <h3 className="popup-title">Product Found</h3>
               <p className="popup-text">{dialogMessage}</p>
-              <label htmlFor="customer">Select Customer:</label>
-              <select
-                id="customer"
-                value={selectedCustomer}
-                onChange={(e) => setSelectedCustomer(e.target.value)}
-              >
-                <option value="">--Select Customer--</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="quantity">Quantity:</label>
-              <input
-                type="number"
-                id="quantity"
-                value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, e.target.value))}
-                min="1"
-              />
-              <button className="popup-button" onClick={saveScannedItem}>
-                Yes, Add
-              </button>
-              <button className="popup-button cancel" onClick={resetPopup}>
-                Cancel
-              </button>
+              <div className="customer-select">
+                <label htmlFor="customer">Select Customer:</label>
+                <select
+                  id="customer"
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                >
+                  <option value="">--Select Customer--</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="quantity-input">
+                <label htmlFor="quantity">Quantity:</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  onBlur={(e) => setQuantity(Math.max(1, e.target.value))}
+                  min="1"
+                />
+              </div>
+              <button className="popup-button" onClick={saveScannedItem}>Yes, Add</button>
+              <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>Cancel</button>
             </div>
           </div>
         )}
-        <div className="zoom-controls">
-          <button onClick={() => setZoomLevel(prev => Math.min(prev + 1, 3))}>Zoom In</button>
-          <button onClick={() => setZoomLevel(prev => Math.max(prev - 1, 1))}>Zoom Out</button>
-        </div>
       </div>
     </div>
   );

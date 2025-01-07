@@ -1,7 +1,8 @@
-// import React, { useState, useEffect } from 'react';
+// import React, { useState, useEffect, useContext } from 'react';
 // import { BrowserMultiFormatReader } from '@zxing/library';
 // import { database } from '../Auth/firebase';
 // import { ref, get, child, push } from "firebase/database";
+// import { UserContext } from '../Auth/userContext'; // Import UserContext
 // import '../CSS/BarcodeScanner.css'; // Import the CSS file
 
 // const BarcodeScanner = () => {
@@ -12,10 +13,12 @@
 //   const [scannedProduct, setScannedProduct] = useState(null);
 //   const scannerRef = React.useRef(null);
 
+//   const { user } = useContext(UserContext); // Access the logged-in user's email
+
 //   useEffect(() => {
 //     const codeReader = new BrowserMultiFormatReader();
 //     const videoElement = scannerRef.current;
- 
+
 //     codeReader
 //       .decodeFromVideoDevice(null, videoElement, (result, error) => {
 //         if (result) {
@@ -26,7 +29,7 @@
 //           setScanStatus('Align the barcode and hold steady.');
 //         }
 //       })
-//       .catch((err) => console.error('Camera initialization failed:', err));
+//       .catch((err) => console.error('Camera initialization failed: refresh/try again later', err));
 
 //     return () => {
 //       codeReader.reset();
@@ -69,6 +72,7 @@
 //         category: product.category || 'Unknown',
 //         price: product.price || 0,
 //         dateScanned: currentDate,
+//         scannedBy: user?.email || 'Unknown', // Save the logged-in user's email
 //       };
 
 //       await push(soldItemsRef, newItem); // Push new item to SoldItems
@@ -84,7 +88,7 @@
 //   };
 
 //   const handleLogout = () => {
-//     window.location.href = '/'; // Redirect to login page
+//     window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/'; // Redirect to login page
 //   };
 
 //   return (
@@ -123,7 +127,6 @@
 
 // export default BarcodeScanner;
 
-
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
@@ -137,11 +140,48 @@ const BarcodeScanner = () => {
   const [dialogMessage, setDialogMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null);
+  const [userName, setUserName] = useState(null); // State for storing user's name
+  const [customers, setCustomers] = useState([]); // State for storing customers
+  const [selectedCustomer, setSelectedCustomer] = useState(''); // State for selected customer
+  const [quantity, setQuantity] = useState(1); // State for quantity input
   const scannerRef = React.useRef(null);
 
-  const { user } = useContext(UserContext); // Access the logged-in user's email
+  const { user } = useContext(UserContext); // Access the logged-in user's info
 
   useEffect(() => {
+    const fetchUserName = async () => {
+      if (user?.uid) {
+        const userRef = ref(database, `users/${user.uid}`);
+        try {
+          const snapshot = await get(userRef);
+          if (snapshot.exists()) {
+            const userData = snapshot.val();
+            setUserName(userData.name); // Fetch and store the user's name
+          } else {
+            console.error("User not found in the database.");
+          }
+        } catch (error) {
+          console.error("Error fetching user's name:", error);
+        }
+      }
+    };
+
+    const fetchCustomers = async () => {
+      const customersRef = ref(database, 'customers');
+      try {
+        const snapshot = await get(customersRef);
+        if (snapshot.exists()) {
+          const customersData = snapshot.val();
+          setCustomers(Object.entries(customersData).map(([key, value]) => ({ id: key, name: value.name })));
+        }
+      } catch (error) {
+        console.error("Error fetching customers:", error);
+      }
+    };
+
+    fetchUserName();
+    fetchCustomers();
+
     const codeReader = new BrowserMultiFormatReader();
     const videoElement = scannerRef.current;
 
@@ -155,12 +195,12 @@ const BarcodeScanner = () => {
           setScanStatus('Align the barcode and hold steady.');
         }
       })
-      .catch((err) => console.error('Camera initialization failed:', err));
+      .catch((err) => console.error('Camera initialization failed: refresh/try again later', err));
 
     return () => {
       codeReader.reset();
     };
-  }, []);
+  }, [user]);
 
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
@@ -181,32 +221,35 @@ const BarcodeScanner = () => {
     }
   };
 
-  const saveScannedItem = async (product) => {
-    if (!product || !product.barcode) {
-      console.error("Invalid product data:", product);
-      setDialogMessage("Error: Invalid product data.");
+  const saveScannedItem = async () => {
+    if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
+      setDialogMessage("Error: Missing information.");
       return;
     }
 
     const soldItemsRef = ref(database, 'SoldItems');
+    const currentDate = new Date().toISOString(); // Get current timestamp
+
+    const newItem = {
+      barcode: scannedProduct.barcode,
+      name: scannedProduct.name,
+      category: scannedProduct.category || 'Unknown',
+      price: scannedProduct.price || 0,
+      dateScanned: currentDate,
+      scannedBy: userName || 'Unknown', // Save the logged-in user's name
+      customerId: selectedCustomer,
+      quantity: quantity,
+    };
 
     try {
-      const currentDate = new Date().toISOString(); // Get current timestamp
-      const newItem = {
-        barcode: product.barcode,
-        name: product.name,
-        category: product.category || 'Unknown',
-        price: product.price || 0,
-        dateScanned: currentDate,
-        scannedBy: user?.email || 'Unknown', // Save the logged-in user's email
-      };
-
       await push(soldItemsRef, newItem); // Push new item to SoldItems
-      setSuccessMessage(`Item "${product.name}" added successfully!`);
+      setSuccessMessage(`Item "${scannedProduct.name}" added successfully!`);
       setTimeout(() => setSuccessMessage(null), 3000); // Clear success message
       setIsPopupOpen(false); // Close popup
       setDialogMessage(null);
       setScannedProduct(null); // Clear scanned product
+      setSelectedCustomer(''); // Reset customer selection
+      setQuantity(1); // Reset quantity
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to the database.");
@@ -231,9 +274,39 @@ const BarcodeScanner = () => {
             <div className="popup">
               <h3 className="popup-title">Product Found</h3>
               <p className="popup-text">{dialogMessage}</p>
+
+              {/* Dropdown for selecting customer */}
+              <div className="customer-select">
+                <label htmlFor="customer">Select Customer:</label>
+                <select
+                  id="customer"
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                >
+                  <option value="">--Select Customer--</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quantity input */}
+              <div className="quantity-input">
+                <label htmlFor="quantity">Quantity:</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, e.target.value))}
+                  min="1"
+                />
+              </div>
+
               <button
                 className="popup-button"
-                onClick={() => saveScannedItem(scannedProduct)}
+                onClick={saveScannedItem}
               >
                 Yes, Add
               </button>

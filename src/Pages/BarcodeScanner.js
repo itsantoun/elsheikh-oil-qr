@@ -296,12 +296,13 @@ const BarcodeScanner = () => {
               <div className="quantity-input">
                 <label htmlFor="quantity">Quantity:</label>
                 <input
-                  type="number"
-                  id="quantity"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, e.target.value))}
-                  min="1"
-                />
+  type="number"
+  id="quantity"
+  value={quantity}
+  onChange={(e) => setQuantity(e.target.value)} // Allow the user to type freely
+  onBlur={(e) => setQuantity(Math.max(1, e.target.value))} // Ensure the minimum value is enforced when the input loses focus
+  min="1"
+/>
               </div>
 
               <button

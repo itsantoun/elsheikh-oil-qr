@@ -375,13 +375,15 @@ const BarcodeScanner = () => {
         if (snapshot.exists()) {
           const customersData = snapshot.val();
           console.log("Fetched customers data:", customersData); // Log the fetched data
-          setCustomers(Object.entries(customersData).map(([key, value]) => ({
-            id: key,
-            name: value.name || 'Unknown Customer' // Ensure a name field exists, or fallback to 'Unknown'
-          })));
+          setCustomers(
+            Object.entries(customersData).map(([key, value]) => ({
+              id: key,
+              name: value.name || 'Unknown Customer', // Ensure a name field exists
+            }))
+          );
         } else {
           console.log("No customers data found.");
-          setCustomers([]); // Ensure the customers state is set to an empty array if no data exists
+          setCustomers([]);
         }
       } catch (error) {
         console.error("Error fetching customers:", error);
@@ -459,7 +461,7 @@ const BarcodeScanner = () => {
       setDialogMessage(null);
       setScannedProduct(null); // Clear scanned product
       setSelectedCustomer(''); // Reset customer selection
-      setQuantity(0); // Reset quantity
+      setQuantity(1); // Reset quantity
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to the database.");
@@ -485,8 +487,6 @@ const BarcodeScanner = () => {
             <div className="popup">
               <h3 className="popup-title">Product Found</h3>
               <p className="popup-text">{dialogMessage}</p>
-
-              {/* Dropdown for selecting customer */}
               <div className="customer-select">
                 <label htmlFor="customer">Select Customer:</label>
                 <select
@@ -502,32 +502,19 @@ const BarcodeScanner = () => {
                   ))}
                 </select>
               </div>
-
-              {/* Quantity input */}
               <div className="quantity-input">
                 <label htmlFor="quantity">Quantity:</label>
                 <input
                   type="number"
                   id="quantity"
                   value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)} // Allow the user to type freely
-                  onBlur={(e) => setQuantity(Math.max(1, e.target.value))} // Ensure the minimum value is enforced when the input loses focus
+                  onChange={(e) => setQuantity(e.target.value)}
+                  onBlur={(e) => setQuantity(Math.max(1, e.target.value))}
                   min="1"
                 />
               </div>
-
-              <button
-                className="popup-button"
-                onClick={saveScannedItem}
-              >
-                Yes, Add
-              </button>
-              <button
-                className="popup-button cancel"
-                onClick={() => setIsPopupOpen(false)}
-              >
-                Cancel
-              </button>
+              <button className="popup-button" onClick={saveScannedItem}>Yes, Add</button>
+              <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>Cancel</button>
             </div>
           </div>
         )}

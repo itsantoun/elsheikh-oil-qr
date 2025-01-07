@@ -147,15 +147,56 @@ const BarcodeScanner = () => {
     }
   };
 
+  // const saveScannedItem = async () => {
+  //   if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
+  //     setDialogMessage("Error: Missing information.");
+  //     return;
+  //   }
+
+  //   const soldItemsRef = ref(database, 'SoldItems');
+  //   const currentDate = new Date().toISOString();
+
+  //   const newItem = {
+  //     barcode: scannedProduct.barcode,
+  //     name: scannedProduct.name,
+  //     category: scannedProduct.category || 'Unknown',
+  //     price: scannedProduct.price || 0,
+  //     dateScanned: currentDate,
+  //     scannedBy: userName || 'Unknown',
+  //     customerId: selectedCustomer,
+  //     quantity: quantity,
+  //   };
+
+  //   try {
+  //     await push(soldItemsRef, newItem);
+  //     setSuccessMessage(`Item "${scannedProduct.name}" added successfully!`);
+  //     setTimeout(() => setSuccessMessage(null), 3000);
+  //     setIsPopupOpen(false);
+  //     setDialogMessage(null);
+  //     setScannedProduct(null);
+  //     setSelectedCustomer('');
+  //     setQuantity(1);
+  //   } catch (error) {
+  //     console.error("Error saving scanned item:", error);
+  //     setDialogMessage("Error saving item to the database.");
+  //   }
+  // };
   const saveScannedItem = async () => {
     if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
       setDialogMessage("Error: Missing information.");
       return;
     }
-
+  
+    // Find the customer by ID to get the name
+    const customer = customers.find(c => c.id === selectedCustomer);
+    if (!customer) {
+      setDialogMessage("Error: Customer not found.");
+      return;
+    }
+  
     const soldItemsRef = ref(database, 'SoldItems');
     const currentDate = new Date().toISOString();
-
+  
     const newItem = {
       barcode: scannedProduct.barcode,
       name: scannedProduct.name,
@@ -163,10 +204,10 @@ const BarcodeScanner = () => {
       price: scannedProduct.price || 0,
       dateScanned: currentDate,
       scannedBy: userName || 'Unknown',
-      customerId: selectedCustomer,
+      customerName: customer.name,  // Store the customer name instead of the ID
       quantity: quantity,
     };
-
+  
     try {
       await push(soldItemsRef, newItem);
       setSuccessMessage(`Item "${scannedProduct.name}" added successfully!`);

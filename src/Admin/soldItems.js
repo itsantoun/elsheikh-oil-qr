@@ -1,4 +1,4 @@
-// import React, { useState, useEffect, useContext } from 'react';
+// import React, { useState, useEffect, useContext, useMemo } from 'react';
 // import { database } from '../Auth/firebase';
 // import { ref, get, remove } from 'firebase/database';
 // import { writeFile, utils } from 'xlsx'; // Import xlsx functions
@@ -12,6 +12,7 @@
 //   const [filterType, setFilterType] = useState('all'); // all, day, month
 //   const [filterValue, setFilterValue] = useState('');
 //   const [availableMonths, setAvailableMonths] = useState([]); // For dynamic month selection
+//   const [customerData, setCustomerData] = useState({}); // Store customer data by ID
 //   const [errorMessage, setErrorMessage] = useState(null);
 
 //   // Fetch Sold Items
@@ -27,19 +28,8 @@
 //             ...data[key],
 //           }));
 //           setSoldItems(soldItemList);
-//           setFilteredItems(soldItemList);
-
-//           // Generate a list of months from the data
-//           const months = [...new Set(
-//             soldItemList.map((item) => {
-//               const date = new Date(item.dateScanned);
-//               return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-//             })
-//           )];
-//           setAvailableMonths(months);
 //         } else {
 //           setSoldItems([]);
-//           setFilteredItems([]);
 //         }
 //       } catch (error) {
 //         console.error('Error fetching sold items:', error);
@@ -50,6 +40,49 @@
 
 //     fetchSoldItems();
 //   }, []);
+
+//   // Fetch Customer Data (Assumed to be stored in 'Customers' reference)
+//   useEffect(() => {
+//     const fetchCustomerData = async () => {
+//       try {
+//         const customersRef = ref(database, 'Customers');
+//         const snapshot = await get(customersRef);
+//         if (snapshot.exists()) {
+//           const data = snapshot.val();
+//           setCustomerData(data);
+//         } else {
+//           setCustomerData({});
+//         }
+//       } catch (error) {
+//         console.error('Error fetching customer data:', error);
+//       }
+//     };
+
+//     fetchCustomerData();
+//   }, []);
+
+//   // Memoized filteredItems to prevent recalculating on every render
+//   const filteredItemsMemo = useMemo(() => {
+//     if (filterType === 'all') {
+//       return soldItems;
+//     } else if (filterType === 'day') {
+//       return soldItems.filter((item) =>
+//         new Date(item.dateScanned).toISOString().split('T')[0] === filterValue
+//       );
+//     } else if (filterType === 'month') {
+//       return soldItems.filter(
+//         (item) =>
+//           new Date(item.dateScanned).getFullYear() === parseInt(filterValue.split('-')[0]) &&
+//           new Date(item.dateScanned).getMonth() + 1 === parseInt(filterValue.split('-')[1])
+//       );
+//     }
+//     return [];
+//   }, [soldItems, filterType, filterValue]);
+
+//   // Set filteredItems when filter is applied
+//   const handleFilter = () => {
+//     setFilteredItems(filteredItemsMemo);
+//   };
 
 //   // Handle Delete Item
 //   const handleDeleteItem = async (id) => {
@@ -70,27 +103,6 @@
 //     }
 //   };
 
-//   // Filter Items
-//   const handleFilter = () => {
-//     if (filterType === 'all') {
-//       setFilteredItems(soldItems);
-//     } else if (filterType === 'day') {
-//       setFilteredItems(
-//         soldItems.filter((item) =>
-//           new Date(item.dateScanned).toISOString().split('T')[0] === filterValue
-//         )
-//       );
-//     } else if (filterType === 'month') {
-//       setFilteredItems(
-//         soldItems.filter(
-//           (item) =>
-//             new Date(item.dateScanned).getFullYear() === parseInt(filterValue.split('-')[0]) &&
-//             new Date(item.dateScanned).getMonth() + 1 === parseInt(filterValue.split('-')[1])
-//         )
-//       );
-//     }
-//   };
-
 //   // Export to Excel
 //   const handleExportToExcel = () => {
 //     if (filteredItems.length === 0) {
@@ -99,8 +111,18 @@
 //       return;
 //     }
 
-//     // Prepare data for export
-//     const worksheet = utils.json_to_sheet(filteredItems);
+//     // Prepare data for export in the correct order
+//     const exportData = filteredItems.map((item) => ({
+//       Date: new Date(item.dateScanned).toLocaleString(),
+//       Customer: customerData[item.customerId]?.name || 'N/A', // Use customer name instead of ID
+//       ProductType: item.category || 'N/A',
+//       QuantitySold: item.quantity || 0,
+//       Price: `$${item.price?.toFixed(2) || '0.00'}`,
+//       ItemCost: `$${item.cost?.toFixed(2) || '0.00'}`,
+//       Employee: item.scannedBy || 'N/A',
+//     }));
+
+//     const worksheet = utils.json_to_sheet(exportData);
 //     const workbook = utils.book_new();
 //     utils.book_append_sheet(workbook, worksheet, 'Sold Items');
 
@@ -137,11 +159,14 @@
 //             className="filter-input"
 //           >
 //             <option value="">Select Month</option>
-//             {availableMonths.map((month) => (
-//               <option key={month} value={month}>
-//                 {month}
-//               </option>
-//             ))}
+//             {soldItems
+//               .map((item) => new Date(item.dateScanned).toISOString().split('T')[0].slice(0, 7)) // Get year-month
+//               .filter((value, index, self) => self.indexOf(value) === index) // Unique months
+//               .map((month) => (
+//                 <option key={month} value={month}>
+//                   {month}
+//                 </option>
+//               ))}
 //           </select>
 //         )}
 //         <button onClick={handleFilter} className="filter-button">Apply Filter</button>
@@ -162,28 +187,34 @@
 //           <table className="sold-items-table">
 //             <thead>
 //               <tr>
-//                 <th>ID</th>
-//                 <th>Name</th>
-//                 <th>Category</th>
+//                 <th>Date</th>
+//                 <th>Customer</th>
+//                 <th>Product Type</th>
+//                 <th>Quantity Sold</th>
 //                 <th>Price</th>
-//                 <th>Date Scanned</th>
-//                 <th>Scanned By</th>
+//                 <th>Item Cost</th>
+//                 <th>Employee</th>
 //                 <th>Actions</th>
 //               </tr>
 //             </thead>
 //             <tbody>
 //               {filteredItems.map((item) => (
 //                 <tr key={item.id}>
-//                   <td>{item.id}</td>
-//                   <td>{item.name || 'N/A'}</td>
+//                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
+//                   <td>{customerData[item.customerId]?.name || 'N/A'}</td> {/* Display customer name */}
 //                   <td>{item.category || 'N/A'}</td>
+//                   <td>{item.quantity || 0}</td>
 //                   <td>
 //                     {typeof item.price === 'number'
 //                       ? `$${item.price.toFixed(2)}`
 //                       : 'N/A'}
 //                   </td>
-//                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
-//                   <td>{item.scannedBy || 'Not Available'}</td>
+//                   <td>
+//                     {typeof item.cost === 'number'
+//                       ? `$${item.cost.toFixed(2)}`
+//                       : 'N/A'}
+//                   </td>
+//                   <td>{item.scannedBy || 'N/A'}</td>
 //                   <td>
 //                     <button
 //                       onClick={() => handleDeleteItem(item.id)}
@@ -204,7 +235,7 @@
 
 // export default SoldItems;
 
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, remove } from 'firebase/database';
 import { writeFile, utils } from 'xlsx'; // Import xlsx functions
@@ -218,6 +249,7 @@ const SoldItems = () => {
   const [filterType, setFilterType] = useState('all'); // all, day, month
   const [filterValue, setFilterValue] = useState('');
   const [availableMonths, setAvailableMonths] = useState([]); // For dynamic month selection
+  const [customerData, setCustomerData] = useState({}); // Store customer data by ID
   const [errorMessage, setErrorMessage] = useState(null);
 
   // Fetch Sold Items
@@ -233,19 +265,8 @@ const SoldItems = () => {
             ...data[key],
           }));
           setSoldItems(soldItemList);
-          setFilteredItems(soldItemList);
-
-          // Generate a list of months from the data
-          const months = [...new Set(
-            soldItemList.map((item) => {
-              const date = new Date(item.dateScanned);
-              return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            })
-          )];
-          setAvailableMonths(months);
         } else {
           setSoldItems([]);
-          setFilteredItems([]);
         }
       } catch (error) {
         console.error('Error fetching sold items:', error);
@@ -256,6 +277,49 @@ const SoldItems = () => {
 
     fetchSoldItems();
   }, []);
+
+  // Fetch Customer Data (Assumed to be stored in 'Customers' reference)
+  useEffect(() => {
+    const fetchCustomerData = async () => {
+      try {
+        const customersRef = ref(database, 'Customers');
+        const snapshot = await get(customersRef);
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          setCustomerData(data);
+        } else {
+          setCustomerData({});
+        }
+      } catch (error) {
+        console.error('Error fetching customer data:', error);
+      }
+    };
+
+    fetchCustomerData();
+  }, []);
+
+  // Memoized filteredItems to prevent recalculating on every render
+  const filteredItemsMemo = useMemo(() => {
+    if (filterType === 'all') {
+      return soldItems;
+    } else if (filterType === 'day') {
+      return soldItems.filter((item) =>
+        new Date(item.dateScanned).toISOString().split('T')[0] === filterValue
+      );
+    } else if (filterType === 'month') {
+      return soldItems.filter(
+        (item) =>
+          new Date(item.dateScanned).getFullYear() === parseInt(filterValue.split('-')[0]) &&
+          new Date(item.dateScanned).getMonth() + 1 === parseInt(filterValue.split('-')[1])
+      );
+    }
+    return [];
+  }, [soldItems, filterType, filterValue]);
+
+  // Set filteredItems when filter is applied
+  const handleFilter = () => {
+    setFilteredItems(filteredItemsMemo);
+  };
 
   // Handle Delete Item
   const handleDeleteItem = async (id) => {
@@ -276,27 +340,6 @@ const SoldItems = () => {
     }
   };
 
-  // Filter Items
-  const handleFilter = () => {
-    if (filterType === 'all') {
-      setFilteredItems(soldItems);
-    } else if (filterType === 'day') {
-      setFilteredItems(
-        soldItems.filter((item) =>
-          new Date(item.dateScanned).toISOString().split('T')[0] === filterValue
-        )
-      );
-    } else if (filterType === 'month') {
-      setFilteredItems(
-        soldItems.filter(
-          (item) =>
-            new Date(item.dateScanned).getFullYear() === parseInt(filterValue.split('-')[0]) &&
-            new Date(item.dateScanned).getMonth() + 1 === parseInt(filterValue.split('-')[1])
-        )
-      );
-    }
-  };
-
   // Export to Excel
   const handleExportToExcel = () => {
     if (filteredItems.length === 0) {
@@ -308,7 +351,7 @@ const SoldItems = () => {
     // Prepare data for export in the correct order
     const exportData = filteredItems.map((item) => ({
       Date: new Date(item.dateScanned).toLocaleString(),
-      Customer: item.customer || 'N/A',
+      Customer: customerData[item.customerId]?.name || 'N/A', // Use customer name instead of ID
       ProductType: item.category || 'N/A',
       QuantitySold: item.quantity || 0,
       Price: `$${item.price?.toFixed(2) || '0.00'}`,
@@ -353,11 +396,14 @@ const SoldItems = () => {
             className="filter-input"
           >
             <option value="">Select Month</option>
-            {availableMonths.map((month) => (
-              <option key={month} value={month}>
-                {month}
-              </option>
-            ))}
+            {soldItems
+              .map((item) => new Date(item.dateScanned).toISOString().split('T')[0].slice(0, 7)) // Get year-month
+              .filter((value, index, self) => self.indexOf(value) === index) // Unique months
+              .map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
           </select>
         )}
         <button onClick={handleFilter} className="filter-button">Apply Filter</button>
@@ -392,7 +438,7 @@ const SoldItems = () => {
               {filteredItems.map((item) => (
                 <tr key={item.id}>
                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
-                  <td>{item.customer || 'N/A'}</td>
+                  <td>{customerData[item.customerId]?.name || 'N/A'}</td> {/* Display customer name */}
                   <td>{item.category || 'N/A'}</td>
                   <td>{item.quantity || 0}</td>
                   <td>

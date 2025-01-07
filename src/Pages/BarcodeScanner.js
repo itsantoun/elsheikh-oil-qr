@@ -16,7 +16,7 @@ const BarcodeScanner = () => {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1); // New state for zoom level
+  const [zoomLevel, setZoomLevel] = useState(1);
   const scannerRef = React.useRef(null);
 
   const { user } = useContext(UserContext);

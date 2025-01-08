@@ -235,6 +235,89 @@
 
 // export default SoldItems;
 
+// import React, { useState, useEffect, useContext } from 'react';
+// import { database } from '../Auth/firebase';
+// import { ref, get } from 'firebase/database';
+// import { UserContext } from '../Auth/userContext'; // Import the context
+// import '../CSS/soldItems.css';
+
+// const SoldItems = () => {
+//   const { user } = useContext(UserContext); // Access the logged-in user
+//   const [soldItems, setSoldItems] = useState([]);
+//   const [errorMessage, setErrorMessage] = useState(null);
+
+//   // Fetch Sold Items
+//   useEffect(() => {
+//     const fetchSoldItems = async () => {
+//       try {
+//         const soldItemsRef = ref(database, 'SoldItems');
+//         const snapshot = await get(soldItemsRef);
+//         if (snapshot.exists()) {
+//           const data = snapshot.val();
+//           const soldItemList = Object.keys(data).map((key) => ({
+//             id: key,
+//             ...data[key],
+//           }));
+//           setSoldItems(soldItemList);
+//         } else {
+//           setSoldItems([]);
+//         }
+//       } catch (error) {
+//         console.error('Error fetching sold items:', error);
+//         setErrorMessage('Failed to fetch sold items.');
+//         setTimeout(() => setErrorMessage(null), 3000);
+//       }
+//     };
+
+//     fetchSoldItems();
+//   }, []);
+
+//   return (
+//     <div className="sold-items-container">
+//       <h1 className="sold-items-title">Sold Items</h1>
+
+//       {/* Error Message */}
+//       {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
+
+//       {/* Sold Items Table */}
+//       <div className="sold-items-list">
+//         {soldItems.length === 0 ? (
+//           <p>No items sold yet.</p>
+//         ) : (
+//           <table className="sold-items-table">
+//             <thead>
+//               <tr>
+//                 <th>Date</th>
+//                 <th>Customer</th>
+//                 <th>Product Type</th>
+//                 <th>Quantity Sold</th>
+//                 <th>Price</th>
+//                 <th>Item Cost</th>
+//                 <th>Employee</th>
+//               </tr>
+//             </thead>
+//             <tbody>
+//               {soldItems.map((item) => (
+//                 <tr key={item.id}>
+//                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
+//                   <td>{item.customerName || 'N/A'}</td>
+//                   <td>{item.category || 'N/A'}</td>
+//                   <td>{item.quantity || 0}</td>
+//                   <td>{item.price ? `$${item.price.toFixed(2)}` : 'N/A'}</td>
+//                   <td>{item.cost ? `$${item.cost.toFixed(2)}` : 'N/A'}</td>
+//                   <td>{item.scannedBy || 'N/A'}</td>
+//                 </tr>
+//               ))}
+//             </tbody>
+//           </table>
+//         )}
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default SoldItems;
+
 import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get } from 'firebase/database';
@@ -244,6 +327,12 @@ import '../CSS/soldItems.css';
 const SoldItems = () => {
   const { user } = useContext(UserContext); // Access the logged-in user
   const [soldItems, setSoldItems] = useState([]);
+  const [filteredItems, setFilteredItems] = useState([]);
+  const [filters, setFilters] = useState({
+    customer: '',
+    category: '',
+    dateRange: { start: '', end: '' },
+  });
   const [errorMessage, setErrorMessage] = useState(null);
 
   // Fetch Sold Items
@@ -259,8 +348,10 @@ const SoldItems = () => {
             ...data[key],
           }));
           setSoldItems(soldItemList);
+          setFilteredItems(soldItemList); // Initialize filteredItems
         } else {
           setSoldItems([]);
+          setFilteredItems([]);
         }
       } catch (error) {
         console.error('Error fetching sold items:', error);
@@ -272,6 +363,58 @@ const SoldItems = () => {
     fetchSoldItems();
   }, []);
 
+  // Handle Filters
+  const applyFilters = () => {
+    const { customer, category, dateRange } = filters;
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+    const filtered = soldItems.filter((item) => {
+      const matchesCustomer = customer
+        ? item.customerName?.toLowerCase().includes(customer.toLowerCase())
+        : true;
+      const matchesCategory = category
+        ? item.category?.toLowerCase().includes(category.toLowerCase())
+        : true;
+      const matchesDate =
+        startDate && endDate
+          ? new Date(item.dateScanned) >= startDate &&
+            new Date(item.dateScanned) <= endDate
+          : true;
+      return matchesCustomer && matchesCategory && matchesDate;
+    });
+
+    setFilteredItems(filtered);
+  };
+
+  // Export to CSV
+  const exportToCSV = () => {
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [
+        ['Date', 'Customer', 'Product Type', 'Quantity Sold', 'Price', 'Item Cost', 'Employee'],
+        ...filteredItems.map((item) => [
+          new Date(item.dateScanned).toLocaleString(),
+          item.customerName || 'N/A',
+          item.category || 'N/A',
+          item.quantity || 0,
+          item.price || 'N/A',
+          item.cost || 'N/A',
+          item.scannedBy || 'N/A',
+        ]),
+      ]
+        .map((row) => row.join(','))
+        .join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'sold_items.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="sold-items-container">
       <h1 className="sold-items-title">Sold Items</h1>
@@ -279,10 +422,48 @@ const SoldItems = () => {
       {/* Error Message */}
       {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
 
+      {/* Filters */}
+      <div className="sold-items-filters">
+        <input
+          type="text"
+          placeholder="Filter by customer"
+          value={filters.customer}
+          onChange={(e) => setFilters({ ...filters, customer: e.target.value })}
+        />
+        <input
+          type="text"
+          placeholder="Filter by category"
+          value={filters.category}
+          onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+        />
+        <input
+          type="date"
+          placeholder="Start date"
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              dateRange: { ...filters.dateRange, start: e.target.value },
+            })
+          }
+        />
+        <input
+          type="date"
+          placeholder="End date"
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              dateRange: { ...filters.dateRange, end: e.target.value },
+            })
+          }
+        />
+        <button onClick={applyFilters}>Apply Filters</button>
+        <button onClick={exportToCSV}>Export to CSV</button>
+      </div>
+
       {/* Sold Items Table */}
       <div className="sold-items-list">
-        {soldItems.length === 0 ? (
-          <p>No items sold yet.</p>
+        {filteredItems.length === 0 ? (
+          <p>No items match the filters.</p>
         ) : (
           <table className="sold-items-table">
             <thead>
@@ -297,7 +478,7 @@ const SoldItems = () => {
               </tr>
             </thead>
             <tbody>
-              {soldItems.map((item) => (
+              {filteredItems.map((item) => (
                 <tr key={item.id}>
                   <td>{new Date(item.dateScanned).toLocaleString()}</td>
                   <td>{item.customerName || 'N/A'}</td>

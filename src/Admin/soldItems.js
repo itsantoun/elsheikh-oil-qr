@@ -328,11 +328,11 @@ const SoldItems = () => {
   const { user } = useContext(UserContext); // Access the logged-in user
   const [soldItems, setSoldItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
-  const [filters, setFilters] = useState({
-    customer: '',
-    category: '',
-    dateRange: { start: '', end: '' },
-  });
+  const [filterType, setFilterType] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
+  const [customers, setCustomers] = useState([]);
   const [errorMessage, setErrorMessage] = useState(null);
 
   // Fetch Sold Items
@@ -349,9 +349,11 @@ const SoldItems = () => {
           }));
           setSoldItems(soldItemList);
           setFilteredItems(soldItemList); // Initialize filteredItems
+          setCustomers([...new Set(soldItemList.map((item) => item.customerName || 'N/A'))]);
         } else {
           setSoldItems([]);
           setFilteredItems([]);
+          setCustomers([]);
         }
       } catch (error) {
         console.error('Error fetching sold items:', error);
@@ -363,29 +365,29 @@ const SoldItems = () => {
     fetchSoldItems();
   }, []);
 
-  // Handle Filters
-  const applyFilters = () => {
-    const { customer, category, dateRange } = filters;
-    const startDate = dateRange.start ? new Date(dateRange.start) : null;
-    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+  // Handle Filtering
+  useEffect(() => {
+    let filtered = [...soldItems];
 
-    const filtered = soldItems.filter((item) => {
-      const matchesCustomer = customer
-        ? item.customerName?.toLowerCase().includes(customer.toLowerCase())
-        : true;
-      const matchesCategory = category
-        ? item.category?.toLowerCase().includes(category.toLowerCase())
-        : true;
-      const matchesDate =
-        startDate && endDate
-          ? new Date(item.dateScanned) >= startDate &&
-            new Date(item.dateScanned) <= endDate
-          : true;
-      return matchesCustomer && matchesCategory && matchesDate;
-    });
+    if (filterType === 'Customer' && searchTerm) {
+      filtered = filtered.filter((item) =>
+        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    } else if (filterType === 'Date' && dateFilter) {
+      filtered = filtered.filter(
+        (item) =>
+          new Date(item.dateScanned).toLocaleDateString() ===
+          new Date(dateFilter).toLocaleDateString()
+      );
+    } else if (filterType === 'Month' && monthFilter) {
+      filtered = filtered.filter(
+        (item) =>
+          new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
+      );
+    }
 
     setFilteredItems(filtered);
-  };
+  }, [filterType, searchTerm, dateFilter, monthFilter, soldItems]);
 
   // Export to CSV
   const exportToCSV = () => {
@@ -409,7 +411,7 @@ const SoldItems = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'sold_items.csv');
+    link.setAttribute('download', 'filtered_sold_items.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -424,39 +426,65 @@ const SoldItems = () => {
 
       {/* Filters */}
       <div className="sold-items-filters">
-        <input
-          type="text"
-          placeholder="Filter by customer"
-          value={filters.customer}
-          onChange={(e) => setFilters({ ...filters, customer: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Filter by category"
-          value={filters.category}
-          onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-        />
-        <input
-          type="date"
-          placeholder="Start date"
-          onChange={(e) =>
-            setFilters({
-              ...filters,
-              dateRange: { ...filters.dateRange, start: e.target.value },
-            })
-          }
-        />
-        <input
-          type="date"
-          placeholder="End date"
-          onChange={(e) =>
-            setFilters({
-              ...filters,
-              dateRange: { ...filters.dateRange, end: e.target.value },
-            })
-          }
-        />
-        <button onClick={applyFilters}>Apply Filters</button>
+        <select
+          value={filterType}
+          onChange={(e) => {
+            setFilterType(e.target.value);
+            setSearchTerm('');
+            setDateFilter('');
+            setMonthFilter('');
+          }}
+        >
+          <option value="All">All</option>
+          <option value="Customer">By Customer</option>
+          <option value="Date">By Date</option>
+          <option value="Month">By Month</option>
+        </select>
+
+        {filterType === 'Customer' && (
+          <div>
+            <input
+              type="text"
+              placeholder="Search customer"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <select
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            >
+              <option value="">Select Customer</option>
+              {customers.map((customer, index) => (
+                <option key={index} value={customer}>
+                  {customer}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {filterType === 'Date' && (
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+          />
+        )}
+
+        {filterType === 'Month' && (
+          <select
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+          >
+            <option value="">Select Month</option>
+            {[...Array(12).keys()].map((month) => (
+              <option key={month} value={month + 1}>
+                {new Date(0, month).toLocaleString('default', { month: 'long' })}
+              </option>
+            ))}
+          </select>
+        )}
+
         <button onClick={exportToCSV}>Export to CSV</button>
       </div>
 

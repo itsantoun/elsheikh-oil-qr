@@ -1,3 +1,4 @@
+/* Container styling */
 .sold-items-container {
   padding: 20px;
   font-family: Arial, sans-serif;
@@ -5,9 +6,10 @@
   border-radius: 8px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   max-width: 1000px;
-  margin: 0 auto;
+  margin: 20px auto;
 }
 
+/* Title styling */
 .sold-items-title {
   text-align: center;
   font-size: 24px;
@@ -16,6 +18,7 @@
   font-weight: bold;
 }
 
+/* Error message styling */
 .sold-items-error {
   color: red;
   text-align: center;
@@ -23,6 +26,7 @@
   font-size: 16px;
 }
 
+/* Filter container */
 .filter-container {
   display: flex;
   flex-wrap: wrap;
@@ -32,6 +36,7 @@
   gap: 10px;
 }
 
+/* Input, Select, and Button styling */
 .filter-select,
 .filter-input,
 .filter-button {
@@ -60,6 +65,7 @@
   background-color: #0056b3;
 }
 
+/* Export button container */
 .export-button-container {
   text-align: center;
   margin: 20px 0;
@@ -80,11 +86,13 @@
   background-color: #45a049;
 }
 
+/* Sold items list */
 .sold-items-list {
   max-width: 100%;
-  overflow: hidden; /* Prevent horizontal scrolling */
+  overflow-x: auto; /* Allow horizontal scrolling if necessary */
 }
 
+/* Table styling */
 .sold-items-table {
   width: 100%;
   table-layout: fixed; /* Ensures columns are evenly distributed */
@@ -114,6 +122,7 @@
   background-color: #f1f1f1;
 }
 
+/* Delete button */
 .delete-button {
   background-color: #f44336;
   color: white;

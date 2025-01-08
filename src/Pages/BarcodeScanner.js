@@ -135,7 +135,7 @@ const BarcodeScanner = () => {
       if (snapshot.exists()) {
         const product = snapshot.val();
         setScannedProduct({ barcode, ...product });
-        setDialogMessage(`Product found: ${product.name}. Do you want to add it?`);
+        setDialogMessage(` هل تريد اضافته؟.${product.name} :تم ايجاد `);
         setIsPopupOpen(true);
       } else {
         setDialogMessage("Product not found.");
@@ -183,7 +183,7 @@ const BarcodeScanner = () => {
   // };
   const saveScannedItem = async () => {
     if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
-      setDialogMessage("Error: Missing information.");
+      setDialogMessage("!يجب تعبئت كل الخانات");
       return;
     }
   
@@ -210,7 +210,7 @@ const BarcodeScanner = () => {
   
     try {
       await push(soldItemsRef, newItem);
-      setSuccessMessage(`Item "${scannedProduct.name}" added successfully!`);
+      setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
       setTimeout(() => setSuccessMessage(null), 3000);
       setIsPopupOpen(false);
       setDialogMessage(null);
@@ -230,7 +230,7 @@ const BarcodeScanner = () => {
   return (
     <div className="container">
       <div className="header">
-        <button className="logout-button" onClick={handleLogout}>Logout</button>
+        <button className="logout-button" onClick={handleLogout}>تسجيل خروج</button>
       </div>
       <div className="scanner-container">
         <video ref={scannerRef} className="scanner"></video>
@@ -257,7 +257,7 @@ const BarcodeScanner = () => {
               <h3 className="popup-title">Product Found</h3>
               <p className="popup-text">{dialogMessage}</p>
               <div className="customer-select">
-                <label htmlFor="customer">Select Customer:</label>
+                <label htmlFor="customer">اختر اسم المشتري</label>
                 <select
                   id="customer"
                   value={selectedCustomer}
@@ -272,7 +272,7 @@ const BarcodeScanner = () => {
                 </select>
               </div>
               <div className="quantity-input">
-                <label htmlFor="quantity">Quantity:</label>
+                <label htmlFor="quantity">الكمية:</label>
                 <input
                   type="number"
                   id="quantity"
@@ -282,14 +282,14 @@ const BarcodeScanner = () => {
                   min="1"
                 />
               </div>
-              <button className="popup-button" onClick={saveScannedItem}>Yes, Add</button>
-              <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>Cancel</button>
+              <button className="popup-button" onClick={saveScannedItem}>!اضف</button>
+              <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>الغاء</button>
             </div>
           </div>
         )}
       </div>
     </div>
-  );
+  ); 
 };
 
 export default BarcodeScanner;

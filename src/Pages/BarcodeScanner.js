@@ -276,16 +276,14 @@ const BarcodeScanner = () => {
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [totalCost, setTotalCost] = useState(0);
-  const [paymentStatus, setPaymentStatus] = useState('Unpaid');
   const [loading, setLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [errorMessage, setErrorMessage] = useState(null); // New state for errors
   const scannerRef = React.useRef(null);
 
   const { user } = useContext(UserContext);
 
   useEffect(() => {
-    // Fetch user details and customers
     const fetchUserName = async () => {
       if (user?.uid) {
         const userRef = ref(database, `users/${user.uid}`);
@@ -294,6 +292,8 @@ const BarcodeScanner = () => {
           if (snapshot.exists()) {
             const userData = snapshot.val();
             setUserName(userData.name);
+          } else {
+            console.error("User not found in the database.");
           }
         } catch (error) {
           console.error("Error fetching user's name:", error);
@@ -314,6 +314,8 @@ const BarcodeScanner = () => {
               name: value.name || 'Unknown Customer',
             }))
           );
+        } else {
+          setCustomers([]);
         }
       } catch (error) {
         console.error("Error fetching customers:", error);
@@ -332,12 +334,60 @@ const BarcodeScanner = () => {
         if (result) {
           setScanStatus('Barcode detected! Processing...');
           fetchProductDetails(result.text);
+        } else if (error) {
+          setScanStatus('Align the barcode and hold steady.');
         }
       })
-      .catch((err) => console.error('Camera initialization failed:', err));
+      .then(() => {
+        applyZoom();
+      })
+      .catch((err) => {
+        console.error('Camera initialization failed:', err);
+        setErrorMessage('Failed to initialize camera. Please refresh the page or try again later.'); // Show error
+      });
 
-    return () => codeReader.reset();
-  }, [user]);
+    return () => {
+      codeReader.reset();
+    };
+  }, [user, zoomLevel]);
+
+  const applyZoom = async () => {
+    try {
+      const videoElement = scannerRef.current;
+      const stream = videoElement.srcObject;
+      const [track] = stream.getVideoTracks();
+
+      const capabilities = track.getCapabilities();
+      if ('zoom' in capabilities) {
+        const constraints = {
+          advanced: [{ zoom: zoomLevel }],
+        };
+        await track.applyConstraints(constraints);
+      } else {
+        console.warn('Zoom capability is not supported by this device.');
+      }
+    } catch (error) {
+      console.error('Failed to apply zoom:', error);
+    }
+  };
+
+  useEffect(() => {
+    applyZoom();
+  }, [zoomLevel]);
+
+  const changeZoom = async (level) => {
+    const videoElement = scannerRef.current;
+    const stream = videoElement.srcObject;
+    const [track] = stream.getVideoTracks();
+
+    const capabilities = track.getCapabilities();
+    if ('zoom' in capabilities) {
+      const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max);
+      setZoomLevel(newZoomLevel);
+    } else {
+      console.warn('Zoom capability is not supported by this device.');
+    }
+  };
 
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
@@ -346,8 +396,7 @@ const BarcodeScanner = () => {
       if (snapshot.exists()) {
         const product = snapshot.val();
         setScannedProduct({ barcode, ...product });
-        setTotalCost(product.price || 0);
-        setDialogMessage(`تم ايجاد المنتج: ${product.name}. هل تريد اضافته؟`);
+        setDialogMessage(` هل تريد اضافته؟.${product.name} :تم ايجاد `);
         setIsPopupOpen(true);
       } else {
         setDialogMessage("Product not found.");
@@ -359,19 +408,13 @@ const BarcodeScanner = () => {
     }
   };
 
-  const calculateTotalCost = (quantity) => {
-    if (scannedProduct?.price) {
-      setTotalCost(quantity * scannedProduct.price);
-    }
-  };
-
   const saveScannedItem = async () => {
-    if (!scannedProduct || !selectedCustomer || quantity <= 0) {
+    if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
       setDialogMessage("!يجب تعبئت كل الخانات");
       return;
     }
 
-    const customer = customers.find((c) => c.id === selectedCustomer);
+    const customer = customers.find(c => c.id === selectedCustomer);
     if (!customer) {
       setDialogMessage("Error: Customer not found.");
       return;
@@ -385,79 +428,93 @@ const BarcodeScanner = () => {
       name: scannedProduct.name,
       category: scannedProduct.category || 'Unknown',
       price: scannedProduct.price || 0,
-      totalCost,
-      quantity,
-      paymentStatus,
       dateScanned: currentDate,
       scannedBy: userName || 'Unknown',
       customerName: customer.name,
+      quantity: quantity,
     };
 
     try {
       await push(soldItemsRef, newItem);
       setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
-      resetForm();
+      setTimeout(() => setSuccessMessage(null), 3000);
+      setIsPopupOpen(false);
+      setDialogMessage(null);
+      setScannedProduct(null);
+      setSelectedCustomer('');
+      setQuantity(1);
     } catch (error) {
+      console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to the database.");
     }
   };
 
-  const resetForm = () => {
-    setTimeout(() => setSuccessMessage(null), 3000);
-    setIsPopupOpen(false);
-    setDialogMessage(null);
-    setScannedProduct(null);
-    setSelectedCustomer('');
-    setQuantity(1);
-    setTotalCost(0);
-    setPaymentStatus('Unpaid');
+  const handleLogout = () => {
+    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/';
   };
 
   return (
     <div className="container">
-      <video ref={scannerRef} className="scanner"></video>
-      <p className="status">{scanStatus}</p>
-      {successMessage && <div className="success-message">{successMessage}</div>}
-      {loading && <div className="loading-message">Loading customers...</div>}
+      <div className="header">
+        <button className="logout-button" onClick={handleLogout}>تسجيل خروج</button>
+      </div>
+      <div className="scanner-container">
+        <video ref={scannerRef} className="scanner"></video>
+        <p className="status">{scanStatus}</p>
+        {errorMessage && <div className="error-message">{errorMessage}</div>} {/* Show error message */}
+        {successMessage && <div className="success-message">{successMessage}</div>}
+        {loading && <div className="loading-message">Loading customers...</div>}
 
-      {isPopupOpen && (
-        <div className="popup-overlay">
-          <div className="popup">
-            <p className="popup-text">{dialogMessage}</p>
-            <select
-              value={selectedCustomer}
-              onChange={(e) => setSelectedCustomer(e.target.value)}
-            >
-              <option value="">--Select Customer--</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              value={quantity}
-              onChange={(e) => {
-                setQuantity(e.target.value);
-                calculateTotalCost(e.target.value);
-              }}
-              min="1"
-            />
-            <p>Item Cost: {scannedProduct?.price || 0}</p>
-            <p>Total Cost: {totalCost}</p>
-            <select
-              value={paymentStatus}
-              onChange={(e) => setPaymentStatus(e.target.value)}
-            >
-              <option value="Unpaid">Unpaid</option>
-              <option value="Paid">Paid</option>
-            </select>
-            <button onClick={saveScannedItem}>اضف</button>
-            <button onClick={resetForm}>الغاء</button>
-          </div>
+        <div className="zoom-controls">
+          <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.1))}>Zoom Out</button>
+          <input 
+            type="range" 
+            min="0.5" 
+            max="3" 
+            step="0.1"
+            value={zoomLevel}
+            onChange={(e) => changeZoom(parseFloat(e.target.value))}
+          />
+          <button onClick={() => changeZoom(Math.min(3, zoomLevel + 0.1))}>Zoom In</button>
         </div>
-      )}
+
+        {isPopupOpen && (
+          <div className="popup-overlay">
+            <div className="popup">
+              <h3 className="popup-title">Product Found</h3>
+              <p className="popup-text">{dialogMessage}</p>
+              <div className="customer-select">
+                <label htmlFor="customer">اختر اسم المشتري</label>
+                <select
+                  id="customer"
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                >
+                  <option value="">--Select Customer--</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="quantity-input">
+                <label htmlFor="quantity">الكمية:</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  onBlur={(e) => setQuantity(Math.max(1, e.target.value))}
+                  min="1"
+                />
+              </div>
+              <button className="popup-button" onClick={saveScannedItem}>!اضف</button>
+              <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>الغاء</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

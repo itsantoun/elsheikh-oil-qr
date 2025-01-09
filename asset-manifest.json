@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/elsheikh-oil-qr/static/css/main.b5727192.css",
+    "main.css": "/elsheikh-oil-qr/static/css/main.855aec66.css",
     "main.js": "/elsheikh-oil-qr/static/js/main.3ca79a6b.js",
     "static/js/453.c1fde55b.chunk.js": "/elsheikh-oil-qr/static/js/453.c1fde55b.chunk.js",
     "index.html": "/elsheikh-oil-qr/index.html",
-    "main.b5727192.css.map": "/elsheikh-oil-qr/static/css/main.b5727192.css.map",
+    "main.855aec66.css.map": "/elsheikh-oil-qr/static/css/main.855aec66.css.map",
     "main.3ca79a6b.js.map": "/elsheikh-oil-qr/static/js/main.3ca79a6b.js.map",
     "453.c1fde55b.chunk.js.map": "/elsheikh-oil-qr/static/js/453.c1fde55b.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.b5727192.css",
+    "static/css/main.855aec66.css",
     "static/js/main.3ca79a6b.js"
   ]
 }

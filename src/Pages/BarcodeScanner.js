@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
 import { ref, get, child, push } from "firebase/database";
-import { UserContext } from '../Auth/userContext';
+import { UserContext } from '../Auth/userContext';  
 import '../CSS/BarcodeScanner.css';
 
 const BarcodeScanner = () => {

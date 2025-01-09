@@ -191,6 +191,10 @@ const BarcodeScanner = () => {
     }
   };
 
+  const handlePaymentStatusChange = (e) => {
+    setPaymentStatus(e.target.value);
+  };
+
   const handleLogout = () => {
     window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/';
   };
@@ -250,24 +254,28 @@ const BarcodeScanner = () => {
                   min="1"
                 />
               </div>
-             <div class="radio-group">
+              <div className="radio-group">
   <input
     type="radio"
     id="paid"
     name="paymentStatus"
     value="Paid"
-    class="radio-input"
+    className="radio-input"
+    checked={paymentStatus === 'Paid'}
+    onChange={handlePaymentStatusChange}
   />
-  <label for="paid" class="radio-label">Paid</label>
+  <label htmlFor="paid" className="radio-label">Paid</label>
 
   <input
     type="radio"
     id="unpaid"
     name="paymentStatus"
     value="Unpaid"
-    class="radio-input"
+    className="radio-input"
+    checked={paymentStatus === 'Unpaid'}
+    onChange={handlePaymentStatusChange}
   />
-  <label for="unpaid" class="radio-label">Unpaid</label>
+  <label htmlFor="unpaid" className="radio-label">Unpaid</label>
 </div>
               <button className="popup-button" onClick={saveScannedItem}>!اضف</button>
               <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>الغاء</button>

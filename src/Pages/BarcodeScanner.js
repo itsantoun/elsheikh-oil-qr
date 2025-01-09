@@ -250,21 +250,25 @@ const BarcodeScanner = () => {
                   min="1"
                 />
               </div>
-              <div className="payment-status">
-              <label>الحالة:</label>
-              <button
-                className={`status-button ${paymentStatus === 'Paid' ? 'selected' : ''}`}
-                onClick={() => setPaymentStatus('Paid')}
-              >
-                مدفوع
-              </button>
-              <button
-                className={`status-button ${paymentStatus === 'Unpaid' ? 'selected' : ''}`}
-                onClick={() => setPaymentStatus('Unpaid')}
-              >
-                غير مدفوع
-              </button>
-            </div>
+             <div class="radio-group">
+  <input
+    type="radio"
+    id="paid"
+    name="paymentStatus"
+    value="Paid"
+    class="radio-input"
+  />
+  <label for="paid" class="radio-label">Paid</label>
+
+  <input
+    type="radio"
+    id="unpaid"
+    name="paymentStatus"
+    value="Unpaid"
+    class="radio-input"
+  />
+  <label for="unpaid" class="radio-label">Unpaid</label>
+</div>
               <button className="popup-button" onClick={saveScannedItem}>!اضف</button>
               <button className="popup-button cancel" onClick={() => setIsPopupOpen(false)}>الغاء</button>
             </div>

@@ -294,7 +294,7 @@ const BarcodeScanner = () => {
                   إلغاء
                 </button>
                 <button className="save-button" onClick={saveScannedItem}>
-                  حفظ
+                  !حفظ
                 </button>
               </div>
             </div>

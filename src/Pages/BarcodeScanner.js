@@ -420,6 +420,25 @@ const BarcodeScanner = () => {
     }
   };
 
+  // const fetchProductDetails = async (barcode) => {
+  //   const dbRef = ref(database);
+  //   try {
+  //     const snapshot = await get(child(dbRef, `products/${barcode}`));
+  //     if (snapshot.exists()) {
+  //       const product = snapshot.val();
+  //       setScannedProduct({ barcode, ...product });
+  //       setDialogMessage(` هل تريد اضافته؟.${product.name} :تم ايجاد `);
+  //       setIsPopupOpen(true);
+  //     } else {
+  //       setDialogMessage("Product not found.");
+  //       setIsPopupOpen(false);
+  //     }
+  //   } catch (error) {
+  //     setDialogMessage("Error retrieving product information.");
+  //     setIsPopupOpen(false);
+  //   }
+  // };
+
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
     try {
@@ -427,7 +446,7 @@ const BarcodeScanner = () => {
       if (snapshot.exists()) {
         const product = snapshot.val();
         setScannedProduct({ barcode, ...product });
-        setDialogMessage(` هل تريد اضافته؟.${product.name} :تم ايجاد `);
+        setDialogMessage(`هل تريد إضافته؟ ${product.name} :تم إيجاد`);
         setIsPopupOpen(true);
       } else {
         setDialogMessage("Product not found.");
@@ -445,8 +464,10 @@ const BarcodeScanner = () => {
       return;
     }
 
+    const totalCost = scannedProduct.itemCost * quantity;
     // Find the customer by ID to get the name
     const customer = customers.find(c => c.id === selectedCustomer);
+
     if (!customer) {
       setDialogMessage("Error: Customer not found.");
       return;
@@ -465,6 +486,8 @@ const BarcodeScanner = () => {
       customerName: customer.name,  // Store the customer name instead of the ID
       quantity: quantity,
       paymentStatus: paymentStatus, // Store the correct payment status
+      itemCost: scannedProduct.itemCost, // Include item cost for reference
+      totalCost: totalCost,  // Save the calculated total cost
     };
 
     try {
@@ -546,6 +569,14 @@ const BarcodeScanner = () => {
                   min="1"
                 />
               </div>
+
+              {scannedProduct && scannedProduct.itemCost && quantity > 0 && (
+        <div className="total-cost">
+          <p>Total Cost: {scannedProduct.itemCost * quantity} {scannedProduct.currency || 'LL'}</p>
+        </div>
+      )}
+
+      
               <div className="radio-group">
                 <input
                   type="radio"

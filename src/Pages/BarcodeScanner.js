@@ -197,7 +197,7 @@ const BarcodeScanner = () => {
   };
 
   const handlePaymentStatusChange = (e) => {
-    setPaymentStatus(e.target.value);
+    setPaymentStatus(e.target.value); // Updates payment status based on selected radio button
   };
 
   const handleLogout = () => {

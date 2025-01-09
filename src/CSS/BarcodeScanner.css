@@ -321,31 +321,3 @@
   justify-content: center;
 }
 
-.radio-group {
-  display: flex;
-  justify-content: center;
-  gap: 15px;
-  margin-top: 10px;
-}
-
-.radio-label {
-  padding: 10px 20px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background-color 0.3s, color 0.3s;
-}
-
-.radio-label:hover {
-  background-color: #f0f0f0;
-}
-
-.radio-input {
-  display: none;
-}
-
-.radio-input:checked + .radio-label {
-  background-color: #007bff;
-  color: white;
-  border-color: #007bff;
-}

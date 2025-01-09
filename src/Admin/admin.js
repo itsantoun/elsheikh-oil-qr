@@ -3,6 +3,7 @@ import Navbar from './navbar';
 import AddUsers from './adduser';
 import FetchProducts from './fetchProducts';
 import ItemsSold from './soldItems';
+import AddCustomer from './addCustomer';
 import { UserContext } from '../Auth/userContext'; // Import UserContext
 import '../CSS/admin.css';
 
@@ -34,6 +35,8 @@ const Admin = () => {
         return <FetchProducts />;
       case 'itemsSold':
         return <ItemsSold />;
+      case 'addCustomer':
+        return <AddCustomer />;
       default:
         return <AddUsers />;
     }

@@ -140,6 +140,7 @@
 */
 
 
+/* General Container Styling */
 .container {
   font-family: Arial, sans-serif;
   display: flex;
@@ -152,6 +153,7 @@
   box-sizing: border-box;
 }
 
+/* Login Container */
 .login-container {
   width: 100%;
   max-width: 350px;
@@ -168,6 +170,7 @@
   color: #333;
 }
 
+/* Input Fields and Dropdown */
 .input, .dropdown, .quantity-input {
   width: 100%;
   padding: 12px;
@@ -178,9 +181,23 @@
   outline: none;
 }
 
-.button {
+.dropdown {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20fill%3D%22%23ccc%22%20d%3D%22M8%2010L4%206h8z%22%2F%3E%3C%2Fsvg%3E');
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+}
+
+.quantity-input {
+  text-align: center;
+}
+
+/* Buttons */
+.button, .popup-button {
   width: 100%;
-  padding: 14px; /* Increased padding for larger button */
+  padding: 14px; /* Increased padding for better usability */
   background-color: #007bff;
   color: #fff;
   border: none;
@@ -189,33 +206,43 @@
   cursor: pointer;
   font-weight: bold;
   margin-top: 10px;
+  transition: background-color 0.3s ease;
 }
 
-.button:hover {
+.button:hover, .popup-button:hover {
   background-color: #0056b3;
 }
 
+.popup-button.cancel {
+  background-color: #f44336;
+}
+
+.popup-button.cancel:hover {
+  background-color: #d32f2f;
+}
+
+/* Error Messages */
 .error {
   color: #f44336;
   margin-top: 10px;
   font-size: 14px;
 }
 
+/* Success Messages */
+.success-message {
+  background-color: #4caf50;
+  color: #fff;
+  padding: 10px;
+  border-radius: 5px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+/* Scanner Container */
 .scanner-container {
   width: 100%;
   max-width: 400px;
   text-align: center;
-}
-
-.logout-button {
-  padding: 10px;
-  background-color: #f44336;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  margin-bottom: 10px;
-  cursor: pointer;
-  font-size: 14px;
 }
 
 .scanner {
@@ -235,15 +262,7 @@
   margin-top: 10px;
 }
 
-.success-message {
-  background-color: #4caf50;
-  color: #fff;
-  padding: 10px;
-  border-radius: 5px;
-  margin-top: 10px;
-  text-align: center;
-}
-
+/* Popup Overlay and Box */
 .popup-overlay {
   position: fixed;
   top: 0;
@@ -258,12 +277,11 @@
 }
 
 .popup {
-  background-color: #fff;
-  padding: 30px;
-  border-radius: 15px;
-  text-align: center;
-  width: 90%;
-  max-width: 400px; /* Adjusted to avoid being too narrow */
+  position: relative;
+  width: 400px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 10px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
@@ -280,31 +298,7 @@
   color: #555;
 }
 
-.popup-button {
-  padding: 14px 25px; /* Larger padding for better clickability */
-  background-color: #007bff;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  font-size: 16px;
-  cursor: pointer;
-  font-weight: bold;
-  margin-top: 15px;
-  transition: background-color 0.3s ease;
-}
-
-.popup-button:hover {
-  background-color: #0056b3;
-}
-
-.popup-button.cancel {
-  background-color: #f44336;
-}
-
-.popup-button.cancel:hover {
-  background-color: #d32f2f;
-}
-
+/* Popup Content */
 .popup-content {
   display: flex;
   flex-direction: column;
@@ -312,24 +306,13 @@
   justify-content: center;
 }
 
-.dropdown {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background-image: url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20fill%3D%22%23ccc%22%20d%3D%22M8%2010L4%206h8z%22%2F%3E%3C%2Fsvg%3E');
-  background-position: right 10px center;
-  background-repeat: no-repeat;
-}
-
-.quantity-input {
-  text-align: center;
-}
-
+/* Close Button */
 .close-popup-btn {
   position: absolute;
   top: 10px;
   right: 10px;
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: bold;
   background: transparent;
   border: none;
   color: #333;

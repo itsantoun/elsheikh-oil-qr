@@ -228,7 +228,7 @@ const BarcodeScanner = () => {
           <button onClick={() => changeZoom(Math.min(3, zoomLevel + 0.1))}>Zoom In</button>
         </div>
 
-        {isPopupOpen && (
+        {/* {isPopupOpen && (
           <div className="popup-overlay">
             <div className="popup">
               <h3 className="popup-title">Product Found</h3>
@@ -296,7 +296,83 @@ const BarcodeScanner = () => {
               </div>
             </div>
           </div>
-        )}
+        )} */}
+
+{isPopupOpen && (
+  <div className="popup-overlay">
+    <div className="popup">
+      <button 
+        className="close-popup-btn" 
+        onClick={() => setIsPopupOpen(false)}
+        aria-label="Close"
+      >
+        ×
+      </button>
+      <h3 className="popup-title">Product Found</h3>
+      <p className="popup-text">{dialogMessage}</p>
+      <div className="customer-select">
+        <label htmlFor="customer">اختر اسم المشتري</label>
+        <select
+          id="customer"
+          value={selectedCustomer}
+          onChange={(e) => setSelectedCustomer(e.target.value)}
+        >
+          <option value="">--Select Customer--</option>
+          {customers.map((customer) => (
+            <option key={customer.id} value={customer.id}>
+              {customer.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="quantity-input">
+        <label htmlFor="quantity">الكمية:</label>
+        <input
+          type="number"
+          id="quantity"
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          onBlur={(e) => setQuantity(Math.max(1, e.target.value))}
+          min="1"
+        />
+      </div>
+
+      {scannedProduct && scannedProduct.itemCost && quantity > 0 && (
+        <div className="total-cost">
+          <p>Total Cost: {scannedProduct.itemCost * quantity} {scannedProduct.currency || 'LL'}</p>
+        </div>
+      )}
+
+      <div className="radio-group">
+        <input
+          type="radio"
+          id="paid"
+          name="paymentStatus"
+          value="Paid"
+          className="radio-input"
+          checked={paymentStatus === 'Paid'}
+          onChange={handlePaymentStatusChange}
+        />
+        <label htmlFor="paid" className="radio-label">Paid</label>
+
+        <input
+          type="radio"
+          id="unpaid"
+          name="paymentStatus"
+          value="Unpaid"
+          className="radio-input"
+          checked={paymentStatus === 'Unpaid'}
+          onChange={handlePaymentStatusChange}
+        />
+        <label htmlFor="unpaid" className="radio-label">Unpaid</label>
+      </div>
+      <div className="popup-buttons">
+        <button className="popup-btn" onClick={saveScannedItem}>نعم</button>
+        <button className="popup-btn" onClick={() => setIsPopupOpen(false)}>لا</button>
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </div>
   );

@@ -80,19 +80,6 @@
     text-align: left;
   }
   
-  .admin-delete-button {
-    background-color: #f44336;
-    color: #fff;
-    padding: 5px 10px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 14px;
-  }
-  
-  .admin-delete-button:hover {
-    background-color: #d32f2f;
-  }
 
   .logout-button {
     padding: 10px 20px;
@@ -108,3 +95,44 @@
   .logout-button:hover {
     background-color: #d32f2f;
   }
+
+  /* Wrapper for the buttons */
+.admin-actions {
+  display: flex;
+  justify-content: space-around; /* Add space between buttons */
+  align-items: center;
+  gap: 10px; /* Adjust the spacing between buttons */
+}
+
+/* Buttons */
+.admin-edit-button,
+.admin-delete-button {
+  background-color: transparent;
+  color: #333;
+  border: none;
+  padding: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.admin-edit-button:hover {
+  color: #4caf50; /* Green hover for edit */
+}
+
+.admin-delete-button:hover {
+  color: #e74c3c; /* Red hover for delete */
+}
+
+/* Icons styling */
+.admin-edit-button i,
+.admin-delete-button i {
+  font-size: 18px;
+}
+.cancel-button {
+  background-color: #f44336;  /* Red background */
+  margin-left: 10px;  /* Some spacing */
+}
+.cancel-button:hover {
+  background-color: #d32f2f;  /* Darker red when hovered */
+}

@@ -142,19 +142,21 @@ const AddCustomer = () => {
                     )}
                   </td>
                   <td>
-                    <button
-                      onClick={() => setEditingCustomer(customer.id)}
-                      className="edit-button"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCustomer(customer.id)}
-                      className="delete-button"
-                    >
-                      Delete
-                    </button>
-                  </td>
+  <div className="admin-buttons-container">
+    <button
+      className="admin-edit-button"
+      onClick={() => setEditingCustomer(customer.id)}
+    >
+      <i className="fas fa-edit"></i> {/* Edit Icon */}
+    </button>
+    <button
+      className="admin-delete-button"
+      onClick={() => handleDeleteCustomer(customer.id)}
+    >
+      <i className="fas fa-trash"></i> {/* Delete Icon */}
+    </button>
+  </div>
+</td>
                 </tr>
               ))}
             </tbody>

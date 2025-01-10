@@ -366,7 +366,7 @@ const BarcodeScanner = () => {
         />
         <label htmlFor="unpaid" className="radio-label">Unpaid</label>
       </div>
-      <div className="popup-buttons">
+      <div >
   <button className="popup-btn-yes" onClick={saveScannedItem}>نعم</button>
   <button className="popup-btn-no" onClick={() => setIsPopupOpen(false)}>لا</button>
 </div>

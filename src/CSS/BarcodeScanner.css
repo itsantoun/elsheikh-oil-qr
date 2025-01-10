@@ -195,30 +195,41 @@
 }
 
 /* Buttons */
-.button, .popup-button {
+.button, .popup-btn {
   width: 100%;
-  padding: 14px; /* Increased padding for better usability */
+  max-width: 150px; /* Set a max width for buttons */
+  padding: 14px 20px;
   background-color: #007bff;
   color: #fff;
   border: none;
   border-radius: 5px;
   font-size: 16px;
-  cursor: pointer;
   font-weight: bold;
-  margin-top: 10px;
-  transition: background-color 0.3s ease;
+  cursor: pointer;
+  margin: 10px auto; /* Center buttons and add spacing */
+  transition: background-color 0.3s ease, transform 0.2s ease;
+  text-align: center;
 }
 
-.button:hover, .popup-button:hover {
+.button:hover, .popup-btn:hover {
   background-color: #0056b3;
+  transform: translateY(-2px);
 }
 
-.popup-button.cancel {
+.popup-btn.cancel {
   background-color: #f44336;
 }
 
-.popup-button.cancel:hover {
+.popup-btn.cancel:hover {
   background-color: #d32f2f;
+}
+
+.popup-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  width: 100%;
+  margin-top: 20px;
 }
 
 /* Error Messages */

@@ -394,7 +394,7 @@ const BarcodeScanner = () => {
 
 
 <div className="scanned-items-container">
-  <h2>Scanned Items (Today)</h2>
+<h2>Scanned Items ({new Date().toLocaleDateString()})</h2>
   {scannedItems.length > 0 ? (
     <table className="scanned-items-table">
       <thead>

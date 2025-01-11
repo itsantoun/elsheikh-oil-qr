@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
-import { ref, get, child, push } from "firebase/database";
+import { ref, get, update, child, push } from "firebase/database";
 import { UserContext } from '../Auth/userContext';  
 import '../CSS/BarcodeScanner.css';
 
@@ -19,6 +19,9 @@ const BarcodeScanner = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [paymentStatus, setPaymentStatus] = useState('Unpaid'); // Default to 'Unpaid'
   const [remark, setRemark] = useState('');
+  const [scannedItems, setScannedItems] = useState([]);
+  const [editingItem, setEditingItem] = useState(null); // Track the item being edited
+
   const scannerRef = React.useRef(null);
 
   const { user } = useContext(UserContext);
@@ -115,6 +118,35 @@ const BarcodeScanner = () => {
   };
 
   useEffect(() => {
+    const fetchScannedItems = async () => {
+      if (!user || !user.uid) return;
+  
+      const soldItemsRef = ref(database, 'SoldItems');
+      try {
+        const snapshot = await get(soldItemsRef);
+        if (snapshot.exists()) {
+          const items = Object.values(snapshot.val());
+          const today = new Date();
+          const filteredItems = items.filter((item) => {
+            const itemDate = new Date(item.dateScanned);
+            return (
+              item.scannedBy === name && // Match authenticated user's name
+              itemDate.toDateString() === today.toDateString() // Filter today's items
+            );
+          });
+          setScannedItems(filteredItems);
+        } else {
+          setScannedItems([]);
+        }
+      } catch (error) {
+        console.error('Error fetching scanned items:', error);
+      }
+    };
+  
+    fetchScannedItems();
+  }, [user, name]);
+
+  useEffect(() => {
     applyZoom();
   }, [zoomLevel]);
 
@@ -150,57 +182,6 @@ const BarcodeScanner = () => {
       setIsPopupOpen(false);
     }
   };
-
-  // const saveScannedItem = async () => {
-  //   if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
-  //     setDialogMessage("!يجب تعبئت كل الخانات");
-  //     return;
-  //   }
-
-  //   const totalCost = scannedProduct.itemCost * quantity;
-  //   // Find the customer by ID to get the name
-  //   const customer = customers.find(c => c.id === selectedCustomer);
-
-  //   if (!customer) {
-  //     setDialogMessage("Error: Customer not found.");
-  //     return;
-  //   }
-
-  //   const soldItemsRef = ref(database, 'SoldItems');
-  //   const currentDate = new Date().toISOString();
-
-  //   const newItem = {
-  //     barcode: scannedProduct.barcode,
-  //     name: scannedProduct.name,
-  //     category: scannedProduct.category || 'Unknown',
-  //     price: scannedProduct.price || 0,
-  //     dateScanned: currentDate,
-  //     scannedBy: name || 'Unknown',
-  //     customerName: customer.name,  // Store the customer name instead of the ID
-  //     quantity: quantity,
-  //     paymentStatus: paymentStatus, // Store the correct payment status
-  //     itemCost: scannedProduct.itemCost, // Include item cost for reference
-  //     totalCost: totalCost,  // Save the calculated total cost
-  //     remark: remark, 
-  //   };
-
-  //   try {
-  //     await push(soldItemsRef, newItem);
-  //     setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
-  //     setTimeout(() => setSuccessMessage(null), 3000);
-  //     setIsPopupOpen(false);
-  //     setDialogMessage(null);
-  //     setScannedProduct(null);
-  //     setSelectedCustomer('');
-  //     setQuantity(1);
-  //     setPaymentStatus('Unpaid'); // Reset to default 'Unpaid' after saving
-  //     setRemark('');
-  //   } catch (error) {
-  //     console.error("Error saving scanned item:", error);
-  //     setDialogMessage("Error saving item to the database.");
-  //   }
-  // };
-
   const saveScannedItem = async () => {
     if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
       setDialogMessage("!يجب تعبئت كل الخانات");
@@ -261,6 +242,43 @@ const BarcodeScanner = () => {
 
   const handleLogout = () => {
     window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/';
+  };
+
+  const saveEditedItem = async (item) => {
+    try {
+      const soldItemsRef = ref(database, `SoldItems`);
+      const snapshot = await get(soldItemsRef);
+  
+      if (snapshot.exists()) {
+        const items = snapshot.val();
+        const itemKey = Object.keys(items).find(
+          (key) => items[key].barcode === item.barcode && items[key].dateScanned === item.dateScanned
+        );
+  
+        if (itemKey) {
+          const updatedItemRef = ref(database, `SoldItems/${itemKey}`);
+          await update(updatedItemRef, {
+            quantity: item.quantity,
+            totalCost: item.totalCost,
+            paymentStatus: item.paymentStatus,
+            remark: item.remark,
+          });
+  
+          setEditingItem(null); // Close the edit form
+          setSuccessMessage("Item updated successfully!");
+          setTimeout(() => setSuccessMessage(null), 3000);
+  
+          // Reload items after update
+          const updatedItems = scannedItems.map((i) =>
+            i.barcode === item.barcode && i.dateScanned === item.dateScanned ? { ...i, ...item } : i
+          );
+          setScannedItems(updatedItems);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating item:", error);
+      setDialogMessage("Error updating item in the database.");
+    }
   };
 
   return (
@@ -373,6 +391,180 @@ const BarcodeScanner = () => {
   </div>
 )}
       </div>
+
+
+<div className="scanned-items-container">
+  <h2>Scanned Items (Today)</h2>
+  {scannedItems.length > 0 ? (
+    <table className="scanned-items-table">
+      <thead>
+        <tr>
+          <th>Barcode</th>
+          <th>Name</th>
+          <th>Customer</th>
+          <th>Quantity</th>
+          <th>Total Cost</th>
+          <th>Payment Status</th>
+          <th>Date</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {scannedItems.map((item, index) => (
+          <tr key={index}>
+            <td>{item.barcode}</td>
+            <td>{item.name}</td>
+            <td>{item.customerName}</td>
+            <td>{item.quantity}</td>
+            <td>{item.totalCost}</td>
+            <td>{item.paymentStatus}</td>
+            <td>{new Date(item.dateScanned).toLocaleString()}</td>
+            <td>{item.remark}</td>
+            <td>
+        <button onClick={() => setEditingItem(item)}>Edit</button>
+      </td>
+          </tr>
+        ))}
+        {editingItem && (
+  <div className="edit-form">
+    <h3>Edit Item</h3>
+    <p><strong>Barcode:</strong> {editingItem.barcode}</p>
+    <p><strong>Name:</strong> {editingItem.name}</p>
+    <p><strong>Date:</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
+
+    <div>
+      <label htmlFor="editQuantity">Quantity:</label>
+      <input
+        type="number"
+        id="editQuantity"
+        value={editingItem.quantity}
+        onChange={(e) =>
+          setEditingItem({
+            ...editingItem,
+            quantity: Math.max(1, parseInt(e.target.value, 10)),
+            totalCost: editingItem.itemCost * Math.max(1, parseInt(e.target.value, 10)),
+          })
+        }
+        min="1"
+      />
+    </div>
+
+    <div>
+      <label htmlFor="editPaymentStatus">Payment Status:</label>
+      <select
+        id="editPaymentStatus"
+        value={editingItem.paymentStatus}
+        onChange={(e) =>
+          setEditingItem({
+            ...editingItem,
+            paymentStatus: e.target.value,
+          })
+        }
+      >
+        <option value="Paid">Paid</option>
+        <option value="Unpaid">Unpaid</option>
+      </select>
+    </div>
+
+    <div>
+      <label htmlFor="editRemark">Remark:</label>
+      <textarea
+        id="editRemark"
+        value={editingItem.remark}
+        onChange={(e) =>
+          setEditingItem({
+            ...editingItem,
+            remark: e.target.value,
+          })
+        }
+      />
+    </div>
+
+    <button onClick={() => saveEditedItem(editingItem)}>Save</button>
+    <button onClick={() => setEditingItem(null)}>Cancel</button>
+  </div>
+)}
+      </tbody>
+    </table>
+  ) : (
+    <p>No items scanned today.</p>
+  )}
+   {/* Edit Modal */}
+   {editingItem && (
+        <div className="edit-popup">
+          <div className="edit-form-container">
+            <h3>Edit Item</h3>
+            <p><strong>Barcode:</strong> {editingItem.barcode}</p>
+            <p><strong>Name:</strong> {editingItem.name}</p>
+            <p><strong>Date:</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
+
+            <div>
+              <label htmlFor="editQuantity">Quantity:</label>
+              <input
+                type="number"
+                id="editQuantity"
+                value={editingItem.quantity}
+                onChange={(e) =>
+                  setEditingItem({
+                    ...editingItem,
+                    quantity: Math.max(1, parseInt(e.target.value, 10)),
+                    totalCost: editingItem.itemCost * Math.max(1, parseInt(e.target.value, 10)),
+                  })
+                }
+                min="1"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="editPaymentStatus">Payment Status:</label>
+              <select
+                id="editPaymentStatus"
+                value={editingItem.paymentStatus}
+                onChange={(e) =>
+                  setEditingItem({
+                    ...editingItem,
+                    paymentStatus: e.target.value,
+                  })
+                }
+              >
+                <option value="Paid">Paid</option>
+                <option value="Unpaid">Unpaid</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="editRemark">Remark:</label>
+              <textarea
+                id="editRemark"
+                value={editingItem.remark}
+                onChange={(e) =>
+                  setEditingItem({
+                    ...editingItem,
+                    remark: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="form-buttons">
+              <button
+                className="save-button"
+                onClick={() => {
+                  saveEditedItem(editingItem);
+                  setEditingItem(null);
+                }}
+              >
+                Save
+              </button>
+              <button className="cancel-button" onClick={() => setEditingItem(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    
+</div>
     </div>
   );
 };

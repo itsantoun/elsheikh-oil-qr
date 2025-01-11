@@ -12,29 +12,16 @@
 //   );
 // };
 
-import React, { createContext, useState, useEffect } from 'react';
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import React, { createContext, useState } from 'react';
 
 export const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    const auth = getAuth();
-    const unsubscribe = onAuthStateChanged(auth, (userCredential) => {
-      if (userCredential) {
-        // User is signed in
-        setUser(userCredential);
-      } else {
-        // No user is signed in
-        setUser(null);
-      }
-    });
-
-    // Clean up the listener on component unmount
-    return () => unsubscribe();
-  }, []);
+  // Initialize user with only email and name, password should remain secure
+  const [user, setUser] = useState({
+    email: '',
+    name: ''
+  });
 
   return (
     <UserContext.Provider value={{ user, setUser }}>

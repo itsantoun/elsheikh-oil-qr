@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
-import { ref, get, update, child, push } from "firebase/database";
+import { ref, get, update, child, push, onValue, off } from "firebase/database";
 import { UserContext } from '../Auth/userContext';  
 import '../CSS/BarcodeScanner.css';
 
@@ -144,6 +144,36 @@ const BarcodeScanner = () => {
     };
   
     fetchScannedItems();
+  }, [user, name]);
+
+  useEffect(() => {
+    if (!user || !user.uid || !name) return;
+  
+    const soldItemsRef = ref(database, "SoldItems");
+  
+    const listener = onValue(soldItemsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const items = Object.values(snapshot.val());
+        const today = new Date().toDateString();
+  
+        const filteredItems = items.filter((item) => {
+          const itemDate = new Date(item.dateScanned).toDateString();
+          return (
+            item.scannedBy === name &&
+            itemDate === today
+          );
+        });
+  
+        setScannedItems(filteredItems);
+      } else {
+        setScannedItems([]);
+      }
+    });
+  
+    // Cleanup listener on component unmount
+    return () => {
+      off(soldItemsRef, "value", listener);
+    };
   }, [user, name]);
 
   useEffect(() => {

@@ -25,19 +25,25 @@ const BarcodeScanner = () => {
 
   useEffect(() => {
     const fetchUserName = async () => {
-      if (user?.uid) {
-        const userRef = ref(database, `users/${user.uid}`);
+      if (user && user.uid) { // Ensure the user is authenticated and has a uid
+        const userRef = ref(database, `users/${user.uid}`);  // Path to the user's data
         try {
           const snapshot = await get(userRef);
           if (snapshot.exists()) {
             const userData = snapshot.val();
-            setUserName(userData.name);
+            const fetchedUserName = userData?.name || 'Unknown';  // Use 'Unknown' if name is not found
+            setUserName(fetchedUserName);
           } else {
-            console.error("User not found in the database.");
+            console.error("User data not found in the database.");
+            setUserName('Unknown');
           }
         } catch (error) {
           console.error("Error fetching user's name:", error);
+          setUserName('Unknown');
         }
+      } else {
+        console.error("User is not authenticated or uid is missing.");
+        setUserName('Unknown');
       }
     };
 

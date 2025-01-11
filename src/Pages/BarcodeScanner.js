@@ -173,7 +173,7 @@ const BarcodeScanner = () => {
       category: scannedProduct.category || 'Unknown',
       price: scannedProduct.price || 0,
       dateScanned: currentDate,
-      scannedBy: userName || 'Unknown',  // Ensure userName is valid
+      scannedBy: userName || 'Unknown',
       customerName: customer.name,  // Store the customer name instead of the ID
       quantity: quantity,
       paymentStatus: paymentStatus, // Store the correct payment status
@@ -264,7 +264,7 @@ const BarcodeScanner = () => {
           type="number"
           id="quantity"
           value={quantity}
-          onChange={(e) => setQuantity(Math.max(1, e.target.value))}
+          onChange={(e) => setQuantity(e.target.value)}
           onBlur={(e) => setQuantity(Math.max(1, e.target.value))}
           min="1"
         />
@@ -310,15 +310,14 @@ const BarcodeScanner = () => {
               </div>
 
       <div>
-  <button className="popup-btn-yes" onClick={saveScannedItem}>
-    تأكيد
-  </button>
+  <button className="popup-btn-yes" onClick={saveScannedItem}>نعم</button>
+  <button className="popup-btn-no" onClick={() => setIsPopupOpen(false)}>لا</button>
 </div>
     </div>
   </div>
 )}
-</div>
-</div>
+      </div>
+    </div>
   );
 };
 

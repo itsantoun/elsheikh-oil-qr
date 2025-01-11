@@ -33,7 +33,7 @@ const BarcodeScanner = () => {
             const userData = snapshot.val();
             const fetchedName = userData?.name || 'Unknown';  // Retrieve 'name' from the database
             console.log('Fetched user data:', userData);  // Debugging line
-            setUserName(fetchedName);
+            setUserName(fetchedName);  // Set the fetched name
           } else {
             console.error("User data not found in the database.");
             setUserName('Unknown');

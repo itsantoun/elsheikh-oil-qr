@@ -18,6 +18,7 @@ const BarcodeScanner = () => {
   const [loading, setLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [paymentStatus, setPaymentStatus] = useState('Unpaid'); // Default to 'Unpaid'
+  const [remark, setRemark] = useState('');
   const scannerRef = React.useRef(null);
 
   const { user } = useContext(UserContext);
@@ -178,6 +179,7 @@ const BarcodeScanner = () => {
       paymentStatus: paymentStatus, // Store the correct payment status
       itemCost: scannedProduct.itemCost, // Include item cost for reference
       totalCost: totalCost,  // Save the calculated total cost
+      remark: remark, 
     };
 
     try {
@@ -190,6 +192,7 @@ const BarcodeScanner = () => {
       setSelectedCustomer('');
       setQuantity(1);
       setPaymentStatus('Unpaid'); // Reset to default 'Unpaid' after saving
+      setRemark('');
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to the database.");
@@ -227,77 +230,7 @@ const BarcodeScanner = () => {
           />
           <button onClick={() => changeZoom(Math.min(3, zoomLevel + 0.1))}>Zoom In</button>
         </div>
-
-        {/* {isPopupOpen && (
-          <div className="popup-overlay">
-            <div className="popup">
-              <h3 className="popup-title">Product Found</h3>
-              <p className="popup-text">{dialogMessage}</p>
-              <div className="customer-select">
-                <label htmlFor="customer">اختر اسم المشتري</label>
-                <select
-                  id="customer"
-                  value={selectedCustomer}
-                  onChange={(e) => setSelectedCustomer(e.target.value)}
-                >
-                  <option value="">--Select Customer--</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="quantity-input">
-                <label htmlFor="quantity">الكمية:</label>
-                <input
-                  type="number"
-                  id="quantity"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  onBlur={(e) => setQuantity(Math.max(1, e.target.value))}
-                  min="1"
-                />
-              </div>
-
-              {scannedProduct && scannedProduct.itemCost && quantity > 0 && (
-        <div className="total-cost">
-          <p>Total Cost: {scannedProduct.itemCost * quantity} {scannedProduct.currency || 'LL'}</p>
-        </div>
-      )}
-
-      
-              <div className="radio-group">
-                <input
-                  type="radio"
-                  id="paid"
-                  name="paymentStatus"
-                  value="Paid"
-                  className="radio-input"
-                  checked={paymentStatus === 'Paid'}
-                  onChange={handlePaymentStatusChange}
-                />
-                <label htmlFor="paid" className="radio-label">Paid</label>
-
-                <input
-                  type="radio"
-                  id="unpaid"
-                  name="paymentStatus"
-                  value="Unpaid"
-                  className="radio-input"
-                  checked={paymentStatus === 'Unpaid'}
-                  onChange={handlePaymentStatusChange}
-                />
-                <label htmlFor="unpaid" className="radio-label">Unpaid</label>
-              </div>
-              <div className="popup-buttons">
-                <button className="popup-btn" onClick={saveScannedItem}>نعم</button>
-                <button className="popup-btn" onClick={() => setIsPopupOpen(false)}>لا</button>
-              </div>
-            </div>
-          </div>
-        )} */}
-
+        
 {isPopupOpen && (
   <div className="popup-overlay">
     <div className="popup">
@@ -366,6 +299,16 @@ const BarcodeScanner = () => {
         />
         <label htmlFor="unpaid" className="radio-label">Unpaid</label>
       </div>
+      <div className="remark-input">
+                <label htmlFor="remark">Remark:</label>
+                <textarea
+                  id="remark"
+                  value={remark}
+                  onChange={(e) => setRemark(e.target.value)}
+                  placeholder="Enter any remarks here"
+                />
+              </div>
+
       <div>
   <button className="popup-btn-yes" onClick={saveScannedItem}>نعم</button>
   <button className="popup-btn-no" onClick={() => setIsPopupOpen(false)}>لا</button>

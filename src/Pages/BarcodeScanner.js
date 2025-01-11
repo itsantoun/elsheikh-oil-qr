@@ -32,7 +32,6 @@ const BarcodeScanner = () => {
           if (snapshot.exists()) {
             const userData = snapshot.val();
             const fetchedName = userData?.name || 'Unknown';  // Retrieve 'name' from the database
-            console.log('Fetched user data:', userData);  // Debugging line
             setName(fetchedName);  // Set the fetched name
           } else {
             console.error("User data not found in the database.");
@@ -55,7 +54,6 @@ const BarcodeScanner = () => {
         const snapshot = await get(customersRef);
         if (snapshot.exists()) {
           const customersData = snapshot.val();
-          console.log("Fetched customers data:", customersData);
           setCustomers(
             Object.entries(customersData).map(([key, value]) => ({
               id: key,
@@ -63,7 +61,6 @@ const BarcodeScanner = () => {
             }))
           );
         } else {
-          console.log("No customers data found.");
           setCustomers([]);
         }
       } catch (error) {
@@ -81,7 +78,6 @@ const BarcodeScanner = () => {
     codeReader
       .decodeFromVideoDevice(null, videoElement, (result, error) => {
         if (result) {
-          console.log(`Scanned Code: ${result.text}`);
           setScanStatus('Barcode detected! Processing...');
           fetchProductDetails(result.text);
         } else if (error) {
@@ -112,10 +108,9 @@ const BarcodeScanner = () => {
         };
         await track.applyConstraints(constraints);
       } else {
-        console.warn('Zoom capability is not supported by this device.');
       }
     } catch (error) {
-      console.error('Failed to apply zoom:', error);
+      // console.error('Failed to apply zoom:', error);
     }
   };
 

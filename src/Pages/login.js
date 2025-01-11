@@ -14,11 +14,11 @@ function Login({ onLogin }) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-
+  
       setLoginError('');
-      setUser({ email }); // Update the user context
-
-      if (email === 'doris@elsheikh.lb') {
+      setUser(user); // Update the user context with the full user object
+  
+      if (user.email === 'doris@elsheikh.lb') {
         onLogin('admin'); // Navigate to Admin page
       } else {
         onLogin('scanner'); // Navigate to BarcodeScanner page

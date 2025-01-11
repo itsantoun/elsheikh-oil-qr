@@ -26,13 +26,14 @@ const BarcodeScanner = () => {
   useEffect(() => {
     const fetchUserName = async () => {
       if (user && user.uid) { // Ensure the user is authenticated and has a uid
-        const userRef = ref(database, `users/${user.uid}`);  // Path to the user's data
+        const userRef = ref(database, `users/${user.uid}`);
         try {
           const snapshot = await get(userRef);
           if (snapshot.exists()) {
             const userData = snapshot.val();
-            const fetchedUserName = userData?.name || 'Unknown';  // Use 'Unknown' if name is not found
-            setUserName(fetchedUserName);
+            const fetchedName = userData?.name || 'Unknown';  // Retrieve 'name' from the database
+            console.log('Fetched user data:', userData);  // Debugging line
+            setUserName(fetchedName);
           } else {
             console.error("User data not found in the database.");
             setUserName('Unknown');

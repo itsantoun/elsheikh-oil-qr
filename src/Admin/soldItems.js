@@ -238,7 +238,7 @@ const saveEditedItem = async () => {
                 <th>Customer</th>
                 <th>Product Type</th>
                 <th>Quantity Sold</th>
-                <th>Price</th>
+                {/* <th>Price</th> */}
                 <th>Item Cost</th>
                 <th>Employee</th>
                 <th>Remarks</th>
@@ -254,7 +254,7 @@ const saveEditedItem = async () => {
                   <td>{item.customerName || 'N/A'}</td>
                   <td>{item.category || 'N/A'}</td>
                   <td>{item.quantity || 0}</td>
-                  <td>{item.price ? `$${item.price.toFixed(2)}` : 'N/A'}</td>
+                  {/* <td>{item.price ? `$${item.price.toFixed(2)}` : 'N/A'}</td> */}
                   <td>{item.cost ? `$${item.cost.toFixed(2)}` : 'N/A'}</td>
                   <td>{item.scannedBy || 'N/A'}</td>
                   <td>{item.remark || 'N/A'}</td>

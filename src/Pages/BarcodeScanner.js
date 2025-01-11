@@ -21,10 +21,27 @@ const BarcodeScanner = () => {
   const [remark, setRemark] = useState('');
   const [scannedItems, setScannedItems] = useState([]);
   const [editingItem, setEditingItem] = useState(null); // Track the item being edited
+  const today = new Date().toDateString();
+
 
   const scannerRef = React.useRef(null);
 
   const { user } = useContext(UserContext);
+
+  function getCustomDate() {
+    const now = new Date();
+    const customDate = new Date();
+    
+    if (now.getHours() < 22) {
+      customDate.setDate(customDate.getDate() - 1);
+    }
+  
+    customDate.setHours(22, 0, 0, 0); 
+    return customDate;
+  }
+  
+  const customDate = getCustomDate();
+  const startOfDay = customDate.toISOString(); // Use this in your query
 
   useEffect(() => {
     const fetchUserName = async () => {
@@ -117,35 +134,6 @@ const BarcodeScanner = () => {
     }
   };
 
-  // useEffect(() => {
-  //   const fetchScannedItems = async () => {
-  //     if (!user || !user.uid) return;
-  
-  //     const soldItemsRef = ref(database, 'SoldItems');
-  //     try {
-  //       const snapshot = await get(soldItemsRef);
-  //       if (snapshot.exists()) {
-  //         const items = Object.values(snapshot.val());
-  //         const today = new Date();
-  //         const filteredItems = items.filter((item) => {
-  //           const itemDate = new Date(item.dateScanned);
-  //           return (
-  //             item.scannedBy === name && // Match authenticated user's name
-  //             itemDate.toDateString() === today.toDateString() // Filter today's items
-  //           );
-  //         });
-  //         setScannedItems(filteredItems);
-  //       } else {
-  //         setScannedItems([]);
-  //       }
-  //     } catch (error) {
-  //       console.error('Error fetching scanned items:', error);
-  //     }
-  //   };
-  
-  //   fetchScannedItems();
-  // }, [user, name]);
-
   useEffect(() => {
   if (!user || !user.uid || !name) return;
 
@@ -156,11 +144,19 @@ const BarcodeScanner = () => {
       const items = Object.values(snapshot.val());
       const today = new Date().toDateString();
 
+      // const filteredItems = items.filter((item) => {
+      //   const itemDate = new Date(item.dateScanned).toDateString();
+      //   return (
+      //     item.scannedBy === name &&
+      //     itemDate === today
+      //   );
+      // });
+
       const filteredItems = items.filter((item) => {
-        const itemDate = new Date(item.dateScanned).toDateString();
+        const itemDate = new Date(item.dateScanned);
         return (
           item.scannedBy === name &&
-          itemDate === today
+          itemDate >= customDate
         );
       });
 
@@ -174,9 +170,8 @@ const BarcodeScanner = () => {
   return () => {
     off(soldItemsRef, "value", listener);
   };
-}, [user, name]);
-
-  
+// }, [user, name]);
+}, [user, name, customDate]);
 
   useEffect(() => {
     applyZoom();

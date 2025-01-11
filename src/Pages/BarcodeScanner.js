@@ -411,7 +411,8 @@ const BarcodeScanner = () => {
       </thead>
       <tbody>
         {scannedItems.map((item, index) => (
-          <tr key={index}>
+          // <tr key={index}>
+          <tr key={item.id}>
             <td>{item.barcode}</td>
             <td>{item.name}</td>
             <td>{item.customerName}</td>

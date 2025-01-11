@@ -11,7 +11,7 @@ const BarcodeScanner = () => {
   const [dialogMessage, setDialogMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [scannedProduct, setScannedProduct] = useState(null);
-  const [userName, setUserName] = useState(null);
+  const [name, setName] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -33,18 +33,18 @@ const BarcodeScanner = () => {
             const userData = snapshot.val();
             const fetchedName = userData?.name || 'Unknown';  // Retrieve 'name' from the database
             console.log('Fetched user data:', userData);  // Debugging line
-            setUserName(fetchedName);  // Set the fetched name
+            setName(fetchedName);  // Set the fetched name
           } else {
             console.error("User data not found in the database.");
-            setUserName('Unknown');
+            setName('Unknown');
           }
         } catch (error) {
           console.error("Error fetching user's name:", error);
-          setUserName('Unknown');
+          setName('Unknown');
         }
       } else {
         console.error("User is not authenticated or uid is missing.");
-        setUserName('Unknown');
+        setName('Unknown');
       }
     };
 
@@ -180,7 +180,7 @@ const BarcodeScanner = () => {
       category: scannedProduct.category || 'Unknown',
       price: scannedProduct.price || 0,
       dateScanned: currentDate,
-      scannedBy: userName || 'Unknown',
+      scannedBy: name || 'Unknown',
       customerName: customer.name,  // Store the customer name instead of the ID
       quantity: quantity,
       paymentStatus: paymentStatus, // Store the correct payment status

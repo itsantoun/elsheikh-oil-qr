@@ -94,26 +94,43 @@
   text-align: center;
 }
 
-/* Yes Button */
-.popup-btn.yes {
-  background-color: #27ae60; /* Green */
-  color: #fff;
+.popup-btn-yes,
+.popup-btn-no {
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.popup-btn.yes:hover {
-  background-color: #1e8449; /* Darker Green */
+.popup-btn-yes {
+  background-color: #4caf50; /* Green */
+  color: white;
+}
+
+.popup-btn-yes:hover {
+  background-color: #45a049;
   transform: scale(1.05);
+  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* No Button */
-.popup-btn.no {
-  background-color: #e74c3c; /* Red */
-  color: #fff;
+.popup-btn-no {
+  background-color: #f44336; /* Red */
+  color: white;
 }
 
-.popup-btn.no:hover {
-  background-color: #c0392b; /* Darker Red */
+.popup-btn-no:hover {
+  background-color: #e53935;
   transform: scale(1.05);
+  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Optional: Add spacing between the buttons */
+.popup-btn-yes,
+.popup-btn-no {
+  margin: 0 10px;
 }
 
 /* Popup Overlay and Box */

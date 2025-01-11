@@ -339,7 +339,7 @@ const BarcodeScanner = () => {
 
       {scannedProduct && scannedProduct.itemCost && quantity > 0 && (
         <div className="total-cost">
-          <p>Total Cost: {scannedProduct.itemCost * quantity} {scannedProduct.currency || 'LL'}</p>
+          <p>Total Cost: {scannedProduct.itemCost * quantity} {scannedProduct.currency || '$'}</p>
         </div>
       )}
 
@@ -366,7 +366,7 @@ const BarcodeScanner = () => {
         />
         <label htmlFor="unpaid" className="radio-label">Unpaid</label>
       </div>
-      <div >
+      <div>
   <button className="popup-btn-yes" onClick={saveScannedItem}>نعم</button>
   <button className="popup-btn-no" onClick={() => setIsPopupOpen(false)}>لا</button>
 </div>

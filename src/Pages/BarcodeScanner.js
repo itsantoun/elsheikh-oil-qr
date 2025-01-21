@@ -115,42 +115,22 @@ const BarcodeScanner = () => {
     };
   }, [user, zoomLevel]);
 
-  // const applyZoom = async () => {
-  //   try {
-  //     const videoElement = scannerRef.current;
-  //     const stream = videoElement.srcObject;
-  //     const [track] = stream.getVideoTracks();
-  
-  //     const capabilities = track.getCapabilities();
-  //     if ('zoom' in capabilities) {
-  //       const constraints = {
-  //         advanced: [{ zoom: zoomLevel }],
-  //       };
-  //       await track.applyConstraints(constraints);
-  //     } else {
-  //     }
-  //   } catch (error) {
-  //     // console.error('Failed to apply zoom:', error);
-  //   }
-  // };
-
   const applyZoom = async () => {
     try {
       const videoElement = scannerRef.current;
       const stream = videoElement.srcObject;
       const [track] = stream.getVideoTracks();
   
-      const constraints = track.getConstraints();
       const capabilities = track.getCapabilities();
-  
       if ('zoom' in capabilities) {
-        await track.applyConstraints({
-          ...constraints,
+        const constraints = {
           advanced: [{ zoom: zoomLevel }],
-        });
+        };
+        await track.applyConstraints(constraints);
+      } else {
       }
     } catch (error) {
-      console.error('Failed to apply zoom:', error);
+      // console.error('Failed to apply zoom:', error);
     }
   };
 
@@ -197,39 +177,27 @@ const BarcodeScanner = () => {
     applyZoom();
   }, [zoomLevel]);
 
- const changeZoom = async (level) => {
-  const videoElement = scannerRef.current;
-  const stream = videoElement.srcObject;
-  const [track] = stream.getVideoTracks();
-
-  const capabilities = track.getCapabilities();
-  if ('zoom' in capabilities) {
-    const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max);
-    setZoomLevel(newZoomLevel);
-  } else {
-    console.warn('Zoom capability is not supported by this device.');
-  }
-};
-
-const checkZoomCapabilities = () => {
-  const videoElement = scannerRef.current;
-  if (!videoElement || !videoElement.srcObject) {
-    console.warn('No video stream available.');
-    return;
-  }
-
-  const [track] = videoElement.srcObject.getVideoTracks();
-  const capabilities = track.getCapabilities();
-
-  if ('zoom' in capabilities) {
-    console.log('Zoom capabilities:', capabilities.zoom);
-    alert(`Zoom min: ${capabilities.zoom.min}, max: ${capabilities.zoom.max}, step: ${capabilities.zoom.step}`);
-  } else {
-    console.warn('Zoom capability not supported on this device.');
-  }
-};
-
-checkZoomCapabilities();
+  const changeZoom = async (level) => {
+    const videoElement = scannerRef.current;
+    const stream = videoElement.srcObject;
+    const [track] = stream.getVideoTracks();
+    
+    const capabilities = track.getCapabilities();
+    if ('zoom' in capabilities) {
+      // Allow a higher zoom range, e.g., up to 10x
+      const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max || 10); 
+      setZoomLevel(newZoomLevel);
+      try {
+        await track.applyConstraints({
+          advanced: [{ zoom: newZoomLevel }],
+        });
+      } catch (error) {
+        console.error('Failed to apply zoom:', error);
+      }
+    } else {
+      console.warn('Zoom capability is not supported by this device.');
+    }
+  };
 
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
@@ -360,19 +328,17 @@ checkZoomCapabilities();
         {loading && <div className="loading-message">Loading customers...</div>}
         
         <div className="zoom-controls">
-          {/* <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.1))}>Zoom Out</button> */}
-          <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.1))}>Zoom Out</button>
-          <input 
-            type="range" 
-            min="0.5" 
-            max="10" 
-            step="0.1"
-            value={zoomLevel}
-            onChange={(e) => changeZoom(parseFloat(e.target.value))}
-          />
-          {/* <button onClick={() => changeZoom(Math.min(3, zoomLevel + 0.1))}>Zoom In</button> */}
-          <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.1))}>Zoom In</button>
-        </div>
+  <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}>Zoom Out</button>
+  <input 
+    type="range" 
+    min="0.5" 
+    max="10" // Increased maximum zoom level to 10x
+    step="0.1"
+    value={zoomLevel}
+    onChange={(e) => changeZoom(parseFloat(e.target.value))}
+  />
+  <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}>Zoom In</button>
+</div>
         
 {isPopupOpen && (
   <div className="popup-overlay">

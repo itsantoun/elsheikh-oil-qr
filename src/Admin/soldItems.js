@@ -3,6 +3,7 @@ import { database } from '../Auth/firebase';
 import { ref, get, update, remove } from 'firebase/database';
 import { UserContext } from '../Auth/userContext'; // Import the context
 import '../CSS/soldItems.css';
+import RemainingProducts from './remainingProducts';
 
 const SoldItems = () => {
   const { user } = useContext(UserContext); // Access the logged-in user
@@ -20,7 +21,38 @@ const SoldItems = () => {
   const [newTotalCost, setNewTotalCost] = useState('');
   const [newPaymentStatus, setNewPaymentStatus] = useState('');
 
-  // Fetch Sold Items
+  const [totalQuantities, setTotalQuantities] = useState({});
+
+  // // Fetch Sold Items
+  // useEffect(() => {
+  //   const fetchSoldItems = async () => {
+  //     try {
+  //       const soldItemsRef = ref(database, 'SoldItems');
+  //       const snapshot = await get(soldItemsRef);
+  //       if (snapshot.exists()) {
+  //         const data = snapshot.val();
+  //         const soldItemList = Object.keys(data).map((key) => ({
+  //           id: key,
+  //           ...data[key],
+  //         }));
+  //         setSoldItems(soldItemList);
+  //         setFilteredItems(soldItemList); // Initialize filteredItems
+  //         setCustomers([...new Set(soldItemList.map((item) => item.customerName || 'N/A'))]);
+  //       } else {
+  //         setSoldItems([]);
+  //         setFilteredItems([]);
+  //         setCustomers([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching sold items:', error);
+  //       setErrorMessage('Failed to fetch sold items.');
+  //       setTimeout(() => setErrorMessage(null), 3000);
+  //     }
+  //   };
+
+  //   fetchSoldItems();
+  // }, []);
+
   useEffect(() => {
     const fetchSoldItems = async () => {
       try {
@@ -47,7 +79,22 @@ const SoldItems = () => {
       }
     };
 
+    const fetchTotalQuantities = async () => {
+      try {
+        const totalQuantitiesRef = ref(database, 'TotalQuantities');
+        const snapshot = await get(totalQuantitiesRef);
+        if (snapshot.exists()) {
+          setTotalQuantities(snapshot.val());
+        } else {
+          setTotalQuantities({});
+        }
+      } catch (error) {
+        console.error('Error fetching total quantities:', error);
+      }
+    };
+
     fetchSoldItems();
+    fetchTotalQuantities();
   }, []);
 
   // Handle Filtering
@@ -161,7 +208,7 @@ const saveEditedItem = async () => {
 
       {/* Error Message */}
       {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
-
+      <RemainingProducts soldItems={soldItems} totalQuantities={totalQuantities} />
       {/* Filters */}
       <div className="sold-items-filters">
         <select

@@ -92,28 +92,79 @@ const BarcodeScanner = () => {
     fetchUserName();
     fetchCustomers();
 
-    const codeReader = new BrowserMultiFormatReader();
-    const videoElement = scannerRef.current;
+      const codeReader = new BrowserMultiFormatReader();
+      const videoElement = scannerRef.current;
+    
+      codeReader
+        .decodeFromVideoDevice(null, videoElement, (result, error) => {
+          if (result) {
+            setScanStatus('Barcode detected! Processing...');
+            fetchProductDetails(result.text);
+          } else if (error) {
+            setScanStatus('Align the barcode and hold steady.');
+            console.warn('Barcode detection error:', error);
+          }
+        }, {
+          tryHarder: true, // Enable more intensive scanning
+          constraints: {
+            video: {
+              facingMode: 'environment', // Use the rear camera
+              width: { ideal: 1280 }, // Request higher resolution
+              height: { ideal: 720 },
+            },
+          },
+        })
+        .then(() => {
+          applyZoom();
+        })
+        .catch((err) => console.error('Camera initialization failed:', err));
+    
+      return () => {
+        codeReader.reset();
+      };
+    }, [user, zoomLevel]);
 
-    codeReader
-      .decodeFromVideoDevice(null, videoElement, (result, error) => {
-        if (result) {
-          setScanStatus('Barcode detected! Processing...');
-          fetchProductDetails(result.text);
-        } else if (error) {
-          setScanStatus('Align the barcode and hold steady.');
-        }
-      })
-      .then(() => {
-        // Apply zoom after camera is initialized
-        applyZoom();
-      })
-      .catch((err) => console.error('Camera initialization failed: refresh/try again later', err));
+  //   const codeReader = new BrowserMultiFormatReader();
+  //   const videoElement = scannerRef.current;
 
-    return () => {
-      codeReader.reset();
-    };
-  }, [user, zoomLevel]);
+  //   codeReader
+  //     .decodeFromVideoDevice(null, videoElement, (result, error) => {
+  //       if (result) {
+  //         setScanStatus('Barcode detected! Processing...');
+  //         fetchProductDetails(result.text);
+  //       } else if (error) {
+  //         setScanStatus('Align the barcode and hold steady.');
+  //       }
+  //     })
+  //     .then(() => {
+  //       // Apply zoom after camera is initialized
+  //       applyZoom();
+  //     })
+  //     .catch((err) => console.error('Camera initialization failed: refresh/try again later', err));
+
+  //   return () => {
+  //     codeReader.reset();
+  //   };
+  // }, [user, zoomLevel]);
+
+  // const applyZoom = async () => {
+  //   try {
+  //     const videoElement = scannerRef.current;
+  //     const stream = videoElement.srcObject;
+  //     const [track] = stream.getVideoTracks();
+  
+  //     const capabilities = track.getCapabilities();
+  //     if ('zoom' in capabilities) {
+  //       const constraints = {
+  //         advanced: [{ zoom: zoomLevel }],
+  //       };
+  //       await track.applyConstraints(constraints);
+  //     } else {
+  //     }
+  //   } catch (error) {
+  //     // console.error('Failed to apply zoom:', error);
+  //   }
+  // };
 
   const applyZoom = async () => {
     try {
@@ -124,13 +175,14 @@ const BarcodeScanner = () => {
       const capabilities = track.getCapabilities();
       if ('zoom' in capabilities) {
         const constraints = {
-          advanced: [{ zoom: zoomLevel }],
+          advanced: [{ zoom: zoomLevel }, { focusMode: 'continuous' }], // Add focus mode
         };
         await track.applyConstraints(constraints);
       } else {
+        console.warn('Zoom or focus capabilities are not supported by this device.');
       }
     } catch (error) {
-      // console.error('Failed to apply zoom:', error);
+      console.error('Failed to apply zoom or focus:', error);
     }
   };
 

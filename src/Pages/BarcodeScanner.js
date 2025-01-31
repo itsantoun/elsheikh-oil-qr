@@ -258,7 +258,7 @@ const BarcodeScanner = () => {
       if (snapshot.exists()) {
         const product = snapshot.val();
         setScannedProduct({ barcode, ...product });
-        setDialogMessage(`هل تريد إضافته؟ ${product.name} :تم إيجاد`);
+        setDialogMessage(`${product.name}`);
         setIsPopupOpen(true);
       } else {
         setDialogMessage("Product not found.");

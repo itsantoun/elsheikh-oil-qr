@@ -1,83 +1,88 @@
 import React, { useState, useEffect } from 'react';
+import { ref, get } from 'firebase/database';
+import { database } from '../Auth/firebase'; // Adjust the path as necessary
+import '../CSS/remainingProducts.css'; // Import the CSS file
 
-function RemainingProducts({ soldItems, totalQuantities }) {
-  const [remainingQuantities, setRemainingQuantities] = useState({});
-  const [loading, setLoading] = useState(true); // Add loading state
+function RemainingProducts() {
+  const [products, setProducts] = useState([]);
+  const [soldItems, setSoldItems] = useState([]);
 
+  // Fetch products from 'products' database
   useEffect(() => {
-    console.log('useEffect triggered');
-    console.log('soldItems:', soldItems);
-    console.log('totalQuantities:', totalQuantities);
-
-    // Only calculate remaining quantities if soldItems and totalQuantities are available
-    if (Array.isArray(soldItems) && totalQuantities) {
-      if (soldItems.length === 0) {
-        setRemainingQuantities({}); // Handle empty array case
-        setLoading(false); // Finished loading
-        console.log('No sold items, remaining quantities:', remainingQuantities);
-        return;
+    const fetchProducts = async () => {
+      try {
+        const productsRef = ref(database, 'products');
+        const snapshot = await get(productsRef);
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const productList = Object.keys(data).map((key) => ({
+            id: key,
+            ...data[key],
+          }));
+          setProducts(productList);
+        }
+      } catch (error) {
+        console.error('Error fetching products:', error);
       }
+    };
 
-      const calculateRemainingQuantities = () => {
-        const remaining = { ...totalQuantities }; // Start with total quantities
-        console.log('Starting remaining quantities:', remaining);
+    fetchProducts();
+  }, []);
 
-        soldItems.forEach((item) => {
-          const { category, quantity } = item;
+  // Fetch sold items from 'SoldItems' database
+  useEffect(() => {
+    const fetchSoldItems = async () => {
+      try {
+        const soldItemsRef = ref(database, 'SoldItems');
+        const snapshot = await get(soldItemsRef);
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const soldItemList = Object.keys(data).map((key) => ({
+            id: key,
+            ...data[key],
+          }));
+          setSoldItems(soldItemList);
+        }
+      } catch (error) {
+        console.error('Error fetching sold items:', error);
+      }
+    };
 
-          console.log('Processing item:', item);
+    fetchSoldItems();
+  }, []);
 
-          // Skip if there's no category or quantity
-          if (!category || quantity === undefined || quantity === null) {
-            console.log('Skipping invalid item:', item);
-            return;
-          }
-
-          // Check if the category exists in totalQuantities
-          if (remaining[category] !== undefined) {
-            // Subtract the sold quantity from the remaining quantity
-            const newQuantity = Math.max(remaining[category] - quantity, 0); // Ensure no negative quantity
-            console.log(`Subtracting ${quantity} from ${remaining[category]} for category ${category}, new quantity: ${newQuantity}`);
-            remaining[category] = newQuantity;
-          } else {
-            console.log(`Category ${category} not found in totalQuantities`);
-          }
-        });
-
-        console.log('Final remaining quantities:', remaining);
-        setRemainingQuantities(remaining);
-        setLoading(false); // Finished loading after calculation
-      };
-
-      calculateRemainingQuantities();
-    } else {
-      setLoading(false); // Finished loading if soldItems or totalQuantities are not available
-      console.log('Invalid data: soldItems or totalQuantities are missing');
-    }
-  }, [soldItems, totalQuantities]); // Recalculate when soldItems or totalQuantities change
-
-  // Show loading state if still loading
-  if (loading) {
-    console.log('Loading...');
-    return <div>Loading products...</div>;
-  }
-
-  console.log('Rendering remaining quantities:', remainingQuantities);
+  // Calculate the total quantity sold per product by product name
+  const calculateQuantitySold = (productName) => {
+    return soldItems.reduce((total, item) => {
+      // Ensure each item has a 'productName' and 'quantity' field
+      if (item.productName === productName) { // Match by productName
+        return total + (item.quantity || 0); // Sum quantities sold for matching product name
+      }
+      return total;
+    }, 0);
+  };
 
   return (
-    <div>
-      <h2>Remaining Product Quantities</h2>
-      {Object.keys(remainingQuantities).length > 0 ? (
-        <ul>
-          {Object.entries(remainingQuantities).map(([category, quantity]) => (
-            <li key={category}>
-              {category}: {quantity} remaining
+    <div className="remaining-products-container">
+      <h2 className="remaining-products-heading">Remaining Products</h2>
+      <ul className="remaining-products-list">
+        {products.map((product) => {
+          const quantitySold = calculateQuantitySold(product.name); // Calculate total quantity sold based on product name
+          const remainingQuantity = product.quantity - quantitySold; // Remaining quantity
+
+          return (
+            <li key={product.id} className="remaining-products-list-item">
+              <span className="remaining-products-item-name">{product.name}</span>
+              <span className="remaining-products-quantity-sold">
+                Quantity Sold: {quantitySold}
+              </span>
+              <span className="remaining-products-remaining-quantity">
+                Remaining Quantity: {remainingQuantity}
+              </span>
             </li>
-          ))}
-        </ul>
-      ) : (
-        <p>No data available for sold products.</p>
-      )}
+          );
+        })}
+      </ul>
     </div>
   );
 }

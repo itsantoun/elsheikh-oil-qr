@@ -447,7 +447,7 @@ const BarcodeScanner = () => {
           checked={paymentStatus === 'Paid'}
           onChange={handlePaymentStatusChange}
         />
-        <label htmlFor="paid" className="radio-label">Paid</label>
+        <label htmlFor="paid" className="radio-label"> مدفوع</label>
 
         <input
           type="radio"
@@ -458,7 +458,7 @@ const BarcodeScanner = () => {
           checked={paymentStatus === 'Unpaid'}
           onChange={handlePaymentStatusChange}
         />
-        <label htmlFor="unpaid" className="radio-label">Unpaid</label>
+        <label htmlFor="unpaid" className="radio-label">غير مدفوع</label>
       </div>
       <div className="remark-input">
                 <label htmlFor="remark">Remark:</label>
@@ -549,8 +549,8 @@ const BarcodeScanner = () => {
           })
         }
       >
-        <option value="Paid">Paid</option>
-        <option value="Unpaid">Unpaid</option>
+        <option value="Paid">مدفوع</option>
+        <option value="Unpaid">غير مدفوع</option>
       </select>
     </div>
 
@@ -615,8 +615,8 @@ const BarcodeScanner = () => {
                   })
                 }
               >
-                <option value="Paid">Paid</option>
-                <option value="Unpaid">Unpaid</option>
+                <option value="Paid">مدفوع</option>
+                <option value="Unpaid">غير مدفوع</option>
               </select>
             </div>
 

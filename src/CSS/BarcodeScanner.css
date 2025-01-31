@@ -167,7 +167,8 @@
 .popup-text {
   font-size: 18px;
   margin-bottom: 25px;
-  color: #7f8c8d; /* Gray */
+  color: black; /* Gray */
+  font-weight: bold;
 }
 
 /* Close Button */

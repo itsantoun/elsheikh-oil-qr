@@ -433,7 +433,7 @@ const BarcodeScanner = () => {
 
       {scannedProduct && scannedProduct.itemCost && quantity > 0 && (
         <div className="total-cost">
-          <p>Total Cost: {scannedProduct.itemCost * quantity} {scannedProduct.currency || '$'}</p>
+          <p>{scannedProduct.itemCost * quantity} {scannedProduct.currency || '$  :المجموع'}</p>
         </div>
       )}
 

@@ -461,13 +461,14 @@ const BarcodeScanner = () => {
         <label htmlFor="unpaid" className="radio-label">غير مدفوع</label>
       </div>
       <div className="remark-input">
-                <label htmlFor="remark">Remark:</label>
+               
                 <textarea
                   id="remark"
                   value={remark}
                   onChange={(e) => setRemark(e.target.value)}
                   placeholder="Enter any remarks here"
                 />
+                 <label htmlFor="remark"> :ملاحظة </label>
               </div>
 
       <div>

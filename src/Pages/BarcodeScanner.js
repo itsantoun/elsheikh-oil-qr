@@ -326,60 +326,6 @@ const BarcodeScanner = () => {
     }
   };
 
-  // const saveScannedItem = async () => {
-  //   if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
-  //     setDialogMessage("!يجب تعبئت كل الخانات");
-  //     return;
-  //   }
-  
-  //   const totalCost = scannedProduct.itemCost * quantity;
-  
-  //   // Ensure name is set correctly from the context
-  //   const scannedBy = name || 'Unknown'; // Ensure fallback if name is not available
-  
-  //   // Find the customer by ID to get the name
-  //   const customer = customers.find(c => c.id === selectedCustomer);
-  
-  //   if (!customer) {
-  //     setDialogMessage("Error: Customer not found.");
-  //     return;
-  //   }
-  
-  //   const soldItemsRef = ref(database, 'SoldItems');
-  //   const currentDate = new Date().toISOString();
-  
-  //   const newItem = {
-  //     barcode: scannedProduct.barcode,
-  //     name: scannedProduct.name,
-  //     category: scannedProduct.category || 'Unknown',
-  //     price: scannedProduct.price || 0,
-  //     dateScanned: currentDate,
-  //     scannedBy: scannedBy,  // Use the name from the context
-  //     customerName: customer.name,  // Store the customer name instead of the ID
-  //     quantity: quantity,
-  //     paymentStatus: paymentStatus, // Store the correct payment status
-  //     itemCost: scannedProduct.itemCost, // Include item cost for reference
-  //     totalCost: totalCost,  // Save the calculated total cost
-  //     remark: remark,
-  //   };
-  
-  //   try {
-  //     await push(soldItemsRef, newItem);
-  //     setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
-  //     setTimeout(() => setSuccessMessage(null), 3000); // Clear the success message after 3 seconds
-  //     setIsPopupOpen(false); // Close the popup
-  //     setDialogMessage(null);
-  //     setScannedProduct(null);
-  //     setSelectedCustomer('');
-  //     setQuantity(1);
-  //     setPaymentStatus('Unpaid'); // Reset to default 'Unpaid' after saving
-  //     setRemark('');
-  //   } catch (error) {
-  //     console.error("Error saving scanned item:", error);
-  //     setDialogMessage("Error saving item to the database.");
-  //   }
-  // };
-
   const handlePaymentStatusChange = (e) => {
     setPaymentStatus(e.target.value);
   };
@@ -644,12 +590,12 @@ const BarcodeScanner = () => {
         <div className="edit-popup">
           <div className="edit-form-container">
             <h3>Edit Item</h3>
-            <p><strong>:رقم الباركود</strong> {editingItem.barcode}</p>
-            <p><strong>:اسم الزبون</strong> {editingItem.name}</p>
-            <p><strong>:التاريخ</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
+            <p><strong>Barcode:</strong> {editingItem.barcode}</p>
+            <p><strong>Name:</strong> {editingItem.name}</p>
+            <p><strong>Date:</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
 
             <div>
-              <label htmlFor="editQuantity">:الكمية</label>
+              <label htmlFor="editQuantity">Quantity:</label>
               <input
                 type="number"
                 id="editQuantity"
@@ -666,7 +612,7 @@ const BarcodeScanner = () => {
             </div>
 
             <div>
-              <label htmlFor="editPaymentStatus"> :الدفع</label>
+              <label htmlFor="editPaymentStatus">Payment Status:</label>
               <select
                 id="editPaymentStatus"
                 value={editingItem.paymentStatus}
@@ -683,7 +629,7 @@ const BarcodeScanner = () => {
             </div>
 
             <div>
-              <label htmlFor="editRemark"> :ملاحظات</label>
+              <label htmlFor="editRemark">Remark:</label>
               <textarea
                 id="editRemark"
                 value={editingItem.remark}
@@ -704,10 +650,10 @@ const BarcodeScanner = () => {
                   setEditingItem(null);
                 }}
               >
-                احفظ التعديلات
+                Save
               </button>
               <button className="cancel-button" onClick={() => setEditingItem(null)}>
-                الغاء
+                Cancel
               </button>
             </div>
           </div>

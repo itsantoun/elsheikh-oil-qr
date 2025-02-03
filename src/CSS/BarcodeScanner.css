@@ -449,61 +449,29 @@
 
 .radio-group {
   display: flex;
-  justify-content: flex-start;
-  gap: 0.5rem; /* Reduce the gap between radio buttons */
-  align-items: center;
-  margin: 0 auto;
+  gap: 10px;
 }
 
 .radio-input {
   display: none;
 }
 
+
 .radio-label {
-  font-size: 1rem;
-  color: #333;
+  display: inline-block;
+  padding: 10px 20px;
+  font-size: 16px;
+  font-weight: bold;
+  text-align: center;
+  border: 2px solid #007bff;
+  border-radius: 5px;
+  background-color: #f8f9fa;
+  color: #007bff;
   cursor: pointer;
-  position: relative;
-  padding-left: 25px; /* Adjust padding if needed */
+  transition: all 0.3s ease;
 }
 
-.radio-label::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid #007BFF;
-  background-color: #fff;
-  transition: background-color 0.3s, border-color 0.3s;
-}
-
-.radio-input:checked + .radio-label::before {
-  background-color: #007BFF;
-  border-color: #007BFF;
-}
-
-.radio-input:checked + .radio-label::after {
-  content: '';
-  position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background-color: #fff;
-  transition: background-color 0.3s;
-}
-
-.radio-label:hover::before {
-  border-color: #0056b3;
-}
-
-.radio-label:active::before {
-  background-color: #0056b3;
-  border-color: #0056b3;
+.radio-input:checked + .radio-label {
+  background-color: #007bff;
+  color: white;
 }

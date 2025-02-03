@@ -449,10 +449,10 @@
 
 .radio-group {
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin: 1rem 0;
+  justify-content: flex-start;
+  gap: 0.5rem; /* Reduce the gap between radio buttons */
   align-items: center;
+  margin: 1rem 0;
 }
 
 .radio-input {
@@ -464,7 +464,7 @@
   color: #333;
   cursor: pointer;
   position: relative;
-  padding-left: 30px;
+  padding-left: 25px; /* Adjust padding if needed */
 }
 
 .radio-label::before {
@@ -473,8 +473,8 @@
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 2px solid #007BFF;
   background-color: #fff;

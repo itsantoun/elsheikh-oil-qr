@@ -452,7 +452,7 @@
   justify-content: flex-start;
   gap: 0.5rem; /* Reduce the gap between radio buttons */
   align-items: center;
-  margin: 1rem 0;
+  margin: 0 auto;
 }
 
 .radio-input {

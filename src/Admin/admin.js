@@ -7,6 +7,8 @@ import AddCustomer from './addCustomer';
 import RemainingProducts from './remainingProducts';
 import { UserContext } from '../Auth/userContext'; // Import UserContext
 import '../CSS/admin.css';
+import { auth } from '../Auth/firebase';
+import { signOut } from 'firebase/auth';
 
 const Admin = () => {
   const { user,setUser } = useContext(UserContext); // Access the context
@@ -19,9 +21,13 @@ const Admin = () => {
   }, [user]);
 
 
-  const handleLogout = () => {
-    setUser(null); // Clear the user context
-    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/'; // Redirect to the login page
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUser({ email: '', name: '' }); // Reset user context
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   if (!user || user.email !== 'doris@elsheikh.lb') {

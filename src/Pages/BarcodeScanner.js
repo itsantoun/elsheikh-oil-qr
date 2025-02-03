@@ -4,6 +4,8 @@ import { database } from '../Auth/firebase';
 import { ref, get, update, child, push, onValue ,off} from "firebase/database";
 import { UserContext } from '../Auth/userContext';  
 import '../CSS/BarcodeScanner.css';
+import { signOut } from 'firebase/auth';
+import { auth } from '../Auth/firebase';
 
 const BarcodeScanner = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
@@ -27,6 +29,7 @@ const BarcodeScanner = () => {
   const scannerRef = React.useRef(null);
 
   const { user } = useContext(UserContext);
+  const { setUser } = useContext(UserContext);
 
   function getCustomDate() {
     const now = new Date();
@@ -327,8 +330,13 @@ const BarcodeScanner = () => {
     setPaymentStatus(e.target.value);
   };
 
-  const handleLogout = () => {
-    window.location.href = 'https://itsantoun.github.io/elsheikh-oil-qr/';
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUser({ email: '', name: '' }); // Reset user context
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   const saveEditedItem = async (item) => {

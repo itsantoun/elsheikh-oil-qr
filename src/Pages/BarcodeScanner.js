@@ -402,8 +402,7 @@ const BarcodeScanner = () => {
       >
         ×
       </button>
-      <h3 className="popup-title">Product Found</h3>
-      <p className="popup-text">{dialogMessage}</p>
+      <h3 className="popup-text">{dialogMessage}</h3>
       <div className="customer-select">
         <label htmlFor="customer">اختر اسم المشتري</label>
         <select

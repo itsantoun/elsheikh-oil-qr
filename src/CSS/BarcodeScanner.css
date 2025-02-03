@@ -450,10 +450,12 @@
 .radio-group {
   display: flex;
   gap: 10px;
+  margin: 0 auto;
 }
 
 .radio-input {
   display: none;
+  margin: 0 auto;
 }
 
 

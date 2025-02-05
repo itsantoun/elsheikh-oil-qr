@@ -127,48 +127,6 @@ const BarcodeScanner = () => {
       };
     }, [user, zoomLevel]);
 
-  //   const codeReader = new BrowserMultiFormatReader();
-  //   const videoElement = scannerRef.current;
-
-  //   codeReader
-  //     .decodeFromVideoDevice(null, videoElement, (result, error) => {
-  //       if (result) {
-  //         setScanStatus('Barcode detected! Processing...');
-  //         fetchProductDetails(result.text);
-  //       } else if (error) {
-  //         setScanStatus('Align the barcode and hold steady.');
-  //       }
-  //     })
-  //     .then(() => {
-  //       // Apply zoom after camera is initialized
-  //       applyZoom();
-  //     })
-  //     .catch((err) => console.error('Camera initialization failed: refresh/try again later', err));
-
-  //   return () => {
-  //     codeReader.reset();
-  //   };
-  // }, [user, zoomLevel]);
-
-  // const applyZoom = async () => {
-  //   try {
-  //     const videoElement = scannerRef.current;
-  //     const stream = videoElement.srcObject;
-  //     const [track] = stream.getVideoTracks();
-  
-  //     const capabilities = track.getCapabilities();
-  //     if ('zoom' in capabilities) {
-  //       const constraints = {
-  //         advanced: [{ zoom: zoomLevel }],
-  //       };
-  //       await track.applyConstraints(constraints);
-  //     } else {
-  //     }
-  //   } catch (error) {
-  //     // console.error('Failed to apply zoom:', error);
-  //   }
-  // };
-
   const applyZoom = async () => {
     try {
       const videoElement = scannerRef.current;
@@ -198,14 +156,6 @@ const BarcodeScanner = () => {
     if (snapshot.exists()) {
       const items = Object.values(snapshot.val());
       const today = new Date().toDateString();
-
-      // const filteredItems = items.filter((item) => {
-      //   const itemDate = new Date(item.dateScanned).toDateString();
-      //   return (
-      //     item.scannedBy === name &&
-      //     itemDate === today
-      //   );
-      // });
 
       const filteredItems = items.filter((item) => {
         const itemDate = new Date(item.dateScanned);
@@ -318,7 +268,7 @@ const BarcodeScanner = () => {
       setScannedProduct(null);
       setSelectedCustomer('');
       setQuantity(1);
-      setPaymentStatus('Unpaid'); // Reset to default 'Unpaid' after saving
+      setPaymentStatus('Unpaid');
       setRemark('');
     } catch (error) {
       console.error("Error saving scanned item:", error);
@@ -360,7 +310,7 @@ const BarcodeScanner = () => {
           });
   
           setEditingItem(null); // Close the edit form
-          setSuccessMessage("Item updated successfully!");
+          setSuccessMessage("تم التعديل بنجاح");
           setTimeout(() => setSuccessMessage(null), 3000);
   
           // Reload items after update
@@ -494,92 +444,32 @@ const BarcodeScanner = () => {
     <table className="scanned-items-table">
       <thead>
         <tr>
-          <th>Barcode</th>
-          <th>Name</th>
-          <th>Customer</th>
-          <th>Quantity</th>
-          <th>Total Cost</th>
-          <th>Payment Status</th>
-          <th>Date</th>
-          <th>Remarks</th>
+          <th>الباركود</th>
+          <th>اسم المنتج</th>
+          <th>اسم الزبون</th>
+          <th>الكمية</th>
+          <th>المجموع Cost</th>
+          <th>الدفع؟</th>
+          <th>التاريخ</th>
+          <th>ملاحظات</th>
         </tr>
       </thead>
       <tbody>
-        {scannedItems.map((item, index) => (
-          // <tr key={index}>
-          <tr key={item.id}>
-            <td>{item.barcode}</td>
-            <td>{item.name}</td>
-            <td>{item.customerName}</td>
-            <td>{item.quantity}</td>
-            <td>{item.totalCost}</td>
-            <td>{item.paymentStatus}</td>
-            <td>{new Date(item.dateScanned).toLocaleString()}</td>
-            <td>{item.remark}</td>
-            <td>
-        <button onClick={() => setEditingItem(item)}>Edit</button>
-      </td>
-          </tr>
-        ))}
-        {editingItem && (
-  <div className="edit-form">
-    <h3>Edit Item</h3>
-    <p><strong>Barcode:</strong> {editingItem.barcode}</p>
-    <p><strong>Name:</strong> {editingItem.name}</p>
-    <p><strong>Date:</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
-
-    <div>
-      <label htmlFor="editQuantity">Quantity:</label>
-      <input
-        type="number"
-        id="editQuantity"
-        value={editingItem.quantity}
-        onChange={(e) =>
-          setEditingItem({
-            ...editingItem,
-            quantity: Math.max(1, parseInt(e.target.value, 10)),
-            totalCost: editingItem.itemCost * Math.max(1, parseInt(e.target.value, 10)),
-          })
-        }
-        min="1"
-      />
-    </div>
-
-    <div>
-      <label htmlFor="editPaymentStatus">Payment Status:</label>
-      <select
-        id="editPaymentStatus"
-        value={editingItem.paymentStatus}
-        onChange={(e) =>
-          setEditingItem({
-            ...editingItem,
-            paymentStatus: e.target.value,
-          })
-        }
-      >
-        <option value="Paid">مدفوع</option>
-        <option value="Unpaid">غير مدفوع</option>
-      </select>
-    </div>
-
-    <div>
-      <label htmlFor="editRemark">Remark:</label>
-      <textarea
-        id="editRemark"
-        value={editingItem.remark}
-        onChange={(e) =>
-          setEditingItem({
-            ...editingItem,
-            remark: e.target.value,
-          })
-        }
-      />
-    </div>
-
-    <button onClick={() => saveEditedItem(editingItem)}>Save</button>
-    <button onClick={() => setEditingItem(null)}>Cancel</button>
-  </div>
-)}
+         {scannedItems.map((item) => (
+  <tr key={item.id}>
+    <td>{item.barcode}</td>
+    <td>{item.name}</td>
+    <td>{item.customerName}</td>
+    <td>{item.quantity}</td>  
+    <td>{item.totalCost}</td>
+    <td>{item.paymentStatus === "Paid" ? "مدفوع" : "غير مدفوع"}</td>
+    <td>{new Date(item.dateScanned).toLocaleString("ar-EG")}</td>
+    <td>{item.remark}</td>
+    <td>
+      <button onClick={() => setEditingItem(item)}>تعديل</button>
+    </td>
+  </tr>
+))}
       </tbody>
     </table>
   ) : (
@@ -589,13 +479,13 @@ const BarcodeScanner = () => {
    {editingItem && (
         <div className="edit-popup">
           <div className="edit-form-container">
-            <h3>Edit Item</h3>
-            <p><strong>Barcode:</strong> {editingItem.barcode}</p>
-            <p><strong>Name:</strong> {editingItem.name}</p>
-            <p><strong>Date:</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
+          <h3>تعديل المنتج</h3>
+            <p><strong>الباركود</strong> {editingItem.barcode}</p>
+            <p><strong>اسم المنتج:</strong> {editingItem.name}</p>
+            <p><strong>التاريخ</strong> {new Date(editingItem.dateScanned).toLocaleString()}</p>
 
             <div>
-              <label htmlFor="editQuantity">Quantity:</label>
+              <label htmlFor="editQuantity">الكمية</label>
               <input
                 type="number"
                 id="editQuantity"
@@ -612,7 +502,7 @@ const BarcodeScanner = () => {
             </div>
 
             <div>
-              <label htmlFor="editPaymentStatus">Payment Status:</label>
+              <label htmlFor="editPaymentStatus">الدفع؟</label>
               <select
                 id="editPaymentStatus"
                 value={editingItem.paymentStatus}
@@ -629,7 +519,7 @@ const BarcodeScanner = () => {
             </div>
 
             <div>
-              <label htmlFor="editRemark">Remark:</label>
+              <label htmlFor="editRemark">ملاحظات</label>
               <textarea
                 id="editRemark"
                 value={editingItem.remark}
@@ -650,10 +540,10 @@ const BarcodeScanner = () => {
                   setEditingItem(null);
                 }}
               >
-                Save
+                تعديل
               </button>
               <button className="cancel-button" onClick={() => setEditingItem(null)}>
-                Cancel
+                الغاء
               </button>
             </div>
           </div>

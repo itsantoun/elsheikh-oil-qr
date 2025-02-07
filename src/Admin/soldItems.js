@@ -589,7 +589,7 @@ const SoldItems = () => {
                   <td>{item.customerName || 'N/A'}</td>
                   <td>{item.name || 'N/A'}</td>
                   <td>{item.quantity || 0}</td>
-                  <td>{item.cost ? `$${item.cost.toFixed(2)}` : 'N/A'}</td>
+                  <td>{item.itemCost ? `$${item.itemCost.toFixed(2)}` : 'N/A'}</td>
                   <td>{item.scannedBy || 'N/A'}</td>
                   <td>{item.remark || 'N/A'}</td>
                   <td>{item.totalCost ? `$${item.totalCost}` : 'N/A'}</td>

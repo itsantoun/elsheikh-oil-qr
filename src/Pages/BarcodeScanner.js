@@ -6,6 +6,8 @@ import { UserContext } from '../Auth/userContext';
 import '../CSS/BarcodeScanner.css';
 import { signOut } from 'firebase/auth';
 import { auth } from '../Auth/firebase';
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+
 
 const BarcodeScanner = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
@@ -26,26 +28,47 @@ const BarcodeScanner = () => {
   const today = new Date().toDateString();
 
 
+  
+
   const scannerRef = React.useRef(null);
 
-  const { user } = useContext(UserContext);
-  const { setUser } = useContext(UserContext);
+  // const { user } = useContext(UserContext);
+  // const { setUser } = useContext(UserContext);
 
-  function getCustomDate() {
+
+
+  const auth = getAuth();
+  const [user, setUser] = useState(null);
+  
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        console.log("User authenticated:", currentUser.uid);
+        setUser(currentUser);
+      } else {
+        console.log("No user found");
+        setUser(null);
+      }
+    });
+  
+    return () => unsubscribe();
+  }, []);
+
+
+  const getCustomDate = () => {
     const now = new Date();
     const customDate = new Date();
-    
+  
     if (now.getHours() < 22) {
       customDate.setDate(customDate.getDate() - 1);
     }
   
-    customDate.setHours(22, 0, 0, 0); 
+    customDate.setHours(22, 0, 0, 0); // Set to 10 PM
     return customDate;
-  }
+  };
   
   const customDate = getCustomDate();
-  const startOfDay = customDate.toISOString(); // Use this in your query
-
+ 
   useEffect(() => {
     const fetchUserName = async () => {
       if (user && user.uid) { // Ensure the user is authenticated and has a uid
@@ -155,7 +178,6 @@ const BarcodeScanner = () => {
   const listener = onValue(soldItemsRef, (snapshot) => {
     if (snapshot.exists()) {
       const items = Object.values(snapshot.val());
-      const today = new Date().toDateString();
 
       const filteredItems = items.filter((item) => {
         const itemDate = new Date(item.dateScanned);

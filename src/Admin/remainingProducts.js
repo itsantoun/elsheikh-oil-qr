@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ref, get } from 'firebase/database';
-import { database } from '../Auth/firebase'; // Adjust the path as necessary
-import '../CSS/remainingProducts.css'; // Import the CSS file
+import { database } from '../Auth/firebase'; // Ensure correct path
+import { BrowserMultiFormatReader } from '@zxing/library'; // Import the ZXing library
+import '../CSS/remainingProducts.css'; // Ensure correct path
 
 function RemainingProducts() {
   const [products, setProducts] = useState([]);
   const [soldItems, setSoldItems] = useState([]);
+  const [scannedBarcode, setScannedBarcode] = useState('');
+  const [scannedProduct, setScannedProduct] = useState(null);
+  const [scanning, setScanning] = useState(true); // Define scanning state
+  const videoRef = useRef(null); // Ref for video element
 
-  // Fetch products from 'products' database
+  // Fetch products from Firebase
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -29,7 +34,7 @@ function RemainingProducts() {
     fetchProducts();
   }, []);
 
-  // Fetch sold items from 'SoldItems' database
+  // Fetch sold items from Firebase
   useEffect(() => {
     const fetchSoldItems = async () => {
       try {
@@ -51,34 +56,87 @@ function RemainingProducts() {
     fetchSoldItems();
   }, []);
 
-  // Calculate the total quantity sold per product by product name
+  // Calculate the total quantity sold per product
   const calculateQuantitySold = (productName) => {
     return soldItems.reduce((total, item) => {
-      // Ensure each item has a 'productName' and 'quantity' field
-      if (item.productName === productName) { // Match by productName
-        return total + (item.quantity || 0); // Sum quantities sold for matching product name
+      if (item.name === productName) {
+        return total + (item.quantity || 0);
       }
       return total;
     }, 0);
   };
 
+  // Initialize the ZXing scanner
+  useEffect(() => {
+    const codeReader = new BrowserMultiFormatReader();
+
+    if (videoRef.current) {
+      codeReader
+        .decodeFromVideoDevice(null, videoRef.current, (result, err) => {
+          if (result) {
+            setScannedBarcode(result.getText());
+            setScanning(false); // Stop scanning after a successful scan
+            handleScan(result.getText());
+          } else if (err) {
+            console.error('Barcode scan error:', err);
+          }
+        })
+        .catch((err) => {
+          console.error('Error initializing scanner:', err);
+        });
+    }
+
+    // Cleanup when component unmounts
+    return () => {
+      codeReader.reset();
+    };
+  }, []);
+
+  // Handle barcode scan and update state
+  const handleScan = (barcode) => {
+    setScannedBarcode(barcode);
+
+    // Find product by ID (barcode)
+    const foundProduct = products.find((product) => product.id === barcode);
+    if (foundProduct) {
+      const quantitySold = calculateQuantitySold(foundProduct.name);
+      const remainingQuantity = (foundProduct.quantity || 0) - quantitySold;
+      setScannedProduct({ ...foundProduct, quantitySold, remainingQuantity });
+    } else {
+      setScannedProduct(null);
+    }
+  };
+
   return (
     <div className="remaining-products-container">
       <h2 className="remaining-products-heading">Remaining Products</h2>
+
+      {/* Video stream for barcode scanning */}
+      <div className="scanner-container">
+        <video ref={videoRef} width="300" height="200" style={{ border: '1px solid black' }} />
+      </div>
+
+      {/* Display Scanned Product Info */}
+      {scannedProduct && (
+        <div className="scanned-product-info">
+          <h3>Scanned Product</h3>
+          <p>Name: {scannedProduct.name}</p>
+          <p>Quantity Sold: {scannedProduct.quantitySold}</p>
+          <p>Remaining Quantity: {scannedProduct.remainingQuantity}</p>
+        </div>
+      )}
+
+      {/* Product List */}
       <ul className="remaining-products-list">
         {products.map((product) => {
-          const quantitySold = calculateQuantitySold(product.name); // Calculate total quantity sold based on product name
-          const remainingQuantity = product.quantity - quantitySold; // Remaining quantity
+          const quantitySold = calculateQuantitySold(product.name);
+          const remainingQuantity = (product.quantity || 0) - quantitySold;
 
           return (
             <li key={product.id} className="remaining-products-list-item">
               <span className="remaining-products-item-name">{product.name}</span>
-              <span className="remaining-products-quantity-sold">
-                Quantity Sold: {quantitySold}
-              </span>
-              <span className="remaining-products-remaining-quantity">
-                Remaining Quantity: {remainingQuantity}
-              </span>
+              <span className="remaining-products-quantity-sold">Quantity Sold: {quantitySold}</span>
+              <span className="remaining-products-remaining-quantity">Remaining Quantity: {remainingQuantity}</span>
             </li>
           );
         })}

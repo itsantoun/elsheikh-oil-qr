@@ -27,6 +27,20 @@ const SoldItems = () => {
 const [newProductType, setNewProductType] = useState('');
 const [newQuantity, setNewQuantity] = useState('');
 
+const formatDateTime = (dateString) => {
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0'); 
+  const month = String(date.getMonth() + 1).padStart(2, '0'); 
+  const year = date.getFullYear();
+  
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12; // Convert to 12-hour format
+
+  return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
+};
+
   // Fetch Sold Items
   useEffect(() => {
     const fetchSoldItems = async () => {
@@ -132,9 +146,9 @@ useEffect(() => {
   const handleDelete = async (itemId) => {
     const itemRef = ref(database, `SoldItems/${itemId}`);
     await remove(itemRef);
-    setSoldItems(soldItems.filter((item) => item.id !== itemId)); // Update the local state
-    setFilteredItems(filteredItems.filter((item) => item.id !== itemId)); // Update the filtered items
-    setShowConfirmation(false); // Hide the confirmation modal after deletion
+    setSoldItems(soldItems.filter((item) => item.id !== itemId)); 
+    setFilteredItems(filteredItems.filter((item) => item.id !== itemId)); 
+    setShowConfirmation(false);
   };
 
   const exportToCSV = () => {
@@ -182,8 +196,8 @@ useEffect(() => {
 
   // Cancel Delete
   const cancelDelete = () => {
-    setShowConfirmation(false); // Hide the confirmation pop-up
-    setItemIdToDelete(null); // Clear the item ID to delete
+    setShowConfirmation(false);
+    setItemIdToDelete(null);
   };
 
   return (
@@ -279,7 +293,8 @@ useEffect(() => {
             <tbody>
   {filteredItems.map((item) => (
     <tr key={item.id}>
-      <td>{new Date(item.dateScanned).toLocaleString()}</td>
+      {/* <td>{new Date(item.dateScanned).toLocaleString()}</td> */}
+      <td>{formatDateTime(item.dateScanned)}</td>
       <td>
         {editingItem && editingItem.id === item.id ? (
           <input

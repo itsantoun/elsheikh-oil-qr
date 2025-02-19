@@ -58,28 +58,31 @@ const [newQuantity, setNewQuantity] = useState('');
   }, []);
 
   // Handle Filtering
-  useEffect(() => {
-    let filtered = [...soldItems];
+  // Handle Filtering
+useEffect(() => {
+  let filtered = [...soldItems];
 
-    if (filterType === 'Customer' && searchTerm) {
-      filtered = filtered.filter((item) =>
-        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    } else if (filterType === 'Date' && dateFilter) {
-      filtered = filtered.filter(
-        (item) =>
-          new Date(item.dateScanned).toLocaleDateString() ===
-          new Date(dateFilter).toLocaleDateString()
-      );
-    } else if (filterType === 'Month' && monthFilter) {
-      filtered = filtered.filter(
-        (item) =>
-          new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
-      );
-    }
+  if (filterType === 'Customer' && searchTerm) {
+    filtered = filtered.filter((item) =>
+      item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  } else if (filterType === 'Date' && dateFilter) {
+    filtered = filtered.filter(
+      (item) =>
+        new Date(item.dateScanned).toLocaleDateString() ===
+        new Date(dateFilter).toLocaleDateString()
+    );
+  } else if (filterType === 'Month' && monthFilter) {
+    filtered = filtered.filter(
+      (item) =>
+        new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
+    );
+  } else if (filterType === 'By Unpaid') {
+    filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
+  }
 
-    setFilteredItems(filtered);
-  }, [filterType, searchTerm, dateFilter, monthFilter, soldItems]);
+  setFilteredItems(filtered);
+}, [filterType, searchTerm, dateFilter, monthFilter, soldItems]);
 
   const handleEdit = (item) => {
     setEditingItem(item);
@@ -203,6 +206,7 @@ const [newQuantity, setNewQuantity] = useState('');
           <option value="Customer">By Customer</option>
           <option value="Date">By Date</option>
           <option value="Month">By Month</option>
+          <option value="By Unpaid">unPaid</option>
         </select>
 
         {filterType === 'Customer' && (

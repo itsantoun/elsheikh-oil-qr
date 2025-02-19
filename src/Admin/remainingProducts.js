@@ -111,7 +111,7 @@ function RemainingProducts() {
     <div className="remaining-products-container">
       <h2 className="remaining-products-heading">Remaining Products</h2>
 
-      {/* Video stream for barcode scanning */}
+      
       <div className="scanner-container">
         <video ref={videoRef} width="300" height="200" style={{ border: '1px solid black' }} />
       </div>

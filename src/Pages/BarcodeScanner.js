@@ -93,6 +93,28 @@ const BarcodeScanner = () => {
       }
     };
 
+    // const fetchCustomers = async () => {
+    //   setLoading(true);
+    //   const customersRef = ref(database, 'customers');
+    //   try {
+    //     const snapshot = await get(customersRef);
+    //     if (snapshot.exists()) {
+    //       const customersData = snapshot.val();
+    //       setCustomers(
+    //         Object.entries(customersData).map(([key, value]) => ({
+    //           id: key,
+    //           name: value.name || 'Unknown Customer',
+    //         }))
+    //       );
+    //     } else {
+    //       setCustomers([]);
+    //     }
+    //   } catch (error) {
+    //     console.error("Error fetching customers:", error);
+    //   }
+    //   setLoading(false);
+    // };
+
     const fetchCustomers = async () => {
       setLoading(true);
       const customersRef = ref(database, 'customers');
@@ -103,7 +125,7 @@ const BarcodeScanner = () => {
           setCustomers(
             Object.entries(customersData).map(([key, value]) => ({
               id: key,
-              name: value.name || 'Unknown Customer',
+              name: value.name_ar || value.name || 'عميل غير معروف', // Prefer Arabic name
             }))
           );
         } else {
@@ -385,7 +407,7 @@ const BarcodeScanner = () => {
       <h3 className="popup-text">{dialogMessage}</h3>
       <div className="customer-select">
         <label htmlFor="customer">اختر اسم المشتري</label>
-        <select
+        {/* <select
           id="customer"
           value={selectedCustomer}
           onChange={(e) => setSelectedCustomer(e.target.value)}
@@ -396,7 +418,19 @@ const BarcodeScanner = () => {
               {customer.name}
             </option>
           ))}
-        </select>
+        </select> */}
+        <select
+  id="customer"
+  value={selectedCustomer}
+  onChange={(e) => setSelectedCustomer(e.target.value)}
+>
+  <option value="">-- اختر اسم المشتري --</option>
+  {customers.map((customer) => (
+    <option key={customer.id} value={customer.id}>
+      {customer.name}
+    </option>
+  ))}
+</select>
       </div>
       <div className="quantity-input">
         <label htmlFor="quantity">الكمية:</label>
@@ -481,6 +515,7 @@ const BarcodeScanner = () => {
   <tr key={item.id}>
     <td>{item.barcode}</td>
     <td>{item.name}</td>
+    {/* <td>{item.customerName}</td> */}
     <td>{item.customerName}</td>
     <td>{item.quantity}</td>  
     <td>{item.totalCost}</td>

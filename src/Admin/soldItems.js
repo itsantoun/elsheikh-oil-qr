@@ -151,15 +151,45 @@ useEffect(() => {
     setShowConfirmation(false);
   };
 
+  // const exportToCSV = () => {
+  //   const csvContent =
+  //     'data:text/csv;charset=utf-8,' +
+  //     [
+  //       ['Date', 'Customer', 'Product Type', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
+  //       ...filteredItems.map((item) => [
+  //         new Date(item.dateScanned).toLocaleString(),
+  //         item.customerName || 'N/A',
+  //         item.name || 'N/A',
+  //         item.quantity || 0,
+  //         item.price || 'N/A',
+  //         item.cost || 'N/A',
+  //         item.scannedBy || 'N/A',
+  //         item.remark || 'N/A',
+  //         item.totalCost || 'N/A',
+  //         item.paymentStatus || 'Paid',
+  //       ]),
+  //     ]
+  //       .map((row) => row.join(','))
+  //       .join('\n');
+  
+  //   const encodedUri = encodeURI(csvContent);
+  //   const link = document.createElement('a');
+  //   link.setAttribute('href', encodedUri);
+  //   link.setAttribute('download', 'filtered_sold_items.csv');
+  //   document.body.appendChild(link);
+  //   link.click();
+  //   document.body.removeChild(link);
+  // };
+
   const exportToCSV = () => {
     const csvContent =
       'data:text/csv;charset=utf-8,' +
       [
-        ['Date', 'Customer', 'Product Type', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
+        ['Date', 'Customer', 'Product Type (English)', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
         ...filteredItems.map((item) => [
           new Date(item.dateScanned).toLocaleString(),
           item.customerName || 'N/A',
-          item.name || 'N/A',
+          item.name_en || item.name || 'N/A', // Ensure English name is used in export
           item.quantity || 0,
           item.price || 'N/A',
           item.cost || 'N/A',

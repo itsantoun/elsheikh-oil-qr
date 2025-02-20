@@ -6,11 +6,13 @@ import '../CSS/addCustomer.css';
 const AddCustomer = () => {
   const [customers, setCustomers] = useState([]);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerNameArabic, setNewCustomerNameArabic] = useState('');
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editNameArabic, setEditNameArabic] = useState('');
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  // Fetch customers from the database
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
@@ -21,6 +23,7 @@ const AddCustomer = () => {
           const customerList = Object.keys(data).map((key) => ({
             id: key,
             name: data[key].name,
+            nameArabic: data[key].nameArabic || '',
           }));
           setCustomers(customerList);
         } else {
@@ -36,16 +39,23 @@ const AddCustomer = () => {
     fetchCustomers();
   }, []);
 
-  // Add new customer
   const handleAddCustomer = async (e) => {
     e.preventDefault();
-    if (!newCustomerName.trim()) return;
+    if (!newCustomerName.trim() || !newCustomerNameArabic.trim()) return;
 
     try {
       const newCustomerRef = push(ref(database, 'customers'));
-      await set(newCustomerRef, { name: newCustomerName });
-      setCustomers((prev) => [...prev, { id: newCustomerRef.key, name: newCustomerName }]);
+      await set(newCustomerRef, { 
+        name: newCustomerName, 
+        nameArabic: newCustomerNameArabic 
+      });
+
+      setCustomers((prev) => [
+        ...prev,
+        { id: newCustomerRef.key, name: newCustomerName, nameArabic: newCustomerNameArabic },
+      ]);
       setNewCustomerName('');
+      setNewCustomerNameArabic('');
       setSuccessMessage('Customer added successfully.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
@@ -55,24 +65,32 @@ const AddCustomer = () => {
     }
   };
 
-  // Edit customer
-  const handleEditCustomer = async (id, updatedName) => {
+  const handleStartEditing = (customer) => {
+    setEditingCustomer(customer.id);
+    setEditName(customer.name);
+    setEditNameArabic(customer.nameArabic);
+  };
+
+  const handleEditCustomer = async (id) => {
     try {
-      await update(ref(database, `customers/${id}`), { name: updatedName });
+      await update(ref(database, `customers/${id}`), { name: editName, nameArabic: editNameArabic });
+
       setCustomers((prev) =>
-        prev.map((customer) => (customer.id === id ? { ...customer, name: updatedName } : customer))
+        prev.map((customer) =>
+          customer.id === id ? { ...customer, name: editName, nameArabic: editNameArabic } : customer
+        )
       );
+
       setEditingCustomer(null);
-      setSuccessMessage('Customer edited successfully.');
+      setSuccessMessage('Customer updated successfully.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error editing customer:', error);
-      setErrorMessage('Failed to edit customer.');
+      setErrorMessage('Failed to update customer.');
       setTimeout(() => setErrorMessage(null), 3000);
     }
   };
 
-  // Delete customer
   const handleDeleteCustomer = async (id) => {
     const confirmDelete = window.confirm('Are you sure you want to delete this customer?');
     if (!confirmDelete) return;
@@ -93,27 +111,28 @@ const AddCustomer = () => {
     <div className="add-customer-container">
       <h1 className="add-customer-title">Manage Customers</h1>
 
-      {/* Success Message */}
       {successMessage && <div className="add-customer-success">{successMessage}</div>}
-
-      {/* Error Message */}
       {errorMessage && <div className="add-customer-error">{errorMessage}</div>}
 
-      {/* Add Customer Form */}
       <form className="add-customer-form" onSubmit={handleAddCustomer}>
         <input
           type="text"
           value={newCustomerName}
           onChange={(e) => setNewCustomerName(e.target.value)}
-          placeholder="Enter customer name"
+          placeholder="Enter customer name in English"
           className="add-customer-input"
         />
-        <button type="submit" className="add-customer-button">
-          Add Customer
-        </button>
+        <input
+          type="text"
+          value={newCustomerNameArabic}
+          onChange={(e) => setNewCustomerNameArabic(e.target.value)}
+          placeholder="أدخل اسم العميل بالعربية"
+          className="add-customer-input"
+          dir="rtl"
+        />
+        <button type="submit" className="add-customer-button">Add Customer</button>
       </form>
 
-      {/* Customers List */}
       <div className="customer-list">
         {customers.length === 0 ? (
           <p>No customers found.</p>
@@ -121,7 +140,8 @@ const AddCustomer = () => {
           <table className="customer-table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Name (English)</th>
+                <th>Name (Arabic)</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -132,31 +152,45 @@ const AddCustomer = () => {
                     {editingCustomer === customer.id ? (
                       <input
                         type="text"
-                        defaultValue={customer.name}
-                        onBlur={(e) => handleEditCustomer(customer.id, e.target.value)}
-                        autoFocus
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
                         className="edit-customer-input"
                       />
                     ) : (
                       customer.name
                     )}
                   </td>
+                  <td dir="rtl">
+                    {editingCustomer === customer.id ? (
+                      <input
+                        type="text"
+                        value={editNameArabic}
+                        onChange={(e) => setEditNameArabic(e.target.value)}
+                        className="edit-customer-input"
+                      />
+                    ) : (
+                      customer.nameArabic
+                    )}
+                  </td>
                   <td>
-  <div className="admin-buttons-container">
-    <button
-      className="admin-edit-button"
-      onClick={() => setEditingCustomer(customer.id)}
-    >
-      <i className="fas fa-edit"></i> {/* Edit Icon */}
-    </button>
-    <button
-      className="admin-delete-button"
-      onClick={() => handleDeleteCustomer(customer.id)}
-    >
-      <i className="fas fa-trash"></i> {/* Delete Icon */}
-    </button>
-  </div>
-</td>
+                    <div className="admin-buttons-container">
+                      {editingCustomer === customer.id ? (
+                        <>
+                          <button onClick={() => handleEditCustomer(customer.id)} className="save-button">Save</button>
+                          <button onClick={() => setEditingCustomer(null)} className="cancel-button">Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="admin-edit-button" onClick={() => handleStartEditing(customer)}>
+                            <i className="fas fa-edit"></i>
+                          </button>
+                          <button className="admin-delete-button" onClick={() => handleDeleteCustomer(customer.id)}>
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

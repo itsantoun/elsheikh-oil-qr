@@ -118,6 +118,7 @@ const BarcodeScanner = () => {
     const fetchCustomers = async () => {
       setLoading(true);
       const customersRef = ref(database, 'customers');
+    
       try {
         const snapshot = await get(customersRef);
         if (snapshot.exists()) {
@@ -125,7 +126,7 @@ const BarcodeScanner = () => {
           setCustomers(
             Object.entries(customersData).map(([key, value]) => ({
               id: key,
-              name: value.name_ar || value.name || 'عميل غير معروف', // Prefer Arabic name
+              name: value.nameArabic || value.name || 'عميل غير معروف', // Prefer Arabic name first
             }))
           );
         } else {
@@ -134,6 +135,7 @@ const BarcodeScanner = () => {
       } catch (error) {
         console.error("Error fetching customers:", error);
       }
+    
       setLoading(false);
     };
 

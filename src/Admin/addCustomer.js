@@ -27,7 +27,7 @@ const AddCustomer = () => {
           }));
           setCustomers(customerList);
         } else {
-          setCustomers([]);
+          setCustomers([]); 
         }
       } catch (error) {
         console.error('Error fetching customers:', error);

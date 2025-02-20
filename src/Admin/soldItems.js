@@ -41,79 +41,6 @@ const formatDateTime = (dateString) => {
   return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
 };
 
-  // // Fetch Sold Items
-  // useEffect(() => {
-  //   const fetchSoldItems = async () => {
-  //     try {
-  //       const soldItemsRef = ref(database, 'SoldItems');
-  //       const snapshot = await get(soldItemsRef);
-  //       if (snapshot.exists()) {
-  //         const data = snapshot.val();
-  //         const soldItemList = Object.keys(data).map((key) => ({
-  //           id: key,
-  //           ...data[key],
-  //         }));
-  //         setSoldItems(soldItemList);
-  //         setFilteredItems(soldItemList); // Initialize filteredItems
-  //         setCustomers([...new Set(soldItemList.map((item) => item.customerName || 'N/A'))]);
-  //       } else {
-  //         setSoldItems([]);
-  //         setFilteredItems([]);
-  //         setCustomers([]);
-  //       }
-  //     } catch (error) {
-  //       console.error('Error fetching sold items:', error);
-  //       setErrorMessage('Failed to fetch sold items.');
-  //       setTimeout(() => setErrorMessage(null), 3000);
-  //     }
-  //   };
-
-  //   fetchSoldItems();
-  // }, []);
-  // useEffect(() => {
-  //   const fetchCustomersAndSoldItems = async () => {
-  //     try {
-  //       // Fetch customers data
-  //       const customersRef = ref(database, 'customers');
-  //       const customersSnapshot = await get(customersRef);
-  //       let customerMap = {};
-  
-  //       if (customersSnapshot.exists()) {
-  //         const customersData = customersSnapshot.val();
-  //         customerMap = Object.keys(customersData).reduce((map, key) => {
-  //           const customer = customersData[key];
-  //           map[customer.nameArabic] = customer.name; // Map Arabic to English
-  //           return map;
-  //         }, {});
-  //       }
-  
-  //       // Fetch Sold Items
-  //       const soldItemsRef = ref(database, 'SoldItems');
-  //       const soldItemsSnapshot = await get(soldItemsRef);
-  //       if (soldItemsSnapshot.exists()) {
-  //         const soldData = soldItemsSnapshot.val();
-  //         const soldItemList = Object.keys(soldData).map((key) => ({
-  //           id: key,
-  //           ...soldData[key],
-  //           customerName: customerMap[soldData[key].customerName] || soldData[key].customerName, // Replace Arabic with English if found
-  //         }));
-  
-  //         setSoldItems(soldItemList);
-  //         setFilteredItems(soldItemList);
-  //       } else {
-  //         setSoldItems([]);
-  //         setFilteredItems([]);
-  //       }
-  //     } catch (error) {
-  //       console.error('Error fetching data:', error);
-  //       setErrorMessage('Failed to fetch sold items.');
-  //       setTimeout(() => setErrorMessage(null), 3000);
-  //     }
-  //   };
-  
-  //   fetchCustomersAndSoldItems();
-  // }, []);
-
   useEffect(() => {
     const fetchCustomersAndSoldItems = async () => {
       try {
@@ -246,11 +173,11 @@ useEffect(() => {
   //   const csvContent =
   //     'data:text/csv;charset=utf-8,' +
   //     [
-  //       ['Date', 'Customer', 'Product Type', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
+  //       ['Date', 'Customer', 'Product Type (English)', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
   //       ...filteredItems.map((item) => [
   //         new Date(item.dateScanned).toLocaleString(),
   //         item.customerName || 'N/A',
-  //         item.name || 'N/A',
+  //         item.name_en || item.name || 'N/A',
   //         item.quantity || 0,
   //         item.price || 'N/A',
   //         item.cost || 'N/A',
@@ -271,37 +198,54 @@ useEffect(() => {
   //   link.click();
   //   document.body.removeChild(link);
   // };
-
   const exportToCSV = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [
-        ['Date', 'Customer', 'Product Type (English)', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
-        ...filteredItems.map((item) => [
-          new Date(item.dateScanned).toLocaleString(),
-          item.customerName || 'N/A',
-          item.name_en || item.name || 'N/A', // Ensure English name is used in export
-          item.quantity || 0,
-          item.price || 'N/A',
-          item.cost || 'N/A',
-          item.scannedBy || 'N/A',
-          item.remark || 'N/A',
-          item.totalCost || 'N/A',
-          item.paymentStatus || 'Paid',
-        ]),
-      ]
-        .map((row) => row.join(','))
-        .join('\n');
+    if (filteredItems.length === 0) {
+      alert("No data to export.");
+      return;
+    }
   
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', 'filtered_sold_items.csv');
+    const headers = [
+      "Date",
+      "Customer",
+      "Product Type",
+      "Quantity Sold",
+      "Price",
+      "Item Cost",
+      "Employee",
+      "Remarks",
+      "Total Cost",
+      "Payment Status",
+    ];
+  
+    const rows = filteredItems.map((item) => [
+      formatDateTime(item.dateScanned), // Ensure proper date formatting
+      item.customerName || "N/A",
+      item.name || "N/A",
+      item.quantity || 0,
+      item.price || "N/A",
+      item.cost || "N/A",
+      item.scannedBy || "N/A",
+      item.remark || "N/A",
+      item.totalCost || "N/A",
+      item.paymentStatus || "Paid",
+    ]);
+  
+    const csvContent =
+      "\ufeff" + // Add BOM to support special characters
+      [headers, ...rows]
+        .map((row) => row.map((cell) => `"${cell}"`).join(",")) // Wrap each cell in quotes to handle commas
+        .join("\n");
+  
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "filtered_sold_items.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
-
+  
   // Show Confirmation Pop-Up
   const handleDeleteConfirmation = (itemId) => {
     setItemIdToDelete(itemId); 

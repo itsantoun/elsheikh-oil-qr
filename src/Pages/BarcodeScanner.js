@@ -465,7 +465,7 @@ const BarcodeScanner = () => {
     checked={paymentStatus === 'Stock'}
     onChange={handlePaymentStatusChange}
   />
-  <label htmlFor="stock" className="radio-label">مخزون</label>
+  <label htmlFor="stock" className="radio-label">استلام</label>
 </div>
 
       <div className="remark-input">

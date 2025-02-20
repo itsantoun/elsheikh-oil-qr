@@ -41,37 +41,128 @@ const formatDateTime = (dateString) => {
   return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
 };
 
-  // Fetch Sold Items
+  // // Fetch Sold Items
+  // useEffect(() => {
+  //   const fetchSoldItems = async () => {
+  //     try {
+  //       const soldItemsRef = ref(database, 'SoldItems');
+  //       const snapshot = await get(soldItemsRef);
+  //       if (snapshot.exists()) {
+  //         const data = snapshot.val();
+  //         const soldItemList = Object.keys(data).map((key) => ({
+  //           id: key,
+  //           ...data[key],
+  //         }));
+  //         setSoldItems(soldItemList);
+  //         setFilteredItems(soldItemList); // Initialize filteredItems
+  //         setCustomers([...new Set(soldItemList.map((item) => item.customerName || 'N/A'))]);
+  //       } else {
+  //         setSoldItems([]);
+  //         setFilteredItems([]);
+  //         setCustomers([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching sold items:', error);
+  //       setErrorMessage('Failed to fetch sold items.');
+  //       setTimeout(() => setErrorMessage(null), 3000);
+  //     }
+  //   };
+
+  //   fetchSoldItems();
+  // }, []);
+  // useEffect(() => {
+  //   const fetchCustomersAndSoldItems = async () => {
+  //     try {
+  //       // Fetch customers data
+  //       const customersRef = ref(database, 'customers');
+  //       const customersSnapshot = await get(customersRef);
+  //       let customerMap = {};
+  
+  //       if (customersSnapshot.exists()) {
+  //         const customersData = customersSnapshot.val();
+  //         customerMap = Object.keys(customersData).reduce((map, key) => {
+  //           const customer = customersData[key];
+  //           map[customer.nameArabic] = customer.name; // Map Arabic to English
+  //           return map;
+  //         }, {});
+  //       }
+  
+  //       // Fetch Sold Items
+  //       const soldItemsRef = ref(database, 'SoldItems');
+  //       const soldItemsSnapshot = await get(soldItemsRef);
+  //       if (soldItemsSnapshot.exists()) {
+  //         const soldData = soldItemsSnapshot.val();
+  //         const soldItemList = Object.keys(soldData).map((key) => ({
+  //           id: key,
+  //           ...soldData[key],
+  //           customerName: customerMap[soldData[key].customerName] || soldData[key].customerName, // Replace Arabic with English if found
+  //         }));
+  
+  //         setSoldItems(soldItemList);
+  //         setFilteredItems(soldItemList);
+  //       } else {
+  //         setSoldItems([]);
+  //         setFilteredItems([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching data:', error);
+  //       setErrorMessage('Failed to fetch sold items.');
+  //       setTimeout(() => setErrorMessage(null), 3000);
+  //     }
+  //   };
+  
+  //   fetchCustomersAndSoldItems();
+  // }, []);
+
   useEffect(() => {
-    const fetchSoldItems = async () => {
+    const fetchCustomersAndSoldItems = async () => {
       try {
-        const soldItemsRef = ref(database, 'SoldItems');
-        const snapshot = await get(soldItemsRef);
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const soldItemList = Object.keys(data).map((key) => ({
+        // Fetch customers data
+        const customersRef = ref(database, 'customers');
+        const customersSnapshot = await get(customersRef);
+        let customerList = [];
+  
+        if (customersSnapshot.exists()) {
+          const customersData = customersSnapshot.val();
+          customerList = Object.keys(customersData).map((key) => ({
             id: key,
-            ...data[key],
+            name: customersData[key].name, // English name
+            nameArabic: customersData[key].nameArabic, // Arabic name
           }));
+        }
+  
+        console.log("Fetched Customers:", customerList); // Debugging
+        setCustomers(customerList);
+  
+        // Fetch Sold Items
+        const soldItemsRef = ref(database, 'SoldItems');
+        const soldItemsSnapshot = await get(soldItemsRef);
+        if (soldItemsSnapshot.exists()) {
+          const soldData = soldItemsSnapshot.val();
+          const soldItemList = Object.keys(soldData).map((key) => ({
+            id: key,
+            ...soldData[key],
+            customerName:
+              customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+              soldData[key].customerName, // Convert Arabic to English if found
+          }));
+  
           setSoldItems(soldItemList);
-          setFilteredItems(soldItemList); // Initialize filteredItems
-          setCustomers([...new Set(soldItemList.map((item) => item.customerName || 'N/A'))]);
+          setFilteredItems(soldItemList);
         } else {
           setSoldItems([]);
           setFilteredItems([]);
-          setCustomers([]);
         }
       } catch (error) {
-        console.error('Error fetching sold items:', error);
+        console.error('Error fetching data:', error);
         setErrorMessage('Failed to fetch sold items.');
         setTimeout(() => setErrorMessage(null), 3000);
       }
     };
-
-    fetchSoldItems();
+  
+    fetchCustomersAndSoldItems();
   }, []);
-
-  // Handle Filtering
+  
   // Handle Filtering
 useEffect(() => {
   let filtered = [...soldItems];
@@ -325,7 +416,7 @@ useEffect(() => {
     <tr key={item.id}>
       {/* <td>{new Date(item.dateScanned).toLocaleString()}</td> */}
       <td>{formatDateTime(item.dateScanned)}</td>
-      <td>
+      {/* <td>
         {editingItem && editingItem.id === item.id ? (
           <input
             type="text"
@@ -335,7 +426,25 @@ useEffect(() => {
         ) : (
           item.customerName || 'N/A'
         )}
-      </td>
+      </td> */}
+      <td>
+  {editingItem && editingItem.id === item.id ? (
+    <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
+      <option value="">Select Customer</option>
+      {customers.length > 0 ? (
+        customers.map((customer) => (
+          <option key={customer.id} value={customer.name}>
+            {customer.name}
+          </option>
+        ))
+      ) : (
+        <option disabled>No Customers Found</option>
+      )}
+    </select>
+  ) : (
+    item.customerName || 'N/A'
+  )}
+</td>
       <td>
         {editingItem && editingItem.id === item.id ? (
           <input

@@ -27,16 +27,7 @@ const BarcodeScanner = () => {
   const [editingItem, setEditingItem] = useState(null); // Track the item being edited
   const today = new Date().toDateString();
 
-
-  
-
   const scannerRef = React.useRef(null);
-
-  // const { user } = useContext(UserContext);
-  // const { setUser } = useContext(UserContext);
-
-
-
   const auth = getAuth();
   const [user, setUser] = useState(null);
   
@@ -92,28 +83,6 @@ const BarcodeScanner = () => {
         setName('Unknown');
       }
     };
-
-    // const fetchCustomers = async () => {
-    //   setLoading(true);
-    //   const customersRef = ref(database, 'customers');
-    //   try {
-    //     const snapshot = await get(customersRef);
-    //     if (snapshot.exists()) {
-    //       const customersData = snapshot.val();
-    //       setCustomers(
-    //         Object.entries(customersData).map(([key, value]) => ({
-    //           id: key,
-    //           name: value.name || 'Unknown Customer',
-    //         }))
-    //       );
-    //     } else {
-    //       setCustomers([]);
-    //     }
-    //   } catch (error) {
-    //     console.error("Error fetching customers:", error);
-    //   }
-    //   setLoading(false);
-    // };
 
     const fetchCustomers = async () => {
       setLoading(true);
@@ -409,18 +378,6 @@ const BarcodeScanner = () => {
       <h3 className="popup-text">{dialogMessage}</h3>
       <div className="customer-select">
         <label htmlFor="customer">اختر اسم المشتري</label>
-        {/* <select
-          id="customer"
-          value={selectedCustomer}
-          onChange={(e) => setSelectedCustomer(e.target.value)}
-        >
-          <option value="">--Select Customer--</option>
-          {customers.map((customer) => (
-            <option key={customer.id} value={customer.id}>
-              {customer.name}
-            </option>
-          ))}
-        </select> */}
         <select
   id="customer"
   value={selectedCustomer}
@@ -452,7 +409,7 @@ const BarcodeScanner = () => {
         </div>
       )}
 
-      <div className="radio-group">
+      {/* <div className="radio-group">
         <input
           type="radio"
           id="paid"
@@ -474,7 +431,43 @@ const BarcodeScanner = () => {
           onChange={handlePaymentStatusChange}
         />
         <label htmlFor="unpaid" className="radio-label">غير مدفوع</label>
-      </div>
+      </div> */}
+
+<div className="radio-group">
+  <input
+    type="radio"
+    id="paid"
+    name="paymentStatus"
+    value="Paid"
+    className="radio-input"
+    checked={paymentStatus === 'Paid'}
+    onChange={handlePaymentStatusChange}
+  />
+  <label htmlFor="paid" className="radio-label">مدفوع</label>
+
+  <input
+    type="radio"
+    id="unpaid"
+    name="paymentStatus"
+    value="Unpaid"
+    className="radio-input"
+    checked={paymentStatus === 'Unpaid'}
+    onChange={handlePaymentStatusChange}
+  />
+  <label htmlFor="unpaid" className="radio-label">غير مدفوع</label>
+
+  <input
+    type="radio"
+    id="stock"
+    name="paymentStatus"
+    value="Stock"
+    className="radio-input"
+    checked={paymentStatus === 'Stock'}
+    onChange={handlePaymentStatusChange}
+  />
+  <label htmlFor="stock" className="radio-label">مخزون</label>
+</div>
+
       <div className="remark-input">
                
                 <textarea

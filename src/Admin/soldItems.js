@@ -443,6 +443,7 @@ useEffect(() => {
           >
             <option value="Paid">Paid</option>
             <option value="Unpaid">Unpaid</option>
+            <option value="Stock">Stock</option>
           </select>
         ) : (
           item.paymentStatus || 'Paid'

@@ -409,30 +409,6 @@ const BarcodeScanner = () => {
         </div>
       )}
 
-      {/* <div className="radio-group">
-        <input
-          type="radio"
-          id="paid"
-          name="paymentStatus"
-          value="Paid"
-          className="radio-input"
-          checked={paymentStatus === 'Paid'}
-          onChange={handlePaymentStatusChange}
-        />
-        <label htmlFor="paid" className="radio-label"> مدفوع</label>
-
-        <input
-          type="radio"
-          id="unpaid"
-          name="paymentStatus"
-          value="Unpaid"
-          className="radio-input"
-          checked={paymentStatus === 'Unpaid'}
-          onChange={handlePaymentStatusChange}
-        />
-        <label htmlFor="unpaid" className="radio-label">غير مدفوع</label>
-      </div> */}
-
 <div className="radio-group">
   <input
     type="radio"

@@ -195,6 +195,8 @@ const RemainingProducts = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [quantity, setQuantity] = useState(1);
   const scannerRef = useRef(null);
 
   useEffect(() => {
@@ -213,6 +215,7 @@ const RemainingProducts = () => {
             price: 10.99,
             category: 'Sample Category',
           });
+          setIsPopupOpen(true); // Open the popup when a product is found
         } else if (error) {
           setScanStatus('Align the barcode and hold steady.');
           console.warn('Barcode detection error:', error);
@@ -279,6 +282,15 @@ const RemainingProducts = () => {
     }
   };
 
+  const handleSave = () => {
+    // Handle saving the scanned product with the selected quantity
+    console.log('Product:', scannedProduct);
+    console.log('Quantity:', quantity);
+    setIsPopupOpen(false); // Close the popup after saving
+    setScannedProduct(null); // Reset the scanned product
+    setQuantity(1); // Reset the quantity
+  };
+
   return (
     <div className="container">
       <div className="scanner-container">
@@ -299,14 +311,39 @@ const RemainingProducts = () => {
           <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}>Zoom In</button>
         </div>
 
-        {/* Display Scanned Product Information */}
-        {scannedProduct && (
-          <div className="product-info">
-            <h3>Product Details</h3>
-            <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
-            <p><strong>Name:</strong> {scannedProduct.name}</p>
-            <p><strong>Price:</strong> ${scannedProduct.price}</p>
-            <p><strong>Category:</strong> {scannedProduct.category}</p>
+        {/* Popup for Scanned Product */}
+        {isPopupOpen && scannedProduct && (
+          <div className="popup-overlay">
+            <div className="popup">
+              <button
+                className="close-popup-btn"
+                onClick={() => setIsPopupOpen(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <h3>Product Details</h3>
+              <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
+              <p><strong>Name:</strong> {scannedProduct.name}</p>
+              <p><strong>Price:</strong> ${scannedProduct.price}</p>
+              <p><strong>Category:</strong> {scannedProduct.category}</p>
+
+              <div className="quantity-input">
+                <label htmlFor="quantity">Quantity:</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, e.target.value))}
+                  min="1"
+                />
+              </div>
+
+              <div className="popup-buttons">
+                <button className="popup-btn-save" onClick={handleSave}>Save</button>
+                <button className="popup-btn-cancel" onClick={() => setIsPopupOpen(false)}>Cancel</button>
+              </div>
+            </div>
           </div>
         )}
       </div>

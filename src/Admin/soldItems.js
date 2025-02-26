@@ -111,6 +111,8 @@ useEffect(() => {
     );
   } else if (filterType === 'By Unpaid') {
     filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
+  }else if (filterType === 'By Stock') { // New filter logic for stock
+    filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
   }
 
   setFilteredItems(filtered);
@@ -169,35 +171,6 @@ useEffect(() => {
     setShowConfirmation(false);
   };
 
-  // const exportToCSV = () => {
-  //   const csvContent =
-  //     'data:text/csv;charset=utf-8,' +
-  //     [
-  //       ['Date', 'Customer', 'Product Type (English)', 'Quantity Sold', 'Price', 'Item Cost', 'Employee', 'Remarks', 'Total Cost', 'Payment Status'],
-  //       ...filteredItems.map((item) => [
-  //         new Date(item.dateScanned).toLocaleString(),
-  //         item.customerName || 'N/A',
-  //         item.name_en || item.name || 'N/A',
-  //         item.quantity || 0,
-  //         item.price || 'N/A',
-  //         item.cost || 'N/A',
-  //         item.scannedBy || 'N/A',
-  //         item.remark || 'N/A',
-  //         item.totalCost || 'N/A',
-  //         item.paymentStatus || 'Paid',
-  //       ]),
-  //     ]
-  //       .map((row) => row.join(','))
-  //       .join('\n');
-  
-  //   const encodedUri = encodeURI(csvContent);
-  //   const link = document.createElement('a');
-  //   link.setAttribute('href', encodedUri);
-  //   link.setAttribute('download', 'filtered_sold_items.csv');
-  //   document.body.appendChild(link);
-  //   link.click();
-  //   document.body.removeChild(link);
-  // };
   const exportToCSV = () => {
     if (filteredItems.length === 0) {
       alert("No data to export.");
@@ -286,6 +259,7 @@ useEffect(() => {
           <option value="Date">By Date</option>
           <option value="Month">By Month</option>
           <option value="By Unpaid">unPaid</option>
+          <option value="By Stock">Stock</option>
         </select>
 
         {filterType === 'Customer' && (
@@ -297,16 +271,16 @@ useEffect(() => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             <select
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            >
-              <option value="">Select Customer</option>
-              {customers.map((customer, index) => (
-                <option key={index} value={customer}>
-                  {customer}
-                </option>
-              ))}
-            </select>
+  value={searchTerm}
+  onChange={(e) => setSearchTerm(e.target.value)}
+>
+  <option value="">Select Customer</option>
+  {customers.map((customer, index) => (
+    <option key={index} value={customer.name}>
+      {customer.name}
+    </option>
+  ))}
+</select>
           </div>
         )}
 

@@ -9,7 +9,7 @@ function RemainingProducts() {
   const [soldItems, setSoldItems] = useState([]);
   const [scannedBarcode, setScannedBarcode] = useState('');
   const [scannedProduct, setScannedProduct] = useState(null);
-  const [scanning, setScanning] = useState(true); // Define scanning state
+  const [showPopup, setShowPopup] = useState(false);
   const videoRef = useRef(null); // Ref for video element
 
   // Fetch products from Firebase
@@ -66,27 +66,31 @@ function RemainingProducts() {
     }, 0);
   };
 
-  // Initialize the ZXing scanner
+  // Initialize the ZXing scanner with zoom effect
   useEffect(() => {
     const codeReader = new BrowserMultiFormatReader();
 
     if (videoRef.current) {
+      navigator.mediaDevices.getUserMedia({ video: { zoom: 2 } })
+        .then((stream) => {
+          videoRef.current.srcObject = stream;
+        })
+        .catch((err) => console.error("Error accessing camera:", err));
+
       codeReader
         .decodeFromVideoDevice(null, videoRef.current, (result, err) => {
           if (result) {
             setScannedBarcode(result.getText());
-            setScanning(false); // Stop scanning after a successful scan
             handleScan(result.getText());
           } else if (err) {
-            console.error('Barcode scan error:', err);
+            console.error("Barcode scan error:", err);
           }
         })
         .catch((err) => {
-          console.error('Error initializing scanner:', err);
+          console.error("Error initializing scanner:", err);
         });
     }
 
-    // Cleanup when component unmounts
     return () => {
       codeReader.reset();
     };
@@ -96,12 +100,12 @@ function RemainingProducts() {
   const handleScan = (barcode) => {
     setScannedBarcode(barcode);
 
-    // Find product by ID (barcode)
     const foundProduct = products.find((product) => product.id === barcode);
     if (foundProduct) {
       const quantitySold = calculateQuantitySold(foundProduct.name);
       const remainingQuantity = (foundProduct.quantity || 0) - quantitySold;
       setScannedProduct({ ...foundProduct, quantitySold, remainingQuantity });
+      setShowPopup(true);
     } else {
       setScannedProduct(null);
     }
@@ -111,18 +115,20 @@ function RemainingProducts() {
     <div className="remaining-products-container">
       <h2 className="remaining-products-heading">Remaining Products</h2>
 
-      
       <div className="scanner-container">
         <video ref={videoRef} width="300" height="200" style={{ border: '1px solid black' }} />
       </div>
 
-      {/* Display Scanned Product Info */}
-      {scannedProduct && (
-        <div className="scanned-product-info">
-          <h3>Scanned Product</h3>
-          <p>Name: {scannedProduct.name}</p>
-          <p>Quantity Sold: {scannedProduct.quantitySold}</p>
-          <p>Remaining Quantity: {scannedProduct.remainingQuantity}</p>
+      {/* Popup for Scanned Product */}
+      {showPopup && scannedProduct && (
+        <div className="popup-overlay">
+          <div className="popup-content">
+            <h3>Scanned Product</h3>
+            <p><strong>Name:</strong> {scannedProduct.name}</p>
+            <p><strong>Quantity Sold:</strong> {scannedProduct.quantitySold}</p>
+            <p><strong>Remaining Quantity:</strong> {scannedProduct.remainingQuantity}</p>
+            <button onClick={() => setShowPopup(false)}>Close</button>
+          </div>
         </div>
       )}
 

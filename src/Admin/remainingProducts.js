@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
-import { ref, get, child } from 'firebase/database';
+import { ref, get, set, child } from 'firebase/database';
 import '../CSS/remainingProducts.css';
 
 const RemainingProducts = () => {
@@ -14,7 +14,35 @@ const RemainingProducts = () => {
   const [selectedProduct, setSelectedProduct] = useState('');
   const [showScanner, setShowScanner] = useState(false); // State to control scanner visibility
   const [showDropdown, setShowDropdown] = useState(false); // State to control dropdown visibility
+  const [inputQuantity, setInputQuantity] = useState('');
   const scannerRef = useRef(null);
+
+  const getCurrentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth() + 1}`;
+  };
+
+  const handleConfirmQuantity = () => {
+    if (!inputQuantity || inputQuantity <= 0) {
+      alert('Please enter a valid quantity.');
+      return;
+    }
+
+    const monthKey = getCurrentMonthKey();
+    const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+
+    set(productRef, {
+      barcode: scannedProduct.barcode,
+      name: scannedProduct.name,
+      recordedQuantity: parseInt(inputQuantity, 10),
+    })
+      .then(() => {
+        console.log('Data saved successfully');
+        setIsPopupOpen(false);
+        setInputQuantity(''); // Reset input field
+      })
+      .catch((error) => console.error('Error saving data:', error));
+  };
 
   useEffect(() => {
     if (showScanner) {
@@ -219,54 +247,40 @@ const RemainingProducts = () => {
         </div>
       )}
 
-      {/* {isPopupOpen && scannedProduct && (
-        <div className="popup-overlay">
-          <div className="popup">
+      {isPopupOpen && scannedProduct && (
+        <div className="modal-overlay">
+          <div className="modal-container">
             <button
-              className="close-popup-btn"
-              onClick={() => setIsPopupOpen(false)}
+              className="modal-close-btn"
+              onClick={() => {
+                setIsPopupOpen(false);
+                setInputQuantity(''); // Reset input field
+              }}
               aria-label="Close"
             >
               ×
             </button>
-            <h3>Product Details</h3>
-            <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
-            <p><strong>Name:</strong> {scannedProduct.name}</p>
-            <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
-            <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
-            <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
-            <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
-            <button className="popup-btn-close" onClick={() => setIsPopupOpen(false)}>
-              Close
-            </button>
+            <h3 className="modal-title">Product Details</h3>
+            <div className="modal-content">
+              <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
+              <p><strong>Name:</strong> {scannedProduct.name}</p>
+              <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
+              <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
+              <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
+              <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
+              <input
+                type="number"
+                value={inputQuantity}
+                onChange={(e) => setInputQuantity(e.target.value)}
+                placeholder="Enter quantity sold"
+              />
+              <button className="modal-btn-confirm" onClick={handleConfirmQuantity}>
+                Confirm Quantity
+              </button>
+            </div>
           </div>
         </div>
-      )} */}
-{isPopupOpen && scannedProduct && (
-  <div className="modal-overlay">
-    <div className="modal-container">
-      <button
-        className="modal-close-btn"
-        onClick={() => setIsPopupOpen(false)}
-        aria-label="Close"
-      >
-        ×
-      </button>
-      <h3 className="modal-title">Product Details</h3>
-      <div className="modal-content">
-        <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
-        <p><strong>Name:</strong> {scannedProduct.name}</p>
-        <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
-        <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
-        <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
-        <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
-      </div>
-      <button className="modal-btn-close" onClick={() => setIsPopupOpen(false)}>
-        Close
-      </button>
-    </div>
-  </div>
-)}
+      )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useRef } from 'react';
 import { ref, get, set, remove } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
@@ -109,10 +109,19 @@ const FetchProducts = () => {
     }
   };
 
-  // Start Editing Product
-  const handleEditProduct = (product) => {
-    setEditingProduct({ ...product });
-  };
+  // // Start Editing Product
+  // const handleEditProduct = (product) => {
+  //   setEditingProduct({ ...product });
+  // };
+
+  const rowRef = useRef(null);
+
+const handleEditProduct = (product) => {
+  setEditingProduct({ ...product });
+  setTimeout(() => {
+    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 100);
+};
 
   // Save Changes to Product
   const handleSaveChanges = async () => {
@@ -278,16 +287,6 @@ const handleSort = (field) => {
       <div className="admin-products">
         <h2>Product List</h2>
         <table className="admin-table">
-          {/* <thead>
-            <tr>
-              <th>Barcode Number</th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Item Cost</th>
-              <th>Quantity</th>
-              <th>Actions</th>
-            </tr>
-          </thead> */}
           <thead>
   <tr>
     <th>Barcode Number</th>
@@ -304,7 +303,8 @@ const handleSort = (field) => {
 </thead>
           <tbody>
             {products.map((product) => (
-              <tr key={product.id}>
+              // <tr key={product.id}>
+              <tr key={product.id} ref={editingProduct?.id === product.id ? rowRef : null}>
                 <td>
                   {editingProduct && editingProduct.id === product.id ? (
                     <input

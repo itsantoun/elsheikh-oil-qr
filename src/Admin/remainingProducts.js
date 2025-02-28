@@ -3,6 +3,7 @@ import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
 import { ref, get, set, child } from 'firebase/database';
 import '../CSS/remainingProducts.css';
+import * as XLSX from 'xlsx';
 
 const RemainingProducts = () => {
   const [scanStatus, setScanStatus] = useState('Press "Scan Barcode" to start scanning.');
@@ -17,27 +18,62 @@ const RemainingProducts = () => {
   const [inputQuantity, setInputQuantity] = useState('');
   const scannerRef = useRef(null);
 
+ 
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+const exportToExcel = async () => {
+  const monthKey = `${selectedYear}-${selectedMonth}`;
+  const dbRef = ref(database, `remainingStock/${monthKey}`);
+
+  try {
+    const snapshot = await get(dbRef);
+    if (!snapshot.exists()) {
+      alert('No data available for the selected month.');
+      return;
+    }
+
+    const data = snapshot.val();
+    const formattedData = Object.values(data).map((product) => ({
+      Barcode: product.barcode,
+      Name: product.name,
+      Recorded_Quantity: product.recordedQuantity,
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(formattedData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
+
+    XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
+  } catch (error) {
+    console.error('Error exporting data:', error);
+  }
+};
+
   const getCurrentMonthKey = () => {
     const now = new Date();
     return `${now.getFullYear()}-${now.getMonth() + 1}`;
   };
 
-  const handleConfirmQuantity = () => {
-    if (!inputQuantity || inputQuantity <= 0) {
+  const handleConfirmQuantity = (useExisting = false) => {
+    let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
+  
+    if (finalQuantity <= 0 || isNaN(finalQuantity)) {
       alert('Please enter a valid quantity.');
       return;
     }
-
+  
     const monthKey = getCurrentMonthKey();
     const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
-
+  
     set(productRef, {
       barcode: scannedProduct.barcode,
       name: scannedProduct.name,
-      recordedQuantity: parseInt(inputQuantity, 10),
+      recordedQuantity: finalQuantity,
     })
       .then(() => {
         console.log('Data saved successfully');
+        setRemainingQuantity(finalQuantity); // Update UI
         setIsPopupOpen(false);
         setInputQuantity(''); // Reset input field
       })
@@ -191,6 +227,32 @@ const RemainingProducts = () => {
 
   return (
     <div className="container">
+
+<div className="export-container">
+  <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+    {Array.from({ length: 12 }, (_, i) => (
+      <option key={i + 1} value={i + 1}>
+        {new Date(0, i).toLocaleString('default', { month: 'long' })}
+      </option>
+    ))}
+  </select>
+
+  <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+    {Array.from({ length: 10 }, (_, i) => {
+      const year = new Date().getFullYear() - i;
+      return (
+        <option key={year} value={year}>
+          {year}
+        </option>
+      );
+    })}
+  </select>
+
+  <button className="action-button" onClick={exportToExcel}>
+    Export as Excel
+  </button>
+</div>
+
       <div className="button-container">
         <button
           className="action-button"
@@ -268,15 +330,20 @@ const RemainingProducts = () => {
               <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
               <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
               <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
-              <input
-                type="number"
-                value={inputQuantity}
-                onChange={(e) => setInputQuantity(e.target.value)}
-                placeholder="Enter quantity sold"
-              />
-              <button className="modal-btn-confirm" onClick={handleConfirmQuantity}>
-                Confirm Quantity
-              </button>
+              <button className="modal-btn-confirm" onClick={() => handleConfirmQuantity(true)}>
+  Confirm Existing Quantity
+</button>
+
+<input
+  type="number"
+  value={inputQuantity}
+  onChange={(e) => setInputQuantity(e.target.value)}
+  placeholder="Enter new quantity"
+/>
+
+<button className="modal-btn-confirm" onClick={() => handleConfirmQuantity(false)}>
+  Save Entered Quantity
+</button>
             </div>
           </div>
         </div>

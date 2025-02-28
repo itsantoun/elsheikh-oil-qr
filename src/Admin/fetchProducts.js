@@ -156,6 +156,29 @@ const FetchProducts = () => {
     XLSX.writeFile(workbook, "Products.xlsx");
   };
 
+  const [sortBy, setSortBy] = useState({ field: 'productType', order: 'asc' });
+
+const sortProducts = (products, field, order) => {
+  return [...products].sort((a, b) => {
+    if (a[field] < b[field]) return order === 'asc' ? -1 : 1;
+    if (a[field] > b[field]) return order === 'asc' ? 1 : -1;
+    return 0;
+  });
+};
+
+useEffect(() => {
+  if (products.length) {
+    setProducts(sortProducts(products, sortBy.field, sortBy.order));
+  }
+}, [sortBy]);
+
+const handleSort = (field) => {
+  setSortBy((prev) => ({
+    field,
+    order: prev.field === field && prev.order === 'asc' ? 'desc' : 'asc',
+  }));
+};
+
   return (
     <div className="admin-container">
       <h1 className="admin-title">Product Management</h1>
@@ -255,7 +278,7 @@ const FetchProducts = () => {
       <div className="admin-products">
         <h2>Product List</h2>
         <table className="admin-table">
-          <thead>
+          {/* <thead>
             <tr>
               <th>Barcode Number</th>
               <th>Name</th>
@@ -264,7 +287,21 @@ const FetchProducts = () => {
               <th>Quantity</th>
               <th>Actions</th>
             </tr>
-          </thead>
+          </thead> */}
+          <thead>
+  <tr>
+    <th>Barcode Number</th>
+    <th onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
+      Name {sortBy.field === 'name' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
+    </th>
+    <th onClick={() => handleSort('productType')} style={{ cursor: 'pointer' }}>
+      Type {sortBy.field === 'productType' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
+    </th>
+    <th>Item Cost</th>
+    <th>Quantity</th>
+    <th>Actions</th>
+  </tr>
+</thead>
           <tbody>
             {products.map((product) => (
               <tr key={product.id}>

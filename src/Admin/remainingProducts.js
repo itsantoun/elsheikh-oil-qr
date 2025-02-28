@@ -18,42 +18,106 @@ const RemainingProducts = () => {
   const [inputQuantity, setInputQuantity] = useState('');
   const scannerRef = useRef(null);
 
- 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-const exportToExcel = async () => {
-  const monthKey = `${selectedYear}-${selectedMonth}`;
-  const dbRef = ref(database, `remainingStock/${monthKey}`);
+  // const exportToExcel = async () => {
+  //   const monthKey = `${selectedYear}-${selectedMonth}`;
+  //   const dbRef = ref(database, `remainingStock/${monthKey}`);
+  
+  //   try {
+  //     const snapshot = await get(dbRef);
+  //     if (!snapshot.exists()) {
+  //       alert('No data available for the selected month.');
+  //       return;
+  //     }
+  
+  //     const data = snapshot.val();
+  //     const formattedData = Object.values(data).map((product) => ({
+  //       Barcode: product.barcode,
+  //       Name: product.name,
+  //       Recorded_Quantity: product.recordedQuantity,
+  //       Status: product.status || 'Not Confirmed', // Include the status in the exported data
+  //     }));
+  
+  //     const worksheet = XLSX.utils.json_to_sheet(formattedData);
+  //     const workbook = XLSX.utils.book_new();
+  //     XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
+  
+  //     XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
+  //   } catch (error) {
+  //     console.error('Error exporting data:', error);
+  //   }
+  // };
 
-  try {
-    const snapshot = await get(dbRef);
-    if (!snapshot.exists()) {
-      alert('No data available for the selected month.');
-      return;
+  const exportToExcel = async () => {
+    const monthKey = `${selectedYear}-${selectedMonth}`;
+    const dbRef = ref(database, `remainingStock/${monthKey}`);
+  
+    try {
+      const snapshot = await get(dbRef);
+      if (!snapshot.exists()) {
+        alert('No data available for the selected month.');
+        return;
+      }
+  
+      const data = snapshot.val();
+      const formattedData = Object.values(data).map((product) => ({
+        Barcode: product.barcode,
+        Name: product.name,
+        Recorded_Quantity: product.recordedQuantity,
+        Status: product.status || 'Not Confirmed', // Include the status in the exported data
+      }));
+  
+      const worksheet = XLSX.utils.json_to_sheet(formattedData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
+  
+      XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
+    } catch (error) {
+      console.error('Error exporting data:', error);
     }
+  };
 
-    const data = snapshot.val();
-    const formattedData = Object.values(data).map((product) => ({
-      Barcode: product.barcode,
-      Name: product.name,
-      Recorded_Quantity: product.recordedQuantity,
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(formattedData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
-
-    XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
-  } catch (error) {
-    console.error('Error exporting data:', error);
-  }
-};
-
+  
   const getCurrentMonthKey = () => {
     const now = new Date();
     return `${now.getFullYear()}-${now.getMonth() + 1}`;
   };
+
+  // const handleConfirmQuantity = (useExisting = false) => {
+  //   let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
+  
+  //   if (finalQuantity <= 0 || isNaN(finalQuantity)) {
+  //     alert('Please enter a valid quantity.');
+  //     return;
+  //   }
+  
+  //   const monthKey = getCurrentMonthKey();
+  //   const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+  
+  //   // Set product data
+  //   set(productRef, {
+  //     barcode: scannedProduct.barcode,
+  //     name: scannedProduct.name,
+  //     recordedQuantity: finalQuantity,
+  //   })
+  //     .then(() => {
+  //       // Write "Confirmed" status
+  //       const statusRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}/status`);
+  //       set(statusRef, 'Confirmed')
+  //         .then(() => {
+  //           console.log('Status saved as "Confirmed"');
+  //         })
+  //         .catch((error) => console.error('Error saving status:', error));
+  
+  //       // Update UI state
+  //       setRemainingQuantity(finalQuantity); // Update UI
+  //       setIsPopupOpen(false);
+  //       setInputQuantity(''); // Reset input field
+  //     })
+  //     .catch((error) => console.error('Error saving product data:', error));
+  // };
 
   const handleConfirmQuantity = (useExisting = false) => {
     let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
@@ -64,31 +128,26 @@ const exportToExcel = async () => {
     }
   
     const monthKey = getCurrentMonthKey();
-    const timestamp = new Date().toISOString(); // Save timestamp
     const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
-    const reportRef = ref(database, `reports/${timestamp}`); // Unique timestamp-based key
   
-    const reportData = {
+    // Only set status to "Confirmed" if user confirms the existing quantity
+    const status = useExisting ? "Confirmed" : "Not Confirmed"; // If not confirming, leave status as "Not Confirmed"
+  
+    set(productRef, {
       barcode: scannedProduct.barcode,
       name: scannedProduct.name,
       recordedQuantity: finalQuantity,
-      date: timestamp,
-      confirmedBy: "Admin", // Change to dynamic user if needed
-    };
-  
-    Promise.all([
-      set(productRef, reportData),
-      set(reportRef, reportData), // Save to reports table
-    ])
+      status: status,  // Conditionally set status
+    })
       .then(() => {
         console.log('Data saved successfully');
-        setRemainingQuantity(finalQuantity);
+        setRemainingQuantity(finalQuantity); // Update UI
         setIsPopupOpen(false);
-        setInputQuantity('');
+        setInputQuantity(''); // Reset input field
       })
       .catch((error) => console.error('Error saving data:', error));
   };
-  
+
   useEffect(() => {
     if (showScanner) {
       const codeReader = new BrowserMultiFormatReader();
@@ -236,31 +295,30 @@ const exportToExcel = async () => {
 
   return (
     <div className="container">
+      <div className="export-container">
+        <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+          {Array.from({ length: 12 }, (_, i) => (
+            <option key={i + 1} value={i + 1}>
+              {new Date(0, i).toLocaleString('default', { month: 'long' })}
+            </option>
+          ))}
+        </select>
 
-<div className="export-container">
-  <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-    {Array.from({ length: 12 }, (_, i) => (
-      <option key={i + 1} value={i + 1}>
-        {new Date(0, i).toLocaleString('default', { month: 'long' })}
-      </option>
-    ))}
-  </select>
+        <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+          {Array.from({ length: 10 }, (_, i) => {
+            const year = new Date().getFullYear() - i;
+            return (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            );
+          })}
+        </select>
 
-  <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
-    {Array.from({ length: 10 }, (_, i) => {
-      const year = new Date().getFullYear() - i;
-      return (
-        <option key={year} value={year}>
-          {year}
-        </option>
-      );
-    })}
-  </select>
-
-  <button className="action-button" onClick={exportToExcel}>
-    Export as Excel
-  </button>
-</div>
+        <button className="action-button" onClick={exportToExcel}>
+          Export as Excel
+        </button>
+      </div>
 
       <div className="button-container">
         <button
@@ -340,19 +398,19 @@ const exportToExcel = async () => {
               <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
               <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
               <button className="modal-btn-confirm" onClick={() => handleConfirmQuantity(true)}>
-  Confirm Existing Quantity
-</button>
+                Confirm Existing Quantity
+              </button>
 
-<input
-  type="number"
-  value={inputQuantity}
-  onChange={(e) => setInputQuantity(e.target.value)}
-  placeholder="Enter new quantity"
-/>
+              <input
+                type="number"
+                value={inputQuantity}
+                onChange={(e) => setInputQuantity(e.target.value)}
+                placeholder="Enter new quantity"
+              />
 
-<button className="modal-btn-confirm" onClick={() => handleConfirmQuantity(false)}>
-  Save Entered Quantity
-</button>
+              <button className="modal-btn-save" onClick={() => handleConfirmQuantity(false)}>
+                Save Quantity
+              </button>
             </div>
           </div>
         </div>
@@ -361,4 +419,4 @@ const exportToExcel = async () => {
   );
 };
 
-export default RemainingProducts;
+export default RemainingProducts; 

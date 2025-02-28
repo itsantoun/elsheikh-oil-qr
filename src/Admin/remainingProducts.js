@@ -188,15 +188,182 @@
 // export default RemainingProducts;
 
 
+// import React, { useState, useEffect, useRef } from 'react';
+// import { BrowserMultiFormatReader } from '@zxing/library';
+
+// const RemainingProducts = () => {
+//   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
+//   const [scannedProduct, setScannedProduct] = useState(null);
+//   const [zoomLevel, setZoomLevel] = useState(1);
+//   const [isPopupOpen, setIsPopupOpen] = useState(false);
+//   const [quantity, setQuantity] = useState(1);
+//   const scannerRef = useRef(null);
+
+//   useEffect(() => {
+//     const codeReader = new BrowserMultiFormatReader();
+//     const videoElement = scannerRef.current;
+
+//     // Initialize the scanner
+//     codeReader
+//       .decodeFromVideoDevice(null, videoElement, (result, error) => {
+//         if (result) {
+//           setScanStatus('Barcode detected! Processing...');
+//           // Simulate fetching product details (replace with your logic)
+//           setScannedProduct({
+//             barcode: result.text,
+//             name: 'Sample Product',
+//             price: 10.99,
+//             category: 'Sample Category',
+//           });
+//           setIsPopupOpen(true); // Open the popup when a product is found
+//         } else if (error) {
+//           setScanStatus('Align the barcode and hold steady.');
+//           console.warn('Barcode detection error:', error);
+//         }
+//       }, {
+//         tryHarder: true, // Enable more intensive scanning
+//         constraints: {
+//           video: {
+//             facingMode: 'environment', // Use the rear camera
+//             width: { ideal: 1280 }, // Request higher resolution
+//             height: { ideal: 720 },
+//           },
+//         },
+//       })
+//       .then(() => {
+//         applyZoom();
+//       })
+//       .catch((err) => console.error('Camera initialization failed:', err));
+
+//     // Cleanup on unmount
+//     return () => {
+//       codeReader.reset();
+//     };
+//   }, [zoomLevel]);
+
+//   const applyZoom = async () => {
+//     try {
+//       const videoElement = scannerRef.current;
+//       const stream = videoElement.srcObject;
+//       const [track] = stream.getVideoTracks();
+
+//       const capabilities = track.getCapabilities();
+//       if ('zoom' in capabilities) {
+//         const constraints = {
+//           advanced: [{ zoom: zoomLevel }],
+//         };
+//         await track.applyConstraints(constraints);
+//       } else {
+//         console.warn('Zoom capability is not supported by this device.');
+//       }
+//     } catch (error) {
+//       console.error('Failed to apply zoom:', error);
+//     }
+//   };
+
+//   const changeZoom = async (level) => {
+//     const videoElement = scannerRef.current;
+//     const stream = videoElement.srcObject;
+//     const [track] = stream.getVideoTracks();
+
+//     const capabilities = track.getCapabilities();
+//     if ('zoom' in capabilities) {
+//       const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max || 10);
+//       setZoomLevel(newZoomLevel);
+//       try {
+//         await track.applyConstraints({
+//           advanced: [{ zoom: newZoomLevel }],
+//         });
+//       } catch (error) {
+//         console.error('Failed to apply zoom:', error);
+//       }
+//     } else {
+//       console.warn('Zoom capability is not supported by this device.');
+//     }
+//   };
+
+//   const handleSave = () => {
+//     // Handle saving the scanned product with the selected quantity
+//     console.log('Product:', scannedProduct);
+//     console.log('Quantity:', quantity);
+//     setIsPopupOpen(false); // Close the popup after saving
+//     setScannedProduct(null); // Reset the scanned product
+//     setQuantity(1); // Reset the quantity
+//   };
+
+//   return (
+//     <div className="container">
+//       <div className="scanner-container">
+//         <video ref={scannerRef} className="scanner"></video>
+//         <p className="status">{scanStatus}</p>
+
+//         {/* Zoom Controls */}
+//         <div className="zoom-controls">
+//           <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}>Zoom Out</button>
+//           <input
+//             type="range"
+//             min="0.5"
+//             max="10"
+//             step="0.1"
+//             value={zoomLevel}
+//             onChange={(e) => changeZoom(parseFloat(e.target.value))}
+//           />
+//           <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}>Zoom In</button>
+//         </div>
+
+//         {/* Popup for Scanned Product */}
+//         {isPopupOpen && scannedProduct && (
+//           <div className="popup-overlay">
+//             <div className="popup">
+//               <button
+//                 className="close-popup-btn"
+//                 onClick={() => setIsPopupOpen(false)}
+//                 aria-label="Close"
+//               >
+//                 ×
+//               </button>
+//               <h3>Product Details</h3>
+//               <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
+//               <p><strong>Name:</strong> {scannedProduct.name}</p>
+//               <p><strong>Price:</strong> ${scannedProduct.price}</p>
+//               <p><strong>Category:</strong> {scannedProduct.category}</p>
+
+//               <div className="quantity-input">
+//                 <label htmlFor="quantity">Quantity:</label>
+//                 <input
+//                   type="number"
+//                   id="quantity"
+//                   value={quantity}
+//                   onChange={(e) => setQuantity(Math.max(1, e.target.value))}
+//                   min="1"
+//                 />
+//               </div>
+
+//               <div className="popup-buttons">
+//                 <button className="popup-btn-save" onClick={handleSave}>Save</button>
+//                 <button className="popup-btn-cancel" onClick={() => setIsPopupOpen(false)}>Cancel</button>
+//               </div>
+//             </div>
+//           </div>
+//         )}
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default RemainingProducts;
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
+import { database } from '../Auth/firebase'; // Adjust the import path as needed
+import { ref, get, child } from 'firebase/database'; // Import child here
 
 const RemainingProducts = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [quantity, setQuantity] = useState(1);
   const scannerRef = useRef(null);
 
   useEffect(() => {
@@ -208,14 +375,7 @@ const RemainingProducts = () => {
       .decodeFromVideoDevice(null, videoElement, (result, error) => {
         if (result) {
           setScanStatus('Barcode detected! Processing...');
-          // Simulate fetching product details (replace with your logic)
-          setScannedProduct({
-            barcode: result.text,
-            name: 'Sample Product',
-            price: 10.99,
-            category: 'Sample Category',
-          });
-          setIsPopupOpen(true); // Open the popup when a product is found
+          fetchProductDetails(result.text); // Fetch product details from Firebase
         } else if (error) {
           setScanStatus('Align the barcode and hold steady.');
           console.warn('Barcode detection error:', error);
@@ -282,13 +442,27 @@ const RemainingProducts = () => {
     }
   };
 
-  const handleSave = () => {
-    // Handle saving the scanned product with the selected quantity
-    console.log('Product:', scannedProduct);
-    console.log('Quantity:', quantity);
-    setIsPopupOpen(false); // Close the popup after saving
-    setScannedProduct(null); // Reset the scanned product
-    setQuantity(1); // Reset the quantity
+  const fetchProductDetails = async (barcode) => {
+    const dbRef = ref(database);
+    try {
+      const snapshot = await get(child(dbRef, `products/${barcode}`)); // Fetch product details from Firebase
+      if (snapshot.exists()) {
+        const product = snapshot.val();
+        setScannedProduct({
+          barcode,
+          name: product.name,
+          itemCost: product.itemCost,
+          productType: product.productType,
+          quantity: product.quantity,
+        });
+        setIsPopupOpen(true); // Open the popup to display product details
+      } else {
+        setScanStatus('Product not found in the database.');
+      }
+    } catch (error) {
+      console.error('Error fetching product details:', error);
+      setScanStatus('Error retrieving product information.');
+    }
   };
 
   return (
@@ -325,24 +499,13 @@ const RemainingProducts = () => {
               <h3>Product Details</h3>
               <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
               <p><strong>Name:</strong> {scannedProduct.name}</p>
-              <p><strong>Price:</strong> ${scannedProduct.price}</p>
-              <p><strong>Category:</strong> {scannedProduct.category}</p>
+              <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
+              <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
+              <p><strong>Quantity:</strong> {scannedProduct.quantity}</p>
 
-              <div className="quantity-input">
-                <label htmlFor="quantity">Quantity:</label>
-                <input
-                  type="number"
-                  id="quantity"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, e.target.value))}
-                  min="1"
-                />
-              </div>
-
-              <div className="popup-buttons">
-                <button className="popup-btn-save" onClick={handleSave}>Save</button>
-                <button className="popup-btn-cancel" onClick={() => setIsPopupOpen(false)}>Cancel</button>
-              </div>
+              <button className="popup-btn-close" onClick={() => setIsPopupOpen(false)}>
+                Close
+              </button>
             </div>
           </div>
         )}

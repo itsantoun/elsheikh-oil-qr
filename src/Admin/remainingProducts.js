@@ -1,13 +1,14 @@
 // import React, { useState, useEffect, useRef } from 'react';
 // import { BrowserMultiFormatReader } from '@zxing/library';
-// import { database } from '../Auth/firebase'; // Adjust the import path as needed
-// import { ref, get, child } from 'firebase/database'; // Import child here
+// import { database } from '../Auth/firebase';
+// import { ref, get, child } from 'firebase/database';
 
 // const RemainingProducts = () => {
 //   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
 //   const [scannedProduct, setScannedProduct] = useState(null);
 //   const [zoomLevel, setZoomLevel] = useState(1);
 //   const [isPopupOpen, setIsPopupOpen] = useState(false);
+//   const [remainingQuantity, setRemainingQuantity] = useState(0); // State for remaining quantity
 //   const scannerRef = useRef(null);
 
 //   useEffect(() => {
@@ -89,16 +90,36 @@
 //   const fetchProductDetails = async (barcode) => {
 //     const dbRef = ref(database);
 //     try {
-//       const snapshot = await get(child(dbRef, `products/${barcode}`)); // Fetch product details from Firebase
-//       if (snapshot.exists()) {
-//         const product = snapshot.val();
+//       // Fetch product details from Firebase
+//       const productSnapshot = await get(child(dbRef, `products/${barcode}`));
+//       if (productSnapshot.exists()) {
+//         const product = productSnapshot.val();
+
+//         // Fetch sold items for this product
+//         const soldItemsSnapshot = await get(child(dbRef, 'SoldItems'));
+//         let totalSoldQuantity = 0;
+
+//         if (soldItemsSnapshot.exists()) {
+//           const soldItemsData = soldItemsSnapshot.val();
+//           Object.values(soldItemsData).forEach((item) => {
+//             if (item.barcode === barcode) {
+//               totalSoldQuantity += item.quantity || 0;
+//             }
+//           });
+//         }
+
+//         // Calculate remaining quantity
+//         const remaining = product.quantity - totalSoldQuantity;
+
 //         setScannedProduct({
 //           barcode,
 //           name: product.name,
 //           itemCost: product.itemCost,
 //           productType: product.productType,
 //           quantity: product.quantity,
+//           remainingQuantity: remaining, // Add remaining quantity to the state
 //         });
+//         setRemainingQuantity(remaining); // Set remaining quantity
 //         setIsPopupOpen(true); // Open the popup to display product details
 //       } else {
 //         setScanStatus('Product not found in the database.');
@@ -145,8 +166,8 @@
 //               <p><strong>Name:</strong> {scannedProduct.name}</p>
 //               <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
 //               <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
-//               <p><strong>Quantity:</strong> {scannedProduct.quantity}</p>
-
+//               <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
+//               <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p> {/* Display remaining quantity */}
 //               <button className="popup-btn-close" onClick={() => setIsPopupOpen(false)}>
 //                 Close
 //               </button>
@@ -170,7 +191,9 @@ const RemainingProducts = () => {
   const [scannedProduct, setScannedProduct] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [remainingQuantity, setRemainingQuantity] = useState(0); // State for remaining quantity
+  const [remainingQuantity, setRemainingQuantity] = useState(0);
+  const [products, setProducts] = useState([]); // State to store the list of products
+  const [selectedProduct, setSelectedProduct] = useState(''); // State to store the selected product
   const scannerRef = useRef(null);
 
   useEffect(() => {
@@ -207,6 +230,28 @@ const RemainingProducts = () => {
       codeReader.reset();
     };
   }, [zoomLevel]);
+
+  useEffect(() => {
+    // Fetch the list of products from the database
+    const fetchProducts = async () => {
+      const dbRef = ref(database);
+      try {
+        const productsSnapshot = await get(child(dbRef, 'products'));
+        if (productsSnapshot.exists()) {
+          const productsData = productsSnapshot.val();
+          const productsList = Object.keys(productsData).map((barcode) => ({
+            barcode,
+            ...productsData[barcode],
+          }));
+          setProducts(productsList);
+        }
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      }
+    };
+
+    fetchProducts();
+  }, []);
 
   const applyZoom = async () => {
     try {
@@ -292,11 +337,34 @@ const RemainingProducts = () => {
     }
   };
 
+  const handleProductSelect = async (event) => {
+    const selectedBarcode = event.target.value;
+    setSelectedProduct(selectedBarcode);
+    if (selectedBarcode) {
+      await fetchProductDetails(selectedBarcode);
+    }
+  };
+
   return (
     <div className="container">
       <div className="scanner-container">
         <video ref={scannerRef} className="scanner"></video>
         <p className="status">{scanStatus}</p>
+
+        {/* Button to manually trigger the camera */}
+        <button onClick={() => setScanStatus('Camera activated. Align the barcode within the frame.')}>
+          Scan Barcode
+        </button>
+
+        {/* Dropdown to select a product */}
+        <select value={selectedProduct} onChange={handleProductSelect}>
+          <option value="">Select a product</option>
+          {products.map((product) => (
+            <option key={product.barcode} value={product.barcode}>
+              {product.name} ({product.barcode})
+            </option>
+          ))}
+        </select>
 
         {/* Zoom Controls */}
         <div className="zoom-controls">

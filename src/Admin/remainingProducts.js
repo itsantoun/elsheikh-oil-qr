@@ -187,52 +187,53 @@ import { database } from '../Auth/firebase';
 import { ref, get, child } from 'firebase/database';
 
 const RemainingProducts = () => {
-  const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
+  const [scanStatus, setScanStatus] = useState('Press "Scan Barcode" to start scanning.');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [remainingQuantity, setRemainingQuantity] = useState(0);
-  const [products, setProducts] = useState([]); // State to store the list of products
-  const [selectedProduct, setSelectedProduct] = useState(''); // State to store the selected product
+  const [products, setProducts] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState('');
+  const [showScanner, setShowScanner] = useState(false); // State to control scanner visibility
+  const [showDropdown, setShowDropdown] = useState(false); // State to control dropdown visibility
   const scannerRef = useRef(null);
 
   useEffect(() => {
-    const codeReader = new BrowserMultiFormatReader();
-    const videoElement = scannerRef.current;
+    if (showScanner) {
+      const codeReader = new BrowserMultiFormatReader();
+      const videoElement = scannerRef.current;
 
-    // Initialize the scanner
-    codeReader
-      .decodeFromVideoDevice(null, videoElement, (result, error) => {
-        if (result) {
-          setScanStatus('Barcode detected! Processing...');
-          fetchProductDetails(result.text); // Fetch product details from Firebase
-        } else if (error) {
-          setScanStatus('Align the barcode and hold steady.');
-          console.warn('Barcode detection error:', error);
-        }
-      }, {
-        tryHarder: true,
-        constraints: {
-          video: {
-            facingMode: 'environment', // Use the rear camera
-            width: { ideal: 1280 }, // Request higher resolution
-            height: { ideal: 720 },
+      codeReader
+        .decodeFromVideoDevice(null, videoElement, (result, error) => {
+          if (result) {
+            setScanStatus('Barcode detected! Processing...');
+            fetchProductDetails(result.text);
+          } else if (error) {
+            setScanStatus('Align the barcode and hold steady.');
+            console.warn('Barcode detection error:', error);
+          }
+        }, {
+          tryHarder: true,
+          constraints: {
+            video: {
+              facingMode: 'environment',
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
           },
-        },
-      })
-      .then(() => {
-        applyZoom();
-      })
-      .catch((err) => console.error('Camera initialization failed:', err));
+        })
+        .then(() => {
+          applyZoom();
+        })
+        .catch((err) => console.error('Camera initialization failed:', err));
 
-    // Cleanup on unmount
-    return () => {
-      codeReader.reset();
-    };
-  }, [zoomLevel]);
+      return () => {
+        codeReader.reset();
+      };
+    }
+  }, [zoomLevel, showScanner]);
 
   useEffect(() => {
-    // Fetch the list of products from the database
     const fetchProducts = async () => {
       const dbRef = ref(database);
       try {
@@ -297,12 +298,10 @@ const RemainingProducts = () => {
   const fetchProductDetails = async (barcode) => {
     const dbRef = ref(database);
     try {
-      // Fetch product details from Firebase
       const productSnapshot = await get(child(dbRef, `products/${barcode}`));
       if (productSnapshot.exists()) {
         const product = productSnapshot.val();
 
-        // Fetch sold items for this product
         const soldItemsSnapshot = await get(child(dbRef, 'SoldItems'));
         let totalSoldQuantity = 0;
 
@@ -315,7 +314,6 @@ const RemainingProducts = () => {
           });
         }
 
-        // Calculate remaining quantity
         const remaining = product.quantity - totalSoldQuantity;
 
         setScannedProduct({
@@ -324,10 +322,10 @@ const RemainingProducts = () => {
           itemCost: product.itemCost,
           productType: product.productType,
           quantity: product.quantity,
-          remainingQuantity: remaining, // Add remaining quantity to the state
+          remainingQuantity: remaining,
         });
-        setRemainingQuantity(remaining); // Set remaining quantity
-        setIsPopupOpen(true); // Open the popup to display product details
+        setRemainingQuantity(remaining);
+        setIsPopupOpen(true);
       } else {
         setScanStatus('Product not found in the database.');
       }
@@ -347,64 +345,85 @@ const RemainingProducts = () => {
 
   return (
     <div className="container">
-      <div className="scanner-container">
-        <video ref={scannerRef} className="scanner"></video>
-        <p className="status">{scanStatus}</p>
-
-        {/* Button to manually trigger the camera */}
-        <button onClick={() => setScanStatus('Camera activated. Align the barcode within the frame.')}>
+      <div className="button-container">
+        <button
+          className="action-button"
+          onClick={() => {
+            setShowScanner(true);
+            setShowDropdown(false);
+            setScanStatus('Align the barcode within the frame.');
+          }}
+        >
           Scan Barcode
         </button>
-
-        {/* Dropdown to select a product */}
-        <select value={selectedProduct} onChange={handleProductSelect}>
-          <option value="">Select a product</option>
-          {products.map((product) => (
-            <option key={product.barcode} value={product.barcode}>
-              {product.name} ({product.barcode})
-            </option>
-          ))}
-        </select>
-
-        {/* Zoom Controls */}
-        <div className="zoom-controls">
-          <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}>Zoom Out</button>
-          <input
-            type="range"
-            min="0.5"
-            max="10"
-            step="0.1"
-            value={zoomLevel}
-            onChange={(e) => changeZoom(parseFloat(e.target.value))}
-          />
-          <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}>Zoom In</button>
-        </div>
-
-        {/* Popup for Scanned Product */}
-        {isPopupOpen && scannedProduct && (
-          <div className="popup-overlay">
-            <div className="popup">
-              <button
-                className="close-popup-btn"
-                onClick={() => setIsPopupOpen(false)}
-                aria-label="Close"
-              >
-                ×
-              </button>
-              <h3>Product Details</h3>
-              <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
-              <p><strong>Name:</strong> {scannedProduct.name}</p>
-              <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
-              <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
-              <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
-              <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p> {/* Display remaining quantity */}
-              <button className="popup-btn-close" onClick={() => setIsPopupOpen(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        )}
+        <button
+          className="action-button"
+          onClick={() => {
+            setShowDropdown(true);
+            setShowScanner(false);
+            setScanStatus('Select a product from the dropdown.');
+          }}
+        >
+          Search for Product
+        </button>
       </div>
+
+      {showScanner && (
+        <div className="scanner-container">
+          <video ref={scannerRef} className="scanner"></video>
+          <p className="status">{scanStatus}</p>
+
+          <div className="zoom-controls">
+            <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}>Zoom Out</button>
+            <input
+              type="range"
+              min="0.5"
+              max="10"
+              step="0.1"
+              value={zoomLevel}
+              onChange={(e) => changeZoom(parseFloat(e.target.value))}
+            />
+            <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}>Zoom In</button>
+          </div>
+        </div>
+      )}
+
+      {showDropdown && (
+        <div className="dropdown-container">
+          <select value={selectedProduct} onChange={handleProductSelect}>
+            <option value="">Select a product</option>
+            {products.map((product) => (
+              <option key={product.barcode} value={product.barcode}>
+                {product.name} ({product.barcode})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {isPopupOpen && scannedProduct && (
+        <div className="popup-overlay">
+          <div className="popup">
+            <button
+              className="close-popup-btn"
+              onClick={() => setIsPopupOpen(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h3>Product Details</h3>
+            <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
+            <p><strong>Name:</strong> {scannedProduct.name}</p>
+            <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
+            <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
+            <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
+            <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
+            <button className="popup-btn-close" onClick={() => setIsPopupOpen(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

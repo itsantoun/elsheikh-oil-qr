@@ -64,22 +64,31 @@ const exportToExcel = async () => {
     }
   
     const monthKey = getCurrentMonthKey();
+    const timestamp = new Date().toISOString(); // Save timestamp
     const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+    const reportRef = ref(database, `reports/${timestamp}`); // Unique timestamp-based key
   
-    set(productRef, {
+    const reportData = {
       barcode: scannedProduct.barcode,
       name: scannedProduct.name,
       recordedQuantity: finalQuantity,
-    })
+      date: timestamp,
+      confirmedBy: "Admin", // Change to dynamic user if needed
+    };
+  
+    Promise.all([
+      set(productRef, reportData),
+      set(reportRef, reportData), // Save to reports table
+    ])
       .then(() => {
         console.log('Data saved successfully');
-        setRemainingQuantity(finalQuantity); // Update UI
+        setRemainingQuantity(finalQuantity);
         setIsPopupOpen(false);
-        setInputQuantity(''); // Reset input field
+        setInputQuantity('');
       })
       .catch((error) => console.error('Error saving data:', error));
   };
-
+  
   useEffect(() => {
     if (showScanner) {
       const codeReader = new BrowserMultiFormatReader();

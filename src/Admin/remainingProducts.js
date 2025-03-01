@@ -410,29 +410,73 @@ const RemainingProducts = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
+  // const exportToExcel = async () => {
+  //   const monthKey = `${selectedYear}-${selectedMonth}`;
+  //   const dbRef = ref(database, `remainingStock/${monthKey}`);
+  
+  //   try {
+  //     const snapshot = await get(dbRef);
+  //     if (!snapshot.exists()) {
+  //       alert('No data available for the selected month.');
+  //       return;
+  //     }
+  
+  //     const data = snapshot.val();
+  //     const formattedData = Object.values(data).map((product) => ({
+  //       Barcode: product.barcode,
+  //       Name: product.name,
+  //       Initial_Quantity: product.quantity, // Add initial quantity here
+  //       Recorded_Quantity: product.recordedQuantity,
+  //       Status: product.status || 'Not Confirmed', // Include the status in the exported data
+  //     }));
+  
+  //     // Sort the formattedData alphabetically by the "Name" field
+  //     const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
+  
+  //     const worksheet = XLSX.utils.json_to_sheet(sortedData); // Use sortedData here
+  //     const workbook = XLSX.utils.book_new();
+  //     XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
+  
+  //     XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
+  //   } catch (error) {
+  //     console.error('Error exporting data:', error);
+  //   }
+  // };
+
   const exportToExcel = async () => {
     const monthKey = `${selectedYear}-${selectedMonth}`;
     const dbRef = ref(database, `remainingStock/${monthKey}`);
-
+  
     try {
       const snapshot = await get(dbRef);
       if (!snapshot.exists()) {
         alert('No data available for the selected month.');
         return;
       }
-
+  
       const data = snapshot.val();
-      const formattedData = Object.values(data).map((product) => ({
-        Barcode: product.barcode,
-        Name: product.name,
-        Recorded_Quantity: product.recordedQuantity,
-        Status: product.status || 'Not Confirmed', // Include the status in the exported data
+      const formattedData = await Promise.all(Object.values(data).map(async (product) => {
+        // Fetch the initial quantity from the products node
+        const productRef = ref(database, `products/${product.barcode}`);
+        const productSnapshot = await get(productRef);
+        const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
+  
+        return {
+          Barcode: product.barcode,
+          Name: product.name,
+          Initial_Quantity: initialQuantity, // Add initial quantity here
+          Recorded_Quantity: product.recordedQuantity,
+          Status: product.status || 'Not Confirmed', // Include the status in the exported data
+        };
       }));
-
-      const worksheet = XLSX.utils.json_to_sheet(formattedData);
+  
+      // Sort the formattedData alphabetically by the "Name" field
+      const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
+  
+      const worksheet = XLSX.utils.json_to_sheet(sortedData); // Use sortedData here
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
-
+  
       XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
     } catch (error) {
       console.error('Error exporting data:', error);

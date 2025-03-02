@@ -422,12 +422,19 @@ const RemainingProducts = () => {
   //     }
   
   //     const data = snapshot.val();
-  //     const formattedData = Object.values(data).map((product) => ({
-  //       Barcode: product.barcode,
-  //       Name: product.name,
-  //       Initial_Quantity: product.quantity, // Add initial quantity here
-  //       Recorded_Quantity: product.recordedQuantity,
-  //       Status: product.status || 'Not Confirmed', // Include the status in the exported data
+  //     const formattedData = await Promise.all(Object.values(data).map(async (product) => {
+  //       // Fetch the initial quantity from the products node
+  //       const productRef = ref(database, `products/${product.barcode}`);
+  //       const productSnapshot = await get(productRef);
+  //       const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
+  
+  //       return {
+  //         Barcode: product.barcode,
+  //         Name: product.name,
+  //         Initial_Quantity: initialQuantity, // Add initial quantity here
+  //         Recorded_Quantity: product.recordedQuantity,
+  //         Status: product.status || 'Not Confirmed', // Include the status in the exported data
+  //       };
   //     }));
   
   //     // Sort the formattedData alphabetically by the "Name" field
@@ -443,6 +450,7 @@ const RemainingProducts = () => {
   //   }
   // };
 
+
   const exportToExcel = async () => {
     const monthKey = `${selectedYear}-${selectedMonth}`;
     const dbRef = ref(database, `remainingStock/${monthKey}`);
@@ -455,25 +463,44 @@ const RemainingProducts = () => {
       }
   
       const data = snapshot.val();
+      
       const formattedData = await Promise.all(Object.values(data).map(async (product) => {
         // Fetch the initial quantity from the products node
         const productRef = ref(database, `products/${product.barcode}`);
         const productSnapshot = await get(productRef);
         const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
   
+        // Fetch the sold quantity from the SoldItems node
+        const soldItemsSnapshot = await get(ref(database, 'SoldItems'));
+        let totalSoldQuantity = 0;
+  
+        if (soldItemsSnapshot.exists()) {
+          const soldItemsData = soldItemsSnapshot.val();
+          Object.values(soldItemsData).forEach((item) => {
+            if (item.barcode === product.barcode) {
+              totalSoldQuantity += item.quantity || 0;
+            }
+          });
+        }
+  
+        // Calculate remaining quantity
+        const remainingQuantity = initialQuantity - totalSoldQuantity;
+  
         return {
           Barcode: product.barcode,
           Name: product.name,
-          Initial_Quantity: initialQuantity, // Add initial quantity here
+          Initial_Quantity: initialQuantity, // Add initial quantity
+          Sold_Quantity: totalSoldQuantity,  // Add total sold quantity
+          Remaining_Quantity: remainingQuantity, // Add remaining quantity
           Recorded_Quantity: product.recordedQuantity,
-          Status: product.status || 'Not Confirmed', // Include the status in the exported data
+          Status: product.status || 'Not Confirmed',
         };
       }));
   
       // Sort the formattedData alphabetically by the "Name" field
       const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
   
-      const worksheet = XLSX.utils.json_to_sheet(sortedData); // Use sortedData here
+      const worksheet = XLSX.utils.json_to_sheet(sortedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
   

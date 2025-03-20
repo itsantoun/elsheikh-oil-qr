@@ -17,28 +17,6 @@ const FetchProducts = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // // Fetch Products
-  // useEffect(() => {
-  //   const fetchProducts = async () => {
-  //     try {
-  //       const productsRef = ref(database, 'products');
-  //       const snapshot = await get(productsRef);
-  //       if (snapshot.exists()) {
-  //         const data = snapshot.val();
-  //         const productList = Object.keys(data).map((key) => ({
-  //           id: key,
-  //           ...data[key],
-  //         }));
-  //         setProducts(productList);
-  //       }
-  //     } catch (error) {
-  //       console.error("Error fetching products:", error);
-  //     }
-  //   };
-
-  //   fetchProducts();
-  // }, []);
-
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -65,53 +43,6 @@ const FetchProducts = () => {
   const sanitizeId = (id) => {
     return id.replace(/[.#$/[\]]/g, '_');
   };
-
-  // // Add Product
-  // const handleAddProduct = async () => {
-  //   if (!newProduct.id) {
-  //     setSuccessMessage("Barcode Number is required!");
-  //     setTimeout(() => setSuccessMessage(null), 3000);
-  //     return;
-  //   }
-  
-  //   const sanitizedId = sanitizeId(newProduct.id);
-  //   const productRef = ref(database, `products/${sanitizedId}`);
-  
-  //   try {
-  //     const snapshot = await get(productRef);
-  //     if (snapshot.exists()) {
-  //       setSuccessMessage("Barcode Number already exists. Please use a unique ID.");
-  //       setTimeout(() => setSuccessMessage(null), 3000);
-  //       return;
-  //     }
-  
-  //     const parsedItemCost = parseFloat(newProduct.itemCost);
-  
-  //     await set(productRef, {
-  //       name: newProduct.name.trim() || 'Unnamed Product',
-  //       productType: newProduct.productType.trim() || 'Unknown Type',
-  //       itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
-  //       quantity: newProduct.quantity || 0, // Save quantity
-  //     });
-  
-  //     setSuccessMessage('Product added successfully!');
-  //     setProducts([
-  //       ...products,
-  //       {
-  //         id: sanitizedId,
-  //         ...newProduct,
-  //         itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
-  //       },
-  //     ]);
-  
-  //     setNewProduct({ id: '', name: '', productType: '', itemCost: '', quantity: '' });
-  //     setTimeout(() => setSuccessMessage(null), 3000);
-  //   } catch (error) {
-  //     console.error('Error adding product:', error);
-  //     setSuccessMessage('Error adding product. Please try again.');
-  //     setTimeout(() => setSuccessMessage(null), 3000);
-  //   }
-  // };
 
   const handleAddProduct = async () => {
     if (!newProduct.id) {
@@ -224,6 +155,7 @@ const handleEditProduct = (product) => {
     }
   };
 
+  
   const handleExportToExcel = () => {
     if (products.length === 0) {
       alert("No products available to export.");

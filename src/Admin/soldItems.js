@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, get, update, remove } from 'firebase/database';
+import { ref,set, get, update, remove, onValue } from 'firebase/database';
 import { UserContext } from '../Auth/userContext'; // Import the context
 import '../CSS/soldItems.css';
 
@@ -40,6 +40,69 @@ const formatDateTime = (dateString) => {
 
   return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
 };
+
+useEffect(() => {
+  const soldItemsRef = ref(database, 'SoldItems');
+
+  const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const updates = [];
+
+      for (const key in data) {
+        if (data[key].paymentStatus === 'Stock') {
+          const stockItem = data[key];
+          const transactionsRef = ref(database, `transactions/${key}`);
+
+          updates.push(
+            set(transactionsRef, {
+              ...stockItem,
+              movedToTransactionsAt: new Date().toISOString(),
+            }).then(() => remove(ref(database, `SoldItems/${key}`)))
+          );
+        }
+      }
+
+      await Promise.all(updates);
+    }
+  });
+
+  return () => unsubscribe(); // Cleanup on unmount
+}, []);
+
+// Move stock items to transactions immediately
+useEffect(() => {
+  const moveStockItems = async () => {
+    try {
+      const soldItemsRef = ref(database, 'SoldItems');
+      const snapshot = await get(soldItemsRef);
+      
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        
+        for (const key in data) {
+          if (data[key].paymentStatus === 'Stock') {
+            const stockItem = data[key];
+            const transactionsRef = ref(database, `transactions/${key}`);
+
+            // Move item to transactions
+            await set(transactionsRef, {
+              ...stockItem,
+              movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
+            });
+
+            // Remove from SoldItems
+            await remove(ref(database, `SoldItems/${key}`));
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error moving stock items:', error);
+    }
+  };
+
+  moveStockItems();
+}, []);
 
   useEffect(() => {
     const fetchCustomersAndSoldItems = async () => {
@@ -91,32 +154,38 @@ const formatDateTime = (dateString) => {
   }, []);
   
   // Handle Filtering
-useEffect(() => {
-  let filtered = [...soldItems];
-
-  if (filterType === 'Customer' && searchTerm) {
-    filtered = filtered.filter((item) =>
-      item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  } else if (filterType === 'Date' && dateFilter) {
-    filtered = filtered.filter(
-      (item) =>
-        new Date(item.dateScanned).toLocaleDateString() ===
-        new Date(dateFilter).toLocaleDateString()
-    );
-  } else if (filterType === 'Month' && monthFilter) {
-    filtered = filtered.filter(
-      (item) =>
-        new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
-    );
-  } else if (filterType === 'By Unpaid') {
-    filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
-  }else if (filterType === 'By Stock') { // New filter logic for stock
-    filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
-  }
-
-  setFilteredItems(filtered);
-}, [filterType, searchTerm, dateFilter, monthFilter, soldItems]);
+  useEffect(() => {
+    let filtered = [...soldItems];
+  
+    if (filterType === 'Customer' && searchTerm) {
+      filtered = filtered.filter((item) =>
+        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    } else if (filterType === 'Date' && dateFilter) {
+      filtered = filtered.filter(
+        (item) =>
+          new Date(item.dateScanned).toLocaleDateString() ===
+          new Date(dateFilter).toLocaleDateString()
+      );
+    } else if (filterType === 'Month' && monthFilter) {
+      filtered = filtered.filter(
+        (item) =>
+          new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
+      );
+    } else if (filterType === 'By Unpaid') {
+      filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
+    } else if (filterType === 'By Stock') {
+      filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
+    } else if (filterType === 'By Paid') { // New filter logic for Paid status
+      filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
+    } else if (filterType === 'By Product' && searchTerm) { // New filter logic for Products
+      filtered = filtered.filter((item) =>
+        item.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+  
+    setFilteredItems(filtered);
+  }, [filterType, searchTerm, dateFilter, monthFilter, soldItems]);
 
   const handleEdit = (item) => {
     setEditingItem(item);
@@ -259,7 +328,9 @@ useEffect(() => {
           <option value="Date">By Date</option>
           <option value="Month">By Month</option>
           <option value="By Unpaid">unPaid</option>
+          <option value="By Paid">Paid</option>
           <option value="By Stock">Stock</option>
+          <option value="By Product">By Product</option>
         </select>
 
         {filterType === 'Customer' && (
@@ -306,6 +377,15 @@ useEffect(() => {
           </select>
         )}
 
+{filterType === 'By Product' && ( // New input for product search
+  <input
+    type="text"
+    placeholder="Search product"
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+  />
+)}
+
         <button onClick={exportToCSV}>Export to CSV</button>
       </div>
 
@@ -332,19 +412,7 @@ useEffect(() => {
             <tbody>
   {filteredItems.map((item) => (
     <tr key={item.id}>
-      {/* <td>{new Date(item.dateScanned).toLocaleString()}</td> */}
       <td>{formatDateTime(item.dateScanned)}</td>
-      {/* <td>
-        {editingItem && editingItem.id === item.id ? (
-          <input
-            type="text"
-            value={newCustomer}
-            onChange={(e) => setNewCustomer(e.target.value)}
-          />
-        ) : (
-          item.customerName || 'N/A'
-        )}
-      </td> */}
       <td>
   {editingItem && editingItem.id === item.id ? (
     <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
@@ -409,7 +477,7 @@ useEffect(() => {
           item.totalCost ? `$${item.totalCost}` : 'N/A'
         )}
       </td>
-      <td>
+      {/* <td>
         {editingItem && editingItem.id === item.id ? (
           <select
             value={newPaymentStatus}
@@ -422,7 +490,45 @@ useEffect(() => {
         ) : (
           item.paymentStatus || 'Paid'
         )}
-      </td>
+      </td> */}
+      <td>
+  {editingItem && editingItem.id === item.id ? (
+    <select
+      value={newPaymentStatus}
+      onChange={(e) => setNewPaymentStatus(e.target.value)}
+    >
+      <option value="Paid">Paid</option>
+      <option value="Unpaid">Unpaid</option>
+      <option value="Stock">Stock</option>
+    </select>
+  ) : (
+    <>
+      {item.paymentStatus}
+      {item.paymentStatus === 'Stock' && (
+        <button
+          onClick={async () => {
+            const itemRef = ref(database, `SoldItems/${item.id}`);
+            try {
+              await update(itemRef, { paymentStatus: 'Stock Confirmed' });
+              setSoldItems(soldItems.map((i) => 
+                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
+              ));
+              setFilteredItems(filteredItems.map((i) => 
+                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
+              ));
+            } catch (error) {
+              console.error('Error confirming item:', error);
+            }
+          }}
+          disabled={item.paymentStatus === 'Stock Confirmed'}
+          style={{ marginLeft: '10px' }}
+        >
+          Confirm
+        </button>
+      )}
+    </>
+  )}
+</td>
       <td>
         {editingItem && editingItem.id === item.id ? (
           <>

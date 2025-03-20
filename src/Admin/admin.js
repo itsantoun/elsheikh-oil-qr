@@ -5,6 +5,7 @@ import FetchProducts from './fetchProducts';
 import ItemsSold from './soldItems';
 import AddCustomer from './addCustomer';
 import RemainingProducts from './remainingProducts';
+import Transactions from './transactions';
 import { UserContext } from '../Auth/userContext'; // Import UserContext
 import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
@@ -46,6 +47,8 @@ const Admin = () => {
         return <AddCustomer />;
       case 'stock':
           return <RemainingProducts />;
+      case 'transactions':
+            return <Transactions />;
       default:
         return <AddUsers />;
     }

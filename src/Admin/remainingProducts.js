@@ -17,32 +17,64 @@ const RemainingProducts = () => {
   const [showDropdown, setShowDropdown] = useState(false); // State to control dropdown visibility
   const [inputQuantity, setInputQuantity] = useState('');
   const scannerRef = useRef(null);
-  const [unconfirmedItems, setUnconfirmedItems] = useState([]); // State to store unconfirmed items
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [tableData, setTableData] = useState([]); // State to store table data
+  const [editingRow, setEditingRow] = useState(null); // State to track which row is being edited
 
-  // Fetch unconfirmed items
-  const fetchUnconfirmedItems = async () => {
-    const monthKey = getCurrentMonthKey();
+  const fetchTableData = async () => {
+    const monthKey = `${selectedYear}-${selectedMonth}`;
     const dbRef = ref(database, `remainingStock/${monthKey}`);
 
     try {
       const snapshot = await get(dbRef);
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const unconfirmed = Object.values(data).filter(item => item.status === "Not Confirmed");
-        setUnconfirmedItems(unconfirmed);
-      } else {
-        setUnconfirmedItems([]); // No data available
+      if (!snapshot.exists()) {
+        alert('No data available for the selected month.');
+        setTableData([]);
+        return;
       }
+
+      const data = snapshot.val();
+      const formattedData = await Promise.all(Object.values(data).map(async (product) => {
+        const productRef = ref(database, `products/${product.barcode}`);
+        const productSnapshot = await get(productRef);
+        const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
+
+        const soldItemsSnapshot = await get(ref(database, 'SoldItems'));
+        let totalSoldQuantity = 0;
+
+        if (soldItemsSnapshot.exists()) {
+          const soldItemsData = soldItemsSnapshot.val();
+          Object.values(soldItemsData).forEach((item) => {
+            if (item.barcode === product.barcode) {
+              totalSoldQuantity += item.quantity || 0;
+            }
+          });
+        }
+
+        const remainingQuantity = initialQuantity - totalSoldQuantity;
+
+        return {
+          Barcode: product.barcode,
+          Name: product.name,
+          Initial_Quantity: initialQuantity,
+          Sold_Quantity: totalSoldQuantity,
+          Remaining_Quantity: remainingQuantity,
+          Recorded_Quantity: product.recordedQuantity,
+          Status: product.status || 'Not Confirmed',
+        };
+      }));
+
+      const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
+      setTableData(sortedData);
     } catch (error) {
-      console.error('Error fetching unconfirmed items:', error);
+      console.error('Error fetching table data:', error);
     }
   };
 
   useEffect(() => {
-    fetchUnconfirmedItems(); // Fetch unconfirmed items on component mount or when month/year changes
+    fetchTableData();
   }, [selectedMonth, selectedYear]);
 
   const exportToExcel = async () => {
@@ -57,14 +89,11 @@ const RemainingProducts = () => {
       }
 
       const data = snapshot.val();
-
       const formattedData = await Promise.all(Object.values(data).map(async (product) => {
-        // Fetch the initial quantity from the products node
         const productRef = ref(database, `products/${product.barcode}`);
         const productSnapshot = await get(productRef);
         const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
 
-        // Fetch the sold quantity from the SoldItems node
         const soldItemsSnapshot = await get(ref(database, 'SoldItems'));
         let totalSoldQuantity = 0;
 
@@ -77,23 +106,20 @@ const RemainingProducts = () => {
           });
         }
 
-        // Calculate remaining quantity
         const remainingQuantity = initialQuantity - totalSoldQuantity;
 
         return {
           Barcode: product.barcode,
           Name: product.name,
-          Initial_Quantity: initialQuantity, // Add initial quantity
-          Sold_Quantity: totalSoldQuantity,  // Add total sold quantity
-          Remaining_Quantity: remainingQuantity, // Add remaining quantity
+          Initial_Quantity: initialQuantity,
+          Sold_Quantity: totalSoldQuantity,
+          Remaining_Quantity: remainingQuantity,
           Recorded_Quantity: product.recordedQuantity,
           Status: product.status || 'Not Confirmed',
         };
       }));
 
-      // Sort the formattedData alphabetically by the "Name" field
       const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
-
       const worksheet = XLSX.utils.json_to_sheet(sortedData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
@@ -120,21 +146,20 @@ const RemainingProducts = () => {
     const monthKey = getCurrentMonthKey();
     const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
 
-    // Only set status to "Confirmed" if user confirms the existing quantity
-    const status = useExisting ? "Confirmed" : "Not Confirmed"; // If not confirming, leave status as "Not Confirmed"
+    const status = useExisting ? "Confirmed" : "Not Confirmed";
 
     set(productRef, {
       barcode: scannedProduct.barcode,
       name: scannedProduct.name,
       recordedQuantity: finalQuantity,
-      status: status,  // Conditionally set status
+      status: status,
     })
       .then(() => {
         console.log('Data saved successfully');
-        setRemainingQuantity(finalQuantity); // Update UI
+        setRemainingQuantity(finalQuantity);
         setIsPopupOpen(false);
-        setInputQuantity(''); // Reset input field
-        fetchUnconfirmedItems(); // Refresh the list of unconfirmed items
+        setInputQuantity('');
+        fetchTableData(); // Refresh table data after saving
       })
       .catch((error) => console.error('Error saving data:', error));
   };
@@ -186,7 +211,6 @@ const RemainingProducts = () => {
             ...productsData[barcode],
           }));
 
-          // Sort products alphabetically by name
           const sortedProducts = productsList.sort((a, b) => a.name.localeCompare(b.name));
           setProducts(sortedProducts);
         }
@@ -287,6 +311,62 @@ const RemainingProducts = () => {
     }
   };
 
+  const handleEdit = (index) => {
+    setEditingRow(index);
+  };
+
+  const handleSave = async (index) => {
+    const row = tableData[index];
+    const monthKey = `${selectedYear}-${selectedMonth}`;
+
+    // Reference to the remainingStock table
+    const remainingStockRef = ref(database, `remainingStock/${monthKey}/${row.Barcode}`);
+
+    // Reference to the products table
+    const productRef = ref(database, `products/${row.Barcode}`);
+
+    try {
+      // Save to remainingStock table
+      await set(remainingStockRef, {
+        barcode: row.Barcode,
+        name: row.Name,
+        recordedQuantity: row.Recorded_Quantity,
+        soldQuantity: row.Sold_Quantity,
+        remainingQuantity: row.Remaining_Quantity,
+        status: row.Status,
+      });
+
+      // Update the products table
+      const productSnapshot = await get(productRef);
+      if (productSnapshot.exists()) {
+        const productData = productSnapshot.val();
+        const updatedQuantity = productData.quantity - row.Sold_Quantity; // Adjust quantity based on sold items
+
+        await set(productRef, {
+          ...productData,
+          quantity: updatedQuantity, // Update the quantity in the products table
+        });
+      }
+
+      setEditingRow(null);
+      fetchTableData(); // Refresh table data after saving
+    } catch (error) {
+      console.error('Error saving data:', error);
+    }
+  };
+
+  const handleChange = (index, field, value) => {
+    const updatedData = [...tableData];
+    updatedData[index][field] = value;
+
+    // Automatically update Remaining Quantity if Sold Quantity is changed
+    if (field === 'Sold_Quantity') {
+      updatedData[index].Remaining_Quantity = updatedData[index].Initial_Quantity - value;
+    }
+
+    setTableData(updatedData);
+  };
+
   return (
     <div className="container">
       <div className="export-container">
@@ -377,7 +457,7 @@ const RemainingProducts = () => {
               className="modal-close-btn"
               onClick={() => {
                 setIsPopupOpen(false);
-                setInputQuantity(''); // Reset input field
+                setInputQuantity('');
               }}
               aria-label="Close"
             >
@@ -410,33 +490,84 @@ const RemainingProducts = () => {
         </div>
       )}
 
-      {/* Table for unconfirmed items */}
-      <div className="unconfirmed-items-table">
-        <h3>Unconfirmed Items</h3>
-        {unconfirmedItems.length > 0 ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Barcode</th>
-                <th>Name</th>
-                <th>Recorded Quantity</th>
-                <th>Status</th>
+      <div className="table-container">
+        <h2>Remaining Stock for {new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Barcode</th>
+              <th>Name</th>
+              <th>Initial Quantity</th>
+              <th>Sold Quantity</th>
+              <th>Remaining Quantity</th>
+              <th>Recorded Quantity</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tableData.map((row, index) => (
+              <tr key={index}>
+                <td>{row.Barcode}</td>
+                <td>{row.Name}</td>
+                <td>{row.Initial_Quantity}</td>
+                <td>
+                  {editingRow === index ? (
+                    <input
+                      type="number"
+                      value={row.Sold_Quantity}
+                      onChange={(e) => handleChange(index, 'Sold_Quantity', e.target.value)}
+                    />
+                  ) : (
+                    row.Sold_Quantity
+                  )}
+                </td>
+                <td>
+                  {editingRow === index ? (
+                    <input
+                      type="number"
+                      value={row.Remaining_Quantity}
+                      onChange={(e) => handleChange(index, 'Remaining_Quantity', e.target.value)}
+                    />
+                  ) : (
+                    row.Remaining_Quantity
+                  )}
+                </td>
+                <td>
+                  {editingRow === index ? (
+                    <input
+                      type="number"
+                      value={row.Recorded_Quantity}
+                      onChange={(e) => handleChange(index, 'Recorded_Quantity', e.target.value)}
+                    />
+                  ) : (
+                    row.Recorded_Quantity
+                  )}
+                </td>
+                <td>
+                  {editingRow === index ? (
+                    <select
+                      value={row.Status}
+                      onChange={(e) => handleChange(index, 'Status', e.target.value)}
+                    >
+                      <option value="Not Confirmed">Not Confirmed</option>
+                      <option value="Confirmed">Confirmed</option>
+                    </select>
+                  ) : (
+                    row.Status
+                  )}
+                </td>
+                <td>
+                  {editingRow === index ? (
+                    <button onClick={() => handleSave(index)}>Save</button>
+                  ) : (
+                    <button onClick={() => handleEdit(index)}>Edit</button>
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {unconfirmedItems.map((item, index) => (
-                <tr key={index}>
-                  <td>{item.barcode}</td>
-                  <td>{item.name}</td>
-                  <td>{item.recordedQuantity}</td>
-                  <td>{item.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p>No unconfirmed items found.</p>
-        )}
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

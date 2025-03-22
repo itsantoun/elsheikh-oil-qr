@@ -1,35 +1,66 @@
 .navbar {
-    background-color: #007bff;
-    color: #fff;
-    padding: 1rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  background-color: #007bff;
+  color: #fff;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap; /* Allow for wrapping of items in the navbar */
+}
+
+.navbar-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  flex-grow: 1; /* Make the title take up available space */
+}
+
+.navbar-buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+  justify-content: flex-start; /* Align buttons to the left */
+}
+
+.navbar-button {
+  background-color: #fff;
+  color: #007bff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+
+.navbar-button:hover {
+  background-color: #0056b3;
+  color: #fff;
+}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0.8rem;
+    flex-direction: column;
+    align-items: flex-start;
   }
-  
+
   .navbar-title {
-    font-size: 1.5rem;
-    font-weight: bold;
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
   }
-  
+
   .navbar-buttons {
-    display: flex;
-    gap: 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
   }
-  
+
   .navbar-button {
-    background-color: #fff;
-    color: #007bff;
-    border: none;
-    border-radius: 5px;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: bold;
-    transition: background-color 0.3s;
+    width: 100%;
+    padding: 0.8rem;
+    font-size: 1.1rem;
   }
-  
-  .navbar-button:hover {
-    background-color: #0056b3;
-    color: #fff;
-  }
+}

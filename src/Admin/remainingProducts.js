@@ -16,12 +16,15 @@ const RemainingProducts = () => {
   const [showScanner, setShowScanner] = useState(false); // State to control scanner visibility
   const [showDropdown, setShowDropdown] = useState(false); // State to control dropdown visibility
   const [inputQuantity, setInputQuantity] = useState('');
+  
   const scannerRef = useRef(null);
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [tableData, setTableData] = useState([]); // State to store table data
   const [editingRow, setEditingRow] = useState(null); // State to track which row is being edited
+
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const fetchTableData = async () => {
     const monthKey = `${selectedYear}-${selectedMonth}`;
@@ -53,6 +56,7 @@ const RemainingProducts = () => {
           });
         }
 
+      
         const remainingQuantity = initialQuantity - totalSoldQuantity;
 
         return {
@@ -367,6 +371,28 @@ const RemainingProducts = () => {
     setTableData(updatedData);
   };
 
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+  
+  const sortedTableData = () => {
+    if (!sortConfig.key) return tableData;
+  
+    return [...tableData].sort((a, b) => {
+      if (a[sortConfig.key] < b[sortConfig.key]) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (a[sortConfig.key] > b[sortConfig.key]) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  };
+
   return (
     <div className="container">
       <div className="export-container">
@@ -493,81 +519,79 @@ const RemainingProducts = () => {
       <div className="table-container">
         <h2>Remaining Stock for {new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
         <table>
-          <thead>
-            <tr>
-              <th>Barcode</th>
-              <th>Name</th>
-              <th>Initial Quantity</th>
-              <th>Sold Quantity</th>
-              <th>Remaining Quantity</th>
-              <th>Recorded Quantity</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tableData.map((row, index) => (
-              <tr key={index}>
-                <td>{row.Barcode}</td>
-                <td>{row.Name}</td>
-                <td>{row.Initial_Quantity}</td>
-                <td>
-                  {editingRow === index ? (
-                    <input
-                      type="number"
-                      value={row.Sold_Quantity}
-                      onChange={(e) => handleChange(index, 'Sold_Quantity', e.target.value)}
-                    />
-                  ) : (
-                    row.Sold_Quantity
-                  )}
-                </td>
-                <td>
-                  {editingRow === index ? (
-                    <input
-                      type="number"
-                      value={row.Remaining_Quantity}
-                      onChange={(e) => handleChange(index, 'Remaining_Quantity', e.target.value)}
-                    />
-                  ) : (
-                    row.Remaining_Quantity
-                  )}
-                </td>
-                <td>
-                  {editingRow === index ? (
-                    <input
-                      type="number"
-                      value={row.Recorded_Quantity}
-                      onChange={(e) => handleChange(index, 'Recorded_Quantity', e.target.value)}
-                    />
-                  ) : (
-                    row.Recorded_Quantity
-                  )}
-                </td>
-                <td>
-                  {editingRow === index ? (
-                    <select
-                      value={row.Status}
-                      onChange={(e) => handleChange(index, 'Status', e.target.value)}
-                    >
-                      <option value="Not Confirmed">Not Confirmed</option>
-                      <option value="Confirmed">Confirmed</option>
-                    </select>
-                  ) : (
-                    row.Status
-                  )}
-                </td>
-                <td>
-                  {editingRow === index ? (
-                    <button onClick={() => handleSave(index)}>Save</button>
-                  ) : (
-                    <button onClick={() => handleEdit(index)}>Edit</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <thead>
+        <tr>
+          {['Barcode', 'Name', 'Initial_Quantity', 'Sold_Quantity', 'Remaining_Quantity', 'Recorded_Quantity', 'Status'].map((key) => (
+            <th key={key} onClick={() => handleSort(key)} style={{ cursor: 'pointer' }}>
+              {key} {sortConfig.key === key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+            </th>
+          ))}
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sortedTableData().map((row, index) => (
+          <tr key={index}>
+            <td>{row.Barcode}</td>
+            <td>{row.Name}</td>
+            <td>{row.Initial_Quantity}</td>
+            <td>
+              {editingRow === index ? (
+                <input
+                  type="number"
+                  value={row.Sold_Quantity}
+                  onChange={(e) => handleChange(index, 'Sold_Quantity', e.target.value)}
+                />
+              ) : (
+                row.Sold_Quantity
+              )}
+            </td>
+            <td>
+              {editingRow === index ? (
+                <input
+                  type="number"
+                  value={row.Remaining_Quantity}
+                  onChange={(e) => handleChange(index, 'Remaining_Quantity', e.target.value)}
+                />
+              ) : (
+                row.Remaining_Quantity
+              )}
+            </td>
+            <td>
+              {editingRow === index ? (
+                <input
+                  type="number"
+                  value={row.Recorded_Quantity}
+                  onChange={(e) => handleChange(index, 'Recorded_Quantity', e.target.value)}
+                />
+              ) : (
+                row.Recorded_Quantity
+              )}
+            </td>
+            <td>
+              {editingRow === index ? (
+                <select
+                  value={row.Status}
+                  onChange={(e) => handleChange(index, 'Status', e.target.value)}
+                >
+                  <option value="Not Confirmed">Not Confirmed</option>
+                  <option value="Confirmed">Confirmed</option>
+                </select>
+              ) : (
+                row.Status
+              )}
+            </td>
+            <td>
+              {editingRow === index ? (
+                <button onClick={() => handleSave(index)}>Save</button>
+              ) : (
+                <button onClick={() => handleEdit(index)}>Edit</button>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
       </div>
     </div>
   );

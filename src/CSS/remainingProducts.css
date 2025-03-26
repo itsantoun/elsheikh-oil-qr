@@ -1,8 +1,196 @@
+/* Button Container */
+.button-container {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+}
+
+.action-button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.3s ease;
+  flex: 1 1 auto; /* Allow buttons to grow and shrink */
+  margin: 5px; /* Add margin for spacing */
+}
+
+.action-button:hover {
+  background-color: #0056b3;
+}
+
+/* Export Container */
+.export-container {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  align-items: center;
+  flex-wrap: wrap; /* Allow elements to wrap on smaller screens */
+}
+
+.export-container select {
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+  background-color: white;
+  cursor: pointer;
+  flex: 1 1 auto; /* Allow dropdowns to grow and shrink */
+  margin: 5px; /* Add margin for spacing */
+}
+
+/* Scanner Container */
+.scanner-container {
+  position: relative;
+  margin: 20px auto;
+  max-width: 800px;
+  background-color: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.scanner {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.status {
+  color: white;
+  text-align: center;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.7);
+  margin: 0;
+}
+
+.zoom-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.zoom-controls button {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+.zoom-controls button:hover {
+  background-color: #0056b3;
+}
+
+.zoom-controls input[type="range"] {
+  width: 150px;
+}
+
+/* Dropdown Container */
+.dropdown-container {
+  margin: 20px auto;
+  max-width: 800px;
+}
+
+.dropdown-container select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+  background-color: white;
+  cursor: pointer;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal Container */
+.modal-container {
+  background: #fff;
+  width: 90%;
+  max-width: 400px;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+  position: relative;
+  text-align: center;
+}
+
+/* Close Button */
+.modal-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: #555;
+}
+
+.modal-close-btn:hover {
+  color: #000;
+}
+
+/* Title */
+.modal-title {
+  font-size: 20px;
+  margin-bottom: 15px;
+  font-weight: bold;
+}
+
+/* Content */
+.modal-content p {
+  margin: 5px 0;
+  font-size: 16px;
+}
+
+/* Close Button at Bottom */
+.modal-btn-close {
+  margin-top: 15px;
+  padding: 8px 16px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.3s;
+}
+
+.modal-btn-close:hover {
+  background: #0056b3;
+}
+
 /* Table Container */
 .table-container {
   margin: 20px auto;
-  max-width: 100%;
-  overflow-x: auto; /* Allow horizontal scrolling only if absolutely necessary */
+  max-width: 1000px;
+  overflow-x: auto;
 }
 
 .table-container h2 {
@@ -18,14 +206,12 @@ table {
   margin-bottom: 20px;
   background-color: white;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  table-layout: fixed; /* Ensure the table respects the defined widths */
 }
 
 th, td {
   padding: 12px;
   text-align: left;
   border-bottom: 1px solid #ddd;
-  word-wrap: break-word; /* Allow long text to wrap */
 }
 
 th {
@@ -38,66 +224,72 @@ tr:hover {
   background-color: #f5f5f5;
 }
 
-/* Adjust column widths for better fit */
-th:nth-child(1), td:nth-child(1) { width: 10%; } /* Barcode */
-th:nth-child(2), td:nth-child(2) { width: 20%; } /* Name */
-th:nth-child(3), td:nth-child(3) { width: 10%; } /* Initial Quantity */
-th:nth-child(4), td:nth-child(4) { width: 10%; } /* Sold Quantity */
-th:nth-child(5), td:nth-child(5) { width: 10%; } /* Remaining Quantity */
-th:nth-child(6), td:nth-child(6) { width: 10%; } /* Recorded Quantity */
-th:nth-child(7), td:nth-child(7) { width: 10%; } /* Status */
-th:nth-child(8), td:nth-child(8) { width: 10%; } /* Actions */
-
 /* Mobile Styles */
 @media (max-width: 768px) {
+  .button-container {
+    flex-direction: column; /* Stack buttons vertically */
+    align-items: center;
+  }
+
+  .action-button {
+    width: 100%; /* Full-width buttons */
+    margin: 5px 0; /* Adjust margin */
+  }
+
+  .export-container {
+    flex-direction: column; /* Stack dropdowns and button vertically */
+    align-items: center;
+  }
+
+  .export-container select {
+    width: 100%; /* Full-width dropdowns */
+    margin: 5px 0; /* Adjust margin */
+  }
+
+  .scanner-container {
+    margin: 10px auto;
+    border-radius: 0; /* Remove border radius for full-width */
+  }
+
+  .scanner {
+    height: 300px; /* Adjust scanner height for mobile */
+  }
+
+  .zoom-controls {
+    flex-direction: column; /* Stack zoom controls vertically */
+    gap: 5px;
+  }
+
+  .zoom-controls input[type="range"] {
+    width: 100%; /* Full-width range input */
+  }
+
+  .modal-container {
+    width: 95%; /* Wider modal for mobile */
+    padding: 15px;
+  }
+
+  .modal-title {
+    font-size: 18px; /* Smaller title for mobile */
+  }
+
+  .modal-content p {
+    font-size: 14px; /* Smaller text for mobile */
+  }
+
   .table-container {
     margin: 10px auto;
+  }
+
+  table {
+    font-size: 14px; /* Smaller font for mobile */
+  }
+
+  th, td {
+    padding: 8px; /* Smaller padding for mobile */
   }
 
   .table-container h2 {
     font-size: 20px; /* Smaller heading for mobile */
   }
-
-  table, thead, tbody, th, td, tr {
-    display: block; /* Stack table rows vertically */
-  }
-
-  th {
-    position: absolute;
-    top: -9999px;
-    left: -9999px; /* Hide headers */
-  }
-
-  tr {
-    border: 1px solid #ccc;
-    margin-bottom: 10px; /* Add space between rows */
-  }
-
-  td {
-    border: none;
-    border-bottom: 1px solid #eee;
-    position: relative;
-    padding-left: 50%; /* Add padding to align text */
-    text-align: right; /* Align text to the right */
-  }
-
-  td:before {
-    position: absolute;
-    left: 10px;
-    width: 45%;
-    padding-right: 10px;
-    white-space: nowrap;
-    text-align: left;
-    font-weight: bold;
-    content: attr(data-label); /* Use data-label attribute for labels */
-  }
-
-  td:nth-child(1):before { content: "Barcode"; }
-  td:nth-child(2):before { content: "Name"; }
-  td:nth-child(3):before { content: "Initial Quantity"; }
-  td:nth-child(4):before { content: "Sold Quantity"; }
-  td:nth-child(5):before { content: "Remaining Quantity"; }
-  td:nth-child(6):before { content: "Recorded Quantity"; }
-  td:nth-child(7):before { content: "Status"; }
-  td:nth-child(8):before { content: "Actions"; }
 }

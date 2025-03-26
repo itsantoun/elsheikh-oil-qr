@@ -58,15 +58,8 @@ th:nth-child(8), td:nth-child(8) { width: 10%; } /* Actions */
     font-size: 20px; /* Smaller heading for mobile */
   }
 
-  table {
-    display: block; /* Make the table block level so it can scroll horizontally */
-    overflow-x: auto; /* Enable horizontal scrolling */
-    white-space: nowrap; /* Prevent text from wrapping */
-  }
-
-  th, td {
-    display: block;
-    width: 100%; /* Ensure full width of the parent container */
+  table, thead, tbody, th, td, tr {
+    display: block; /* Stack table rows vertically */
   }
 
   th {
@@ -78,7 +71,6 @@ th:nth-child(8), td:nth-child(8) { width: 10%; } /* Actions */
   tr {
     border: 1px solid #ccc;
     margin-bottom: 10px; /* Add space between rows */
-    display: block; /* Ensure rows stack vertically */
   }
 
   td {

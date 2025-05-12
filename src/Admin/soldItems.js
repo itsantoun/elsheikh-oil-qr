@@ -348,7 +348,7 @@ useEffect(() => {
         item.name || "N/A",
         item.quantity || 0,
         item.price || "N/A",
-        item.cost || "N/A",
+        item.itemCost        || "N/A",
         item.scannedBy || "N/A",
         item.remark || "N/A",
         item.totalCost || "N/A",
@@ -709,7 +709,7 @@ useEffect(() => {
                     id="cost"
                     name="cost"
                     step="0.01"
-                    value={newItem.cost}
+                    value={newItem.itemCost}
                     onChange={handleInputChange}
                   />
                 </div>
@@ -843,7 +843,7 @@ useEffect(() => {
                       item.quantity || 0
                     )}
                   </td>
-                  <td>{item.cost ? `$${Number(item.cost).toFixed(2)}` : 'N/A'}</td>
+                  <td>{item.itemCost ? `$${Number(item.itemCost).toFixed(2)}` : 'N/A'}</td>
                   <td>{item.scannedBy || 'N/A'}</td>
                   <td>
                     {editingItem && editingItem.id === item.id ? (

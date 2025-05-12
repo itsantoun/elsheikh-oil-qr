@@ -13,50 +13,114 @@ const RemainingProducts = () => {
   const [remainingQuantity, setRemainingQuantity] = useState(0);
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState('');
-  const [showScanner, setShowScanner] = useState(false); // State to control scanner visibility
-  const [showDropdown, setShowDropdown] = useState(false); // State to control dropdown visibility
+  const [showScanner, setShowScanner] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [inputQuantity, setInputQuantity] = useState('');
   
   const scannerRef = useRef(null);
 
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [tableData, setTableData] = useState([]); // State to store table data
-  const [editingRow, setEditingRow] = useState(null); // State to track which row is being edited
+  // Get current date
+  const today = new Date();
+  
+  // New date range states
+  const [startDate, setStartDate] = useState({
+    day: 1,
+    month: today.getMonth() + 1,
+    year: today.getFullYear()
+  });
+  
+  const [endDate, setEndDate] = useState({
+    day: today.getDate(),
+    month: today.getMonth() + 1,
+    year: today.getFullYear()
+  });
 
+  const [tableData, setTableData] = useState([]);
+  const [editingRow, setEditingRow] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
-  const fetchTableData = async () => {
-    const monthKey = `${selectedYear}-${selectedMonth}`;
-    const dbRef = ref(database, `remainingStock/${monthKey}`);
+  // Helper function to get day count in a month
+  const getDaysInMonth = (month, year) => {
+    return new Date(year, month, 0).getDate();
+  };
 
+  // Generate days for select boxes
+  const generateDayOptions = (month, year) => {
+    const daysInMonth = getDaysInMonth(month, year);
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  };
+
+  const formatDateForDB = (dateObj) => {
+    return `${dateObj.year}-${dateObj.month.toString().padStart(2, '0')}-${dateObj.day.toString().padStart(2, '0')}`;
+  };
+
+  const fetchTableData = async () => {
+    // Format dates for database query
+    const formattedStartDate = formatDateForDB(startDate);
+    const formattedEndDate = formatDateForDB(endDate);
+    
+    // For compatibility with old data structure, also get month-based data
+    const startMonthKey = `${startDate.year}-${startDate.month}`;
+    const endMonthKey = `${endDate.year}-${endDate.month}`;
+    
     try {
+      // Get all potentially relevant data
+      let allData = {};
+      
+      // Check for data in current format (will replace with date-based structure)
+      const dbRef = ref(database, `remainingStock/${startMonthKey}`);
       const snapshot = await get(dbRef);
-      if (!snapshot.exists()) {
-        alert('No data available for the selected month.');
+      
+      if (snapshot.exists()) {
+        allData = { ...allData, ...snapshot.val() };
+      }
+      
+      // If end date is in a different month, also fetch that data
+      if (startMonthKey !== endMonthKey) {
+        const endMonthRef = ref(database, `remainingStock/${endMonthKey}`);
+        const endMonthSnapshot = await get(endMonthRef);
+        
+        if (endMonthSnapshot.exists()) {
+          allData = { ...allData, ...endMonthSnapshot.val() };
+        }
+      }
+      
+      if (Object.keys(allData).length === 0) {
+        alert('No data available for the selected date range.');
         setTableData([]);
         return;
       }
 
-      const data = snapshot.val();
-      const formattedData = await Promise.all(Object.values(data).map(async (product) => {
+      const formattedData = await Promise.all(Object.values(allData).map(async (product) => {
         const productRef = ref(database, `products/${product.barcode}`);
         const productSnapshot = await get(productRef);
         const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
 
+        // Get sales data
         const soldItemsSnapshot = await get(ref(database, 'SoldItems'));
         let totalSoldQuantity = 0;
 
         if (soldItemsSnapshot.exists()) {
           const soldItemsData = soldItemsSnapshot.val();
+          
+          // Calculate sold quantity within date range
           Object.values(soldItemsData).forEach((item) => {
-            if (item.barcode === product.barcode) {
+            // Check if the item has a date and it falls within our range
+            if (item.barcode === product.barcode && item.date) {
+              const itemDate = new Date(item.date);
+              const startDateObj = new Date(startDate.year, startDate.month - 1, startDate.day);
+              const endDateObj = new Date(endDate.year, endDate.month - 1, endDate.day);
+              
+              if (itemDate >= startDateObj && itemDate <= endDateObj) {
+                totalSoldQuantity += item.quantity || 0;
+              }
+            } else if (item.barcode === product.barcode && !item.date) {
+              // Handle legacy data without dates
               totalSoldQuantity += item.quantity || 0;
             }
           });
         }
 
-      
         const remainingQuantity = initialQuantity - totalSoldQuantity;
 
         return {
@@ -79,64 +143,30 @@ const RemainingProducts = () => {
 
   useEffect(() => {
     fetchTableData();
-  }, [selectedMonth, selectedYear]);
+  }, [startDate, endDate]);
 
   const exportToExcel = async () => {
-    const monthKey = `${selectedYear}-${selectedMonth}`;
-    const dbRef = ref(database, `remainingStock/${monthKey}`);
+    if (tableData.length === 0) {
+      alert('No data available to export.');
+      return;
+    }
 
     try {
-      const snapshot = await get(dbRef);
-      if (!snapshot.exists()) {
-        alert('No data available for the selected month.');
-        return;
-      }
-
-      const data = snapshot.val();
-      const formattedData = await Promise.all(Object.values(data).map(async (product) => {
-        const productRef = ref(database, `products/${product.barcode}`);
-        const productSnapshot = await get(productRef);
-        const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
-
-        const soldItemsSnapshot = await get(ref(database, 'SoldItems'));
-        let totalSoldQuantity = 0;
-
-        if (soldItemsSnapshot.exists()) {
-          const soldItemsData = soldItemsSnapshot.val();
-          Object.values(soldItemsData).forEach((item) => {
-            if (item.barcode === product.barcode) {
-              totalSoldQuantity += item.quantity || 0;
-            }
-          });
-        }
-
-        const remainingQuantity = initialQuantity - totalSoldQuantity;
-
-        return {
-          Barcode: product.barcode,
-          Name: product.name,
-          Initial_Quantity: initialQuantity,
-          Sold_Quantity: totalSoldQuantity,
-          Remaining_Quantity: remainingQuantity,
-          Recorded_Quantity: product.recordedQuantity,
-          Status: product.status || 'Not Confirmed',
-        };
-      }));
-
-      const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
-      const worksheet = XLSX.utils.json_to_sheet(sortedData);
+      const worksheet = XLSX.utils.json_to_sheet(tableData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
 
-      XLSX.writeFile(workbook, `Remaining_Stock_${monthKey}.xlsx`);
+      // Format the filename with date range
+      const fileName = `Remaining_Stock_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
     } catch (error) {
       console.error('Error exporting data:', error);
     }
   };
 
-  const getCurrentMonthKey = () => {
+  const getCurrentDateKey = () => {
     const now = new Date();
-    return `${now.getFullYear()}-${now.getMonth() + 1}`;
+    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
   };
 
   const handleConfirmQuantity = (useExisting = false) => {
@@ -147,7 +177,10 @@ const RemainingProducts = () => {
       return;
     }
 
-    const monthKey = getCurrentMonthKey();
+    const dateKey = getCurrentDateKey();
+    const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
+    
+    // Still save to month-based structure for backward compatibility
     const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
 
     const status = useExisting ? "Confirmed" : "Not Confirmed";
@@ -157,6 +190,7 @@ const RemainingProducts = () => {
       name: scannedProduct.name,
       recordedQuantity: finalQuantity,
       status: status,
+      recordedDate: dateKey // Add this to track when the quantity was recorded
     })
       .then(() => {
         console.log('Data saved successfully');
@@ -319,49 +353,9 @@ const RemainingProducts = () => {
     setEditingRow(index);
   };
 
-  // const handleSave = async (index) => {
-  //   const row = tableData[index];
-  //   const monthKey = `${selectedYear}-${selectedMonth}`;
-
-  //   // Reference to the remainingStock table
-  //   const remainingStockRef = ref(database, `remainingStock/${monthKey}/${row.Barcode}`);
-
-  //   // Reference to the products table
-  //   const productRef = ref(database, `products/${row.Barcode}`);
-
-  //   try {
-  //     // Save to remainingStock table
-  //     await set(remainingStockRef, {
-  //       barcode: row.Barcode,
-  //       name: row.Name,
-  //       recordedQuantity: row.Recorded_Quantity,
-  //       soldQuantity: row.Sold_Quantity,
-  //       remainingQuantity: row.Remaining_Quantity,
-  //       status: row.Status,
-  //     });
-
-  //     // Update the products table
-  //     const productSnapshot = await get(productRef);
-  //     if (productSnapshot.exists()) {
-  //       const productData = productSnapshot.val();
-  //       const updatedQuantity = productData.quantity - row.Sold_Quantity; // Adjust quantity based on sold items
-
-  //       await set(productRef, {
-  //         ...productData,
-  //         quantity: updatedQuantity, // Update the quantity in the products table
-  //       });
-  //     }
-
-  //     setEditingRow(null);
-  //     fetchTableData(); // Refresh table data after saving
-  //   } catch (error) {
-  //     console.error('Error saving data:', error);
-  //   }
-  // };
-
   const handleSave = async (index) => {
     const row = tableData[index];
-    const monthKey = `${selectedYear}-${selectedMonth}`;
+    const monthKey = `${endDate.year}-${endDate.month}`;
     
     try {
       // Prepare only the data we want to save
@@ -369,7 +363,8 @@ const RemainingProducts = () => {
         barcode: row.Barcode,
         name: row.Name,
         recordedQuantity: Number(row.Recorded_Quantity) || 0,
-        status: row.Status || 'Not Confirmed'
+        status: row.Status || 'Not Confirmed',
+        recordedDate: getCurrentDateKey() // Add a timestamp of when the record was updated
       };
   
       // Only update the specific fields we want
@@ -382,18 +377,6 @@ const RemainingProducts = () => {
       alert('Failed to save changes. Please try again.');
     }
   };
-
-  // const handleChange = (index, field, value) => {
-  //   const updatedData = [...tableData];
-  //   updatedData[index][field] = value;
-
-  //   // Automatically update Remaining Quantity if Sold Quantity is changed
-  //   if (field === 'Sold_Quantity') {
-  //     updatedData[index].Remaining_Quantity = updatedData[index].Initial_Quantity - value;
-  //   }
-
-  //   setTableData(updatedData);
-  // };
 
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
@@ -408,6 +391,30 @@ const RemainingProducts = () => {
       
       return newData;
     });
+  };
+
+  const handleStartDateChange = (field, value) => {
+    const newDate = { ...startDate, [field]: parseInt(value) };
+    
+    // Ensure day is valid for the month/year
+    const maxDays = getDaysInMonth(newDate.month, newDate.year);
+    if (newDate.day > maxDays) {
+      newDate.day = maxDays;
+    }
+    
+    setStartDate(newDate);
+  };
+
+  const handleEndDateChange = (field, value) => {
+    const newDate = { ...endDate, [field]: parseInt(value) };
+    
+    // Ensure day is valid for the month/year
+    const maxDays = getDaysInMonth(newDate.month, newDate.year);
+    if (newDate.day > maxDays) {
+      newDate.day = maxDays;
+    }
+    
+    setEndDate(newDate);
   };
 
   const handleSort = (key) => {
@@ -434,25 +441,80 @@ const RemainingProducts = () => {
 
   return (
     <div className="container">
-      <div className="export-container">
-        <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-          {Array.from({ length: 12 }, (_, i) => (
-            <option key={i + 1} value={i + 1}>
-              {new Date(0, i).toLocaleString('default', { month: 'long' })}
-            </option>
-          ))}
-        </select>
+      <div className="date-range-container">
+        <div className="date-selector">
+          <h3>FROM:</h3>
+          <div className="date-inputs">
+            <select 
+              value={startDate.day} 
+              onChange={(e) => handleStartDateChange('day', e.target.value)}
+            >
+              {generateDayOptions(startDate.month, startDate.year).map(day => (
+                <option key={`start-day-${day}`} value={day}>{day}</option>
+              ))}
+            </select>
+            
+            <select 
+              value={startDate.month} 
+              onChange={(e) => handleStartDateChange('month', e.target.value)}
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={`start-month-${i + 1}`} value={i + 1}>
+                  {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+            
+            <select 
+              value={startDate.year} 
+              onChange={(e) => handleStartDateChange('year', e.target.value)}
+            >
+              {Array.from({ length: 10 }, (_, i) => {
+                const year = today.getFullYear() - i;
+                return (
+                  <option key={`start-year-${year}`} value={year}>{year}</option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
 
-        <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
-          {Array.from({ length: 10 }, (_, i) => {
-            const year = new Date().getFullYear() - i;
-            return (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            );
-          })}
-        </select>
+        <div className="date-selector">
+          <h3>TO:</h3>
+          <div className="date-inputs">
+            <select 
+              value={endDate.day} 
+              onChange={(e) => handleEndDateChange('day', e.target.value)}
+            >
+              {generateDayOptions(endDate.month, endDate.year).map(day => (
+                <option key={`end-day-${day}`} value={day}>{day}</option>
+              ))}
+            </select>
+            
+            <select 
+              value={endDate.month} 
+              onChange={(e) => handleEndDateChange('month', e.target.value)}
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={`end-month-${i + 1}`} value={i + 1}>
+                  {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+            
+            <select 
+              value={endDate.year} 
+              onChange={(e) => handleEndDateChange('year', e.target.value)}
+            >
+              {Array.from({ length: 10 }, (_, i) => {
+                const year = today.getFullYear() - i;
+                return (
+                  <option key={`end-year-${year}`} value={year}>{year}</option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
 
         <button className="action-button" onClick={exportToExcel}>
           Export as Excel
@@ -556,138 +618,77 @@ const RemainingProducts = () => {
       )}
 
       <div className="table-container">
-        <h2>Remaining Stock for {new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+        <h2>Remaining Stock for {new Date(startDate.year, startDate.month - 1, startDate.day).toLocaleDateString()} to {new Date(endDate.year, endDate.month - 1, endDate.day).toLocaleDateString()}</h2>
         <table>
-      <thead>
-        <tr>
-          {['Barcode', 'Name', 'Initial_Quantity', 'Sold_Quantity', 'Remaining_Quantity', 'Recorded_Quantity', 'Status'].map((key) => (
-            <th key={key} onClick={() => handleSort(key)} style={{ cursor: 'pointer' }}>
-              {key} {sortConfig.key === key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-            </th>
-          ))}
-          <th>Actions</th>
-        </tr>
-      </thead>
-      {/* <tbody>
-        {sortedTableData().map((row, index) => (
-          <tr key={index}>
-            <td>{row.Barcode}</td>
-            <td>{row.Name}</td>
-            <td>{row.Initial_Quantity}</td>
-            <td>
-              {editingRow === index ? (
-                <input
-                  type="number"
-                  value={row.Sold_Quantity}
-                  onChange={(e) => handleChange(index, 'Sold_Quantity', e.target.value)}
-                />
-              ) : (
-                row.Sold_Quantity
-              )}
-            </td>
-            <td>
-              {editingRow === index ? (
-                <input
-                  type="number"
-                  value={row.Remaining_Quantity}
-                  onChange={(e) => handleChange(index, 'Remaining_Quantity', e.target.value)}
-                />
-              ) : (
-                row.Remaining_Quantity
-              )}
-            </td>
-            <td>
-              {editingRow === index ? (
-                <input
-                  type="number"
-                  value={row.Recorded_Quantity}
-                  onChange={(e) => handleChange(index, 'Recorded_Quantity', e.target.value)}
-                />
-              ) : (
-                row.Recorded_Quantity
-              )}
-            </td>
-            <td>
-              {editingRow === index ? (
-                <select
-                  value={row.Status}
-                  onChange={(e) => handleChange(index, 'Status', e.target.value)}
-                >
-                  <option value="Not Confirmed">Not Confirmed</option>
-                  <option value="Confirmed">Confirmed</option>
-                </select>
-              ) : (
-                row.Status
-              )}
-            </td>
-            <td>
-              {editingRow === index ? (
-                <button onClick={() => handleSave(index)}>Save</button>
-              ) : (
-                <button onClick={() => handleEdit(index)}>Edit</button>
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody> */}
-      <tbody>
-  {sortedTableData().map((row, index) => (
-    <tr key={`${row.Barcode}-${index}`} className={editingRow === index ? 'editing-row' : ''}>
-      <td>{row.Barcode}</td>
-      <td>{row.Name}</td>
-      <td>{row.Initial_Quantity}</td>
-      <td>
-        {editingRow === index ? (
-          <input
-            type="number"
-            min="0"
-            value={row.Sold_Quantity}
-            onChange={(e) => handleChange(index, 'Sold_Quantity', parseInt(e.target.value) || 0)}
-          />
-        ) : (
-          row.Sold_Quantity
-        )}
-      </td>
-      <td>{row.Remaining_Quantity}</td>
-      <td>
-        {editingRow === index ? (
-          <input
-            type="number"
-            min="0"
-            value={row.Recorded_Quantity}
-            onChange={(e) => handleChange(index, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
-          />
-        ) : (
-          row.Recorded_Quantity
-        )}
-      </td>
-      <td>
-        {editingRow === index ? (
-          <select
-            value={row.Status}
-            onChange={(e) => handleChange(index, 'Status', e.target.value)}
-          >
-            <option value="Not Confirmed">Not Confirmed</option>
-            <option value="Confirmed">Confirmed</option>
-          </select>
-        ) : (
-          row.Status
-        )}
-      </td>
-      <td>
-        {editingRow === index ? (
-          <>
-            <button onClick={() => handleSave(index)}>Save</button>
-            <button onClick={() => setEditingRow(null)}>Cancel</button>
-          </>
-        ) : (
-          <button onClick={() => setEditingRow(index)}>Edit</button>
-        )}
-      </td>
-    </tr>
-  ))}
-</tbody>
-    </table>
+          <thead>
+            <tr>
+              {['Barcode', 'Name', 'Initial_Quantity', 'Sold_Quantity', 'Remaining_Quantity', 'Recorded_Quantity', 'Status'].map((key) => (
+                <th key={key} onClick={() => handleSort(key)} style={{ cursor: 'pointer' }}>
+                  {key} {sortConfig.key === key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                </th>
+              ))}
+              <th>Actions</th>
+            </tr>
+          </thead>
+           
+          <tbody>
+            {sortedTableData().map((row, index) => (
+              <tr key={`${row.Barcode}-${index}`} className={editingRow === index ? 'editing-row' : ''}>
+                <td>{row.Barcode}</td>
+                <td>{row.Name}</td>
+                <td>{row.Initial_Quantity}</td>
+                <td>
+                  {editingRow === index ? (
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.Sold_Quantity}
+                      onChange={(e) => handleChange(index, 'Sold_Quantity', parseInt(e.target.value) || 0)}
+                    />
+                  ) : (
+                    row.Sold_Quantity
+                  )}
+                </td>
+                <td>{row.Remaining_Quantity}</td>
+                <td>
+                  {editingRow === index ? (
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.Recorded_Quantity}
+                      onChange={(e) => handleChange(index, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
+                    />
+                  ) : (
+                    row.Recorded_Quantity
+                  )}
+                </td>
+                <td>
+                  {editingRow === index ? (
+                    <select
+                      value={row.Status}
+                      onChange={(e) => handleChange(index, 'Status', e.target.value)}
+                    >
+                      <option value="Not Confirmed">Not Confirmed</option>
+                      <option value="Confirmed">Confirmed</option>
+                    </select>
+                  ) : (
+                    row.Status
+                  )}
+                </td>
+                <td>
+                  {editingRow === index ? (
+                    <>
+                      <button onClick={() => handleSave(index)}>Save</button>
+                      <button onClick={() => setEditingRow(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <button onClick={() => handleEdit(index)}>Edit</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -27,7 +27,10 @@
     const [newProductType, setNewProductType] = useState('');
     const [newQuantity, setNewQuantity] = useState('');
     
-    const [checkedItems, setCheckedItems] = useState([]);
+    const [checkedItems, setCheckedItems] = useState(() => {
+      const saved = localStorage.getItem('checkedSoldItems');
+      return saved ? JSON.parse(saved) : [];
+    });
     const [checkFilter, setCheckFilter] = useState('all'); // 'all', 'checked', 'unchecked'
 
     // State for manual add form
@@ -504,11 +507,18 @@ useEffect(() => {
     };
 
     const handleCheckboxChange = (itemId) => {
-      setCheckedItems(prev => 
-        prev.includes(itemId)
+      setCheckedItems(prev => {
+        const newCheckedItems = prev.includes(itemId)
           ? prev.filter(id => id !== itemId)
-          : [...prev, itemId]
-      );
+          : [...prev, itemId];
+        localStorage.setItem('checkedSoldItems', JSON.stringify(newCheckedItems));
+        return newCheckedItems;
+      });
+    };
+
+    const clearAllChecks = () => {
+      localStorage.removeItem('checkedSoldItems');
+      setCheckedItems([]);
     };
 
     return (
@@ -546,7 +556,8 @@ useEffect(() => {
               <option value="By Product">By Product</option>
             </select>
 
-            <select
+            <div className="check-controls">
+  <select
     value={checkFilter}
     onChange={(e) => setCheckFilter(e.target.value)}
     className="check-filter"
@@ -555,6 +566,14 @@ useEffect(() => {
     <option value="checked">Checked Items</option>
     <option value="unchecked">Unchecked Items</option>
   </select>
+  
+  <button 
+    onClick={clearAllChecks}
+    className="clear-checks-button"
+  >
+    Clear All Checks
+  </button>
+</div>
 
             {filterType === 'Customer' && (
               <div>

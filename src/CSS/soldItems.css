@@ -1,190 +1,228 @@
-/* Container styling */
+/* soldItems.css */
+
 .sold-items-container {
-  padding: 20px;
-  font-family: Arial, sans-serif;
-  background-color: #f9f9f9;
+  max-width: 1200px;
+  margin: 1rem auto;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.95);
   border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  max-width: 1000px;
-  margin: 20px auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
-/* Title styling */
 .sold-items-title {
+  font-size: 1.8rem;
+  color: #0a3d62;
+  margin-bottom: 1.5rem;
   text-align: center;
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 20px;
-  font-weight: bold;
+  font-weight: 600;
 }
 
-/* Error message styling */
 .sold-items-error {
-  color: red;
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+  background: #e53935;
+  color: white;
+  border-radius: 4px;
   text-align: center;
-  margin-bottom: 10px;
-  font-size: 16px;
+  font-size: 0.9rem;
+  animation: fadeIn 0.3s ease;
 }
 
-/* Filter container */
-.filter-container {
+.sold-items-filters {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
   align-items: center;
-  margin-bottom: 20px;
-  gap: 10px;
 }
 
-/* Input, Select, and Button styling */
-.filter-select,
-.filter-input,
-.filter-button {
-  padding: 8px 12px;
-  font-size: 14px;
-  border: 1px solid #ccc;
+.sold-items-filters select,
+.sold-items-filters input[type="text"],
+.sold-items-filters input[type="date"] {
+  padding: 0.6rem;
+  border: 1px solid rgba(10, 61, 98, 0.2);
   border-radius: 4px;
-  outline: none;
+  font-size: 0.9rem;
+  min-width: 180px;
 }
 
-.filter-select,
-.filter-input {
-  flex: 1;
-  max-width: 200px;
-}
-
-.filter-button {
-  background-color: #007bff;
-  color: #fff;
-  cursor: pointer;
-  font-weight: bold;
-  transition: background-color 0.3s ease;
-}
-
-.filter-button:hover {
-  background-color: #0056b3;
-}
-
-/* Export button container */
-.export-button-container {
-  text-align: center;
-  margin: 20px 0;
-}
-
-.export-button {
-  background-color: #4caf50;
+.sold-items-filters button {
+  padding: 0.6rem 1rem;
+  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
   color: white;
   border: none;
-  padding: 10px 20px;
-  font-size: 16px;
+  border-radius: 4px;
+  font-size: 0.9rem;
   cursor: pointer;
-  border-radius: 5px;
-  transition: background-color 0.3s ease;
+  transition: all 0.2s ease;
 }
 
-.export-button:hover {
-  background-color: #45a049;
+.sold-items-filters button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(10, 61, 98, 0.3);
 }
 
-/* Sold items list */
 .sold-items-list {
-  max-width: 100%;
-  overflow-x: auto; /* Allow horizontal scrolling if necessary */
+  overflow-x: auto;
 }
 
-/* Table styling */
 .sold-items-table {
   width: 100%;
-  table-layout: fixed; /* Ensures columns are evenly distributed */
   border-collapse: collapse;
-  margin: 0 auto;
-}
-
-.sold-items-table th,
-.sold-items-table td {
-  border: 1px solid #ddd;
-  padding: 10px;
-  text-align: center;
-  word-wrap: break-word; /* Ensures text wraps within the cell */
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  font-size: 0.9rem;
 }
 
 .sold-items-table th {
-  background-color: #f4f4f4;
-  font-weight: bold;
-  color: #333;
-}
-
-.sold-items-table tr:nth-child(even) {
-  background-color: #f9f9f9;
-}
-
-.sold-items-table tr:hover {
-  background-color: #f1f1f1;
-}
-
-/* Delete button */
-.delete-button {
-  background-color: #f44336;
+  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
   color: white;
-  border: none;
-  padding: 5px 10px;
-  font-size: 14px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.3s ease;
+  padding: 0.8rem;
+  text-align: left;
+  font-weight: 500;
 }
 
-.delete-button:hover {
-  background-color: #d32f2f;
+.sold-items-table td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(10, 61, 98, 0.1);
 }
 
-/* Input fields inside the table */
+.sold-items-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sold-items-table tr:hover td {
+  background-color: rgba(0, 180, 219, 0.05);
+}
+
 .sold-items-table input,
 .sold-items-table select {
-  width: 90%; /* Adjust width to fit inside the cell */
-  padding: 6px;
-  font-size: 14px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  outline: none;
-  text-align: center;
-  background-color: white;
+  padding: 0.4rem;
+  border: 1px solid rgba(10, 61, 98, 0.2);
+  border-radius: 3px;
+  font-size: 0.9rem;
+  width: 100%;
 }
 
-/* Improve appearance on focus */
-.sold-items-table input:focus,
-.sold-items-table select:focus {
-  border-color: #007bff;
-  box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
-}
-
-/* Buttons inside the table */
 .sold-items-table button {
-  padding: 6px 10px;
-  font-size: 13px;
+  padding: 0.4rem 0.8rem;
+  margin-right: 0.3rem;
+  border: none;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sold-items-table button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.edit-button {
+  background: linear-gradient(135deg, #2196f3 0%, #0d47a1 100%);
+  color: white;
+}
+
+.delete-button {
+  background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+  color: white;
+}
+
+.save-button {
+  background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+  color: white;
+}
+
+.cancel-button {
+  background: linear-gradient(135deg, #757575 0%, #424242 100%);
+  color: white;
+}
+
+/* Confirmation Popup Styles */
+.confirmation-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.confirmation-popup {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  max-width: 400px;
+  width: 90%;
+}
+
+.confirmation-popup h3 {
+  margin-bottom: 1.5rem;
+  color: #0a3d62;
+  font-size: 1.1rem;
+}
+
+.confirmation-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.confirmation-buttons button {
+  padding: 0.6rem 1rem;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  transition: background 0.3s ease;
+  font-size: 0.9rem;
 }
 
-/* Save button */
-.sold-items-table button:first-of-type {
-  background-color: #28a745;
+.confirmation-buttons button:first-child {
+  background: #e53935;
   color: white;
 }
 
-.sold-items-table button:first-of-type:hover {
-  background-color: #218838;
-}
-
-/* Cancel button */
-.sold-items-table button:nth-of-type(2) {
-  background-color: #dc3545;
+.confirmation-buttons button:last-child {
+  background: #757575;
   color: white;
-  margin-left: 5px;
 }
 
-.sold-items-table button:nth-of-type(2):hover {
-  background-color: #c82333;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .sold-items-container {
+      padding: 1rem;
+      margin: 0.5rem;
+  }
+  
+  .sold-items-filters {
+      flex-direction: column;
+      align-items: stretch;
+  }
+  
+  .sold-items-filters select,
+  .sold-items-filters input[type="text"],
+  .sold-items-filters input[type="date"] {
+      width: 100%;
+  }
+  
+  .sold-items-table {
+      font-size: 0.8rem;
+  }
+  
+  .sold-items-table th,
+  .sold-items-table td {
+      padding: 0.5rem;
+  }
 }

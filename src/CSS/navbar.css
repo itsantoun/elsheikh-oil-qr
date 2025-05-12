@@ -1,66 +1,96 @@
+/* navbar.css */
+
 .navbar {
-  background-color: #007bff;
-  color: #fff;
-  padding: 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap; /* Allow for wrapping of items in the navbar */
+  padding: 0.8rem 2rem;
+  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
+  color: white;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .navbar-title {
   font-size: 1.5rem;
-  font-weight: bold;
-  flex-grow: 1; /* Make the title take up available space */
+  font-weight: 600;
+  margin: 0;
+  background: linear-gradient(to right, #ffffff, #b3e0ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .navbar-buttons {
   display: flex;
   gap: 1rem;
-  flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
-  justify-content: flex-start; /* Align buttons to the left */
 }
 
 .navbar-button {
-  background-color: #fff;
-  color: #007bff;
+  padding: 0.6rem 1.2rem;
   border: none;
-  border-radius: 5px;
-  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-weight: 500;
   cursor: pointer;
-  font-size: 1rem;
-  font-weight: bold;
-  transition: background-color 0.3s;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .navbar-button:hover {
-  background-color: #0056b3;
-  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* Mobile-specific styles */
-@media (max-width: 768px) {
+.navbar-button:active {
+  transform: translateY(0);
+}
+
+/* Water and oil themed active state */
+.navbar-button:focus,
+.navbar-button.active {
+  background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
   .navbar {
-    padding: 0.8rem;
-    flex-direction: column;
-    align-items: flex-start;
+      flex-direction: column;
+      padding: 1rem;
   }
-
+  
   .navbar-title {
-    font-size: 1.25rem;
-    margin-bottom: 0.5rem;
+      margin-bottom: 1rem;
   }
-
+  
   .navbar-buttons {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-    width: 100%;
+      flex-wrap: wrap;
+      justify-content: center;
   }
-
+  
   .navbar-button {
-    width: 100%;
-    padding: 0.8rem;
-    font-size: 1.1rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
   }
+}
+
+/* Animation for water/oil theme */
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.navbar {
+  background-size: 200% 200%;
+  animation: shimmer 15s ease infinite;
 }

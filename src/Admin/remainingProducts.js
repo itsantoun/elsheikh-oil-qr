@@ -319,56 +319,95 @@ const RemainingProducts = () => {
     setEditingRow(index);
   };
 
+  // const handleSave = async (index) => {
+  //   const row = tableData[index];
+  //   const monthKey = `${selectedYear}-${selectedMonth}`;
+
+  //   // Reference to the remainingStock table
+  //   const remainingStockRef = ref(database, `remainingStock/${monthKey}/${row.Barcode}`);
+
+  //   // Reference to the products table
+  //   const productRef = ref(database, `products/${row.Barcode}`);
+
+  //   try {
+  //     // Save to remainingStock table
+  //     await set(remainingStockRef, {
+  //       barcode: row.Barcode,
+  //       name: row.Name,
+  //       recordedQuantity: row.Recorded_Quantity,
+  //       soldQuantity: row.Sold_Quantity,
+  //       remainingQuantity: row.Remaining_Quantity,
+  //       status: row.Status,
+  //     });
+
+  //     // Update the products table
+  //     const productSnapshot = await get(productRef);
+  //     if (productSnapshot.exists()) {
+  //       const productData = productSnapshot.val();
+  //       const updatedQuantity = productData.quantity - row.Sold_Quantity; // Adjust quantity based on sold items
+
+  //       await set(productRef, {
+  //         ...productData,
+  //         quantity: updatedQuantity, // Update the quantity in the products table
+  //       });
+  //     }
+
+  //     setEditingRow(null);
+  //     fetchTableData(); // Refresh table data after saving
+  //   } catch (error) {
+  //     console.error('Error saving data:', error);
+  //   }
+  // };
+
   const handleSave = async (index) => {
     const row = tableData[index];
     const monthKey = `${selectedYear}-${selectedMonth}`;
-
-    // Reference to the remainingStock table
-    const remainingStockRef = ref(database, `remainingStock/${monthKey}/${row.Barcode}`);
-
-    // Reference to the products table
-    const productRef = ref(database, `products/${row.Barcode}`);
-
+    
     try {
-      // Save to remainingStock table
-      await set(remainingStockRef, {
+      // Prepare only the data we want to save
+      const updateData = {
         barcode: row.Barcode,
         name: row.Name,
-        recordedQuantity: row.Recorded_Quantity,
-        soldQuantity: row.Sold_Quantity,
-        remainingQuantity: row.Remaining_Quantity,
-        status: row.Status,
-      });
-
-      // Update the products table
-      const productSnapshot = await get(productRef);
-      if (productSnapshot.exists()) {
-        const productData = productSnapshot.val();
-        const updatedQuantity = productData.quantity - row.Sold_Quantity; // Adjust quantity based on sold items
-
-        await set(productRef, {
-          ...productData,
-          quantity: updatedQuantity, // Update the quantity in the products table
-        });
-      }
-
+        recordedQuantity: Number(row.Recorded_Quantity) || 0,
+        status: row.Status || 'Not Confirmed'
+      };
+  
+      // Only update the specific fields we want
+      await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
+      
       setEditingRow(null);
-      fetchTableData(); // Refresh table data after saving
+      fetchTableData(); // Refresh to get any server-side calculations
     } catch (error) {
       console.error('Error saving data:', error);
+      alert('Failed to save changes. Please try again.');
     }
   };
 
+  // const handleChange = (index, field, value) => {
+  //   const updatedData = [...tableData];
+  //   updatedData[index][field] = value;
+
+  //   // Automatically update Remaining Quantity if Sold Quantity is changed
+  //   if (field === 'Sold_Quantity') {
+  //     updatedData[index].Remaining_Quantity = updatedData[index].Initial_Quantity - value;
+  //   }
+
+  //   setTableData(updatedData);
+  // };
+
   const handleChange = (index, field, value) => {
-    const updatedData = [...tableData];
-    updatedData[index][field] = value;
-
-    // Automatically update Remaining Quantity if Sold Quantity is changed
-    if (field === 'Sold_Quantity') {
-      updatedData[index].Remaining_Quantity = updatedData[index].Initial_Quantity - value;
-    }
-
-    setTableData(updatedData);
+    setTableData(prevData => {
+      const newData = [...prevData];
+      // Create a new object for the row we're editing
+      newData[index] = { ...newData[index], [field]: value };
+      
+      // Only auto-update Remaining_Quantity if Sold_Quantity changes
+      if (field === 'Sold_Quantity') {
+        newData[index].Remaining_Quantity = newData[index].Initial_Quantity - value;
+      }
+      
+      return newData;
+    });
   };
 
   const handleSort = (key) => {
@@ -529,7 +568,7 @@ const RemainingProducts = () => {
           <th>Actions</th>
         </tr>
       </thead>
-      <tbody>
+      {/* <tbody>
         {sortedTableData().map((row, index) => (
           <tr key={index}>
             <td>{row.Barcode}</td>
@@ -590,7 +629,64 @@ const RemainingProducts = () => {
             </td>
           </tr>
         ))}
-      </tbody>
+      </tbody> */}
+      <tbody>
+  {sortedTableData().map((row, index) => (
+    <tr key={`${row.Barcode}-${index}`} className={editingRow === index ? 'editing-row' : ''}>
+      <td>{row.Barcode}</td>
+      <td>{row.Name}</td>
+      <td>{row.Initial_Quantity}</td>
+      <td>
+        {editingRow === index ? (
+          <input
+            type="number"
+            min="0"
+            value={row.Sold_Quantity}
+            onChange={(e) => handleChange(index, 'Sold_Quantity', parseInt(e.target.value) || 0)}
+          />
+        ) : (
+          row.Sold_Quantity
+        )}
+      </td>
+      <td>{row.Remaining_Quantity}</td>
+      <td>
+        {editingRow === index ? (
+          <input
+            type="number"
+            min="0"
+            value={row.Recorded_Quantity}
+            onChange={(e) => handleChange(index, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
+          />
+        ) : (
+          row.Recorded_Quantity
+        )}
+      </td>
+      <td>
+        {editingRow === index ? (
+          <select
+            value={row.Status}
+            onChange={(e) => handleChange(index, 'Status', e.target.value)}
+          >
+            <option value="Not Confirmed">Not Confirmed</option>
+            <option value="Confirmed">Confirmed</option>
+          </select>
+        ) : (
+          row.Status
+        )}
+      </td>
+      <td>
+        {editingRow === index ? (
+          <>
+            <button onClick={() => handleSave(index)}>Save</button>
+            <button onClick={() => setEditingRow(null)}>Cancel</button>
+          </>
+        ) : (
+          <button onClick={() => setEditingRow(index)}>Edit</button>
+        )}
+      </td>
+    </tr>
+  ))}
+</tbody>
     </table>
       </div>
     </div>

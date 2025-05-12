@@ -1,85 +1,147 @@
+/* addUser.css */
+
 .add-user-container {
-    padding: 20px;
-    font-family: Arial, sans-serif;
+  max-width: 1000px;
+  margin: 1.5rem auto;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.add-user-title {
+  font-size: 1.8rem;
+  color: #0a3d62;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.add-user-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.add-user-input {
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(10, 61, 98, 0.2);
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.add-user-input:focus {
+  outline: none;
+  border-color: #1e88e5;
+  box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.2);
+}
+
+.add-user-button {
+  padding: 0.8rem;
+  background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-user-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 180, 219, 0.3);
+}
+
+.add-user-list h2 {
+  color: #0a3d62;
+  margin-bottom: 1rem;
+  font-size: 1.4rem;
+}
+
+.add-user-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.add-user-table th {
+  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
+  color: white;
+  padding: 0.8rem;
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.add-user-table td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(10, 61, 98, 0.1);
+  font-size: 0.9rem;
+}
+
+.add-user-table tr:last-child td {
+  border-bottom: none;
+}
+
+.add-user-delete-button {
+  padding: 0.4rem 0.8rem;
+  background: #e53935;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-user-delete-button:hover {
+  background: #c62828;
+}
+
+.add-user-success,
+.add-user-error {
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.9rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.add-user-success {
+  background: #4caf50;
+  color: white;
+}
+
+.add-user-error {
+  background: #e53935;
+  color: white;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .add-user-container {
+      padding: 1rem;
+      margin: 1rem;
   }
-  
+
   .add-user-title {
-    font-size: 1.8rem;
-    margin-bottom: 20px;
-    color: #333;
-    text-align: center;
+      font-size: 1.5rem;
   }
-  
-  .add-user-success {
-    background-color: #4caf50;
-    color: #fff;
-    padding: 10px;
-    border-radius: 5px;
-    text-align: center;
-    margin-bottom: 20px;
-  }
-  
-  .add-user-form {
-    margin-bottom: 30px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-width: 400px;
-    margin: 0 auto;
-  }
-  
-  .add-user-input {
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 1rem;
-  }
-  
-  .add-user-button {
-    padding: 10px;
-    border: none;
-    border-radius: 5px;
-    background-color: #007bff;
-    color: #fff;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-  
-  .add-user-button:hover {
-    background-color: #0056b3;
-  }
-  
-  .add-user-list {
-    margin-top: 20px;
-  }
-  
+
   .add-user-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
+      display: block;
+      overflow-x: auto;
   }
-  
-  .add-user-table th,
-  .add-user-table td {
-    border: 1px solid #ddd;
-    padding: 8px;
-    text-align: center;
-  }
-  
-  .add-user-table th {
-    background-color: #f4f4f4;
-    color: #333;
-  }
-  
-  .add-user-delete-button {
-    background-color: #f44336;
-    color: #fff;
-    padding: 5px 10px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  
-  .add-user-delete-button:hover {
-    background-color: #d32f2f;
-  }
+}

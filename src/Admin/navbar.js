@@ -1,5 +1,5 @@
 import React from 'react';
-import '../CSS/navbar.css'; // Import CSS for styling
+import '../CSS/navbar.css';
 
 const Navbar = ({ onNavigate }) => {
   return (

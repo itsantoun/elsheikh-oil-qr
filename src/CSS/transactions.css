@@ -1,115 +1,141 @@
-/* General Styles */
+/* transactions.css */
+
 .transactions-container {
-    font-family: Arial, sans-serif;
-    margin: 20px auto;
-    padding: 20px;
-    max-width: 1000px;
-    background-color: #f4f7fc;
+    max-width: 1200px;
+    margin: 1rem auto;
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.95);
     border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
-/* Table Styles */
+.transactions-container h1 {
+    font-size: 1.8rem;
+    color: #0a3d62;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    font-weight: 600;
+}
+
+.transactions-container label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #0a3d62;
+    font-weight: 500;
+}
+
+.transactions-container select {
+    padding: 0.7rem;
+    border: 1px solid rgba(10, 61, 98, 0.2);
+    border-radius: 4px;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    width: 200px;
+}
+
 .transactions-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 20px;
-}
-
-.transactions-table th, .transactions-table td {
-    padding: 12px;
-    text-align: left;
-    border: 1px solid #ddd;
+    background: white;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    font-size: 0.9rem;
 }
 
 .transactions-table th {
-    background-color: #4CAF50;
+    background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
     color: white;
-    font-size: 1.1rem;
+    padding: 0.8rem;
+    text-align: left;
+    font-weight: 500;
 }
 
 .transactions-table td {
-    font-size: 1rem;
-    color: #333;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid rgba(10, 61, 98, 0.1);
 }
 
-.transactions-table tr:nth-child(even) {
-    background-color: #f9f9f9;
+.transactions-table tr:last-child td {
+    border-bottom: none;
 }
 
-.transactions-table tr:hover {
-    background-color: #e2f3e4;
+.transactions-table tr:hover td {
+    background-color: rgba(0, 180, 219, 0.05);
 }
 
-/* Button Styles */
+.transactions-table input {
+    width: 80px;
+    padding: 0.4rem;
+    border: 1px solid rgba(10, 61, 98, 0.2);
+    border-radius: 3px;
+    font-size: 0.9rem;
+}
+
 .action-button {
-    padding: 8px 16px;
-    font-size: 1rem;
+    padding: 0.5rem 0.8rem;
+    margin-right: 0.3rem;
     border: none;
-    border-radius: 5px;
+    border-radius: 4px;
+    font-size: 0.8rem;
     cursor: pointer;
-    margin-left: 10px;
-    transition: background-color 0.3s ease;
+    transition: all 0.2s ease;
 }
 
-/* Specific Button Styles */
+.action-button:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
+}
+
 .confirm-button {
-    background-color: green;
+    background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
     color: white;
 }
 
-.confirm-button:hover {
-    background-color: darkgreen;
-}
-
-.delete-button {
-    background-color: red;
+.unconfirm-button {
+    background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
     color: white;
-}
-
-.delete-button:hover {
-    background-color: darkred;
-}
-
-.save-button {
-    background-color: blue;
-    color: white;
-}
-
-.save-button:hover {
-    background-color: darkblue;
-}
-
-.cancel-button {
-    background-color: gray;
-    color: white;
-}
-
-.cancel-button:hover {
-    background-color: #777;
 }
 
 .edit-button {
-    background-color: orange;
+    background: linear-gradient(135deg, #2196f3 0%, #0d47a1 100%);
     color: white;
 }
 
-.edit-button:hover {
-    background-color: darkorange;
+.save-button {
+    background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+    color: white;
 }
 
-/* Hide buttons while editing */
-.transactions-table td button {
-    display: inline-block;
+.cancel-button {
+    background: linear-gradient(135deg, #757575 0%, #424242 100%);
+    color: white;
 }
 
-.transactions-table td button[action-type="confirm"],
-.transactions-table td button[action-type="delete"] {
-    display: none;
+.delete-button {
+    background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+    color: white;
 }
 
-/* Status Styles */
-span {
-    font-size: 1rem;
-    color: #4CAF50;
-    font-weight: bold;
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .transactions-container {
+        padding: 1rem;
+        margin: 0.5rem;
+    }
+    
+    .transactions-table {
+        display: block;
+        overflow-x: auto;
+    }
+    
+    .action-button {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.7rem;
+        margin-bottom: 0.3rem;
+    }
+    
+    .transactions-container select {
+        width: 100%;
+    }
 }

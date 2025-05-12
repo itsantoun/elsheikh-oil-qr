@@ -1,99 +1,201 @@
+/* addCustomer.css */
+
 .add-customer-container {
-    padding: 20px;
-    font-family: Arial, sans-serif;
-    background-color: #f9f9f9;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    max-width: 600px;
-    margin: 20px auto;
-  }
-  
-  .add-customer-title {
-    text-align: center;
-    font-size: 24px;
-    color: #333;
-    margin-bottom: 20px;
-  }
-  
-  .add-customer-error {
-    color: red;
-    text-align: center;
-    margin-bottom: 10px;
-    font-size: 16px;
+  max-width: 1000px;
+  margin: 1.5rem auto;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.add-customer-title {
+  font-size: 1.8rem;
+  color: #0a3d62;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.add-customer-success {
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+  background: #4caf50;
+  color: white;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.9rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.add-customer-error {
+  padding: 0.8rem;
+  margin-bottom: 1rem;
+  background: #e53935;
+  color: white;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.9rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.add-customer-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.add-customer-input {
+  padding: 0.8rem;
+  border: 1px solid rgba(10, 61, 98, 0.2);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.add-customer-input[dir="rtl"] {
+  text-align: right;
+}
+
+.add-customer-button {
+  padding: 0.8rem 1rem;
+  background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-customer-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 180, 219, 0.3);
+}
+
+.customer-list {
+  overflow-x: auto;
+}
+
+.customer-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  font-size: 0.9rem;
+}
+
+.customer-table th {
+  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
+  color: white;
+  padding: 0.8rem;
+  text-align: left;
+  font-weight: 500;
+}
+
+.customer-table td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(10, 61, 98, 0.1);
+}
+
+.customer-table tr:last-child td {
+  border-bottom: none;
+}
+
+.customer-table tr:hover td {
+  background-color: rgba(0, 180, 219, 0.05);
+}
+
+.edit-customer-input {
+  padding: 0.5rem;
+  border: 1px solid rgba(10, 61, 98, 0.2);
+  border-radius: 3px;
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.admin-buttons-container {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.admin-edit-button,
+.admin-delete-button,
+.save-button,
+.cancel-button {
+  padding: 0.5rem 0.8rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-edit-button {
+  background: linear-gradient(135deg, #2196f3 0%, #0d47a1 100%);
+  color: white;
+}
+
+.admin-delete-button {
+  background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+  color: white;
+}
+
+.save-button {
+  background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+  color: white;
+}
+
+.cancel-button {
+  background: linear-gradient(135deg, #757575 0%, #424242 100%);
+  color: white;
+}
+
+.admin-edit-button:hover,
+.admin-delete-button:hover,
+.save-button:hover,
+.cancel-button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .add-customer-container {
+      padding: 1rem;
+      margin: 0.5rem;
   }
   
   .add-customer-form {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  
-  .add-customer-input {
-    flex: 1;
-    padding: 10px;
-    font-size: 14px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
-  
-  .add-customer-button {
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    font-size: 16px;
-    cursor: pointer;
-    border-radius: 5px;
-  }
-  
-  .add-customer-button:hover {
-    background-color: #45a049;
-  }
-  
-  .customer-list {
-    margin-top: 20px;
+      grid-template-columns: 1fr;
   }
   
   .customer-table {
-    width: 100%;
-    border-collapse: collapse;
+      font-size: 0.8rem;
   }
   
   .customer-table th,
   .customer-table td {
-    border: 1px solid #ddd;
-    padding: 10px;
-    text-align: center;
+      padding: 0.5rem;
   }
   
-  .customer-table th {
-    background-color: #f4f4f4;
-    font-weight: bold;
+  .admin-buttons-container {
+      flex-direction: column;
+      gap: 0.3rem;
   }
   
-  .edit-button,
-  .delete-button {
-    padding: 5px 10px;
-    font-size: 14px;
-    cursor: pointer;
-    border: none;
-    border-radius: 4px;
+  .admin-edit-button,
+  .admin-delete-button,
+  .save-button,
+  .cancel-button {
+      width: 100%;
+      padding: 0.4rem;
   }
-  
-  .edit-button {
-    background-color: #007bff;
-    color: white;
-  }
-  
-  .edit-button:hover {
-    background-color: #0056b3;
-  }
-  
-  .delete-button {
-    background-color: #f44336;
-    color: white;
-  }
-  
-  .delete-button:hover {
-    background-color: #d32f2f;
-  }
+}

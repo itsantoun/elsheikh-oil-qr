@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
-import { ref,set, get, update, remove, onValue } from 'firebase/database';
+import { ref, set, get, update, remove, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext'; // Import the context
 import '../CSS/soldItems.css';
 
@@ -24,85 +24,101 @@ const SoldItems = () => {
   const [itemIdToDelete, setItemIdToDelete] = useState(null);
 
   const [newCustomer, setNewCustomer] = useState('');
-const [newProductType, setNewProductType] = useState('');
-const [newQuantity, setNewQuantity] = useState('');
-
-const formatDateTime = (dateString) => {
-  const date = new Date(dateString);
-  const day = String(date.getDate()).padStart(2, '0'); 
-  const month = String(date.getMonth() + 1).padStart(2, '0'); 
-  const year = date.getFullYear();
+  const [newProductType, setNewProductType] = useState('');
+  const [newQuantity, setNewQuantity] = useState('');
   
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12; // Convert to 12-hour format
-
-  return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
-};
-
-useEffect(() => {
-  const soldItemsRef = ref(database, 'SoldItems');
-
-  const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const updates = [];
-
-      for (const key in data) {
-        if (data[key].paymentStatus === 'Stock') {
-          const stockItem = data[key];
-          const transactionsRef = ref(database, `transactions/${key}`);
-
-          updates.push(
-            set(transactionsRef, {
-              ...stockItem,
-              movedToTransactionsAt: new Date().toISOString(),
-            }).then(() => remove(ref(database, `SoldItems/${key}`)))
-          );
-        }
-      }
-
-      await Promise.all(updates);
-    }
+  // State for manual add form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newItem, setNewItem] = useState({
+    customerName: '',
+    name: '',
+    quantity: 1,
+    price: '',
+    cost: '',
+    totalCost: '',
+    remark: '',
+    paymentStatus: 'Paid',
+    dateScanned: new Date().toISOString()
   });
+  const [products, setProducts] = useState([]);
+  const [successMessage, setSuccessMessage] = useState(null);
 
-  return () => unsubscribe(); // Cleanup on unmount
-}, []);
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0'); 
+    const month = String(date.getMonth() + 1).padStart(2, '0'); 
+    const year = date.getFullYear();
+    
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12; // Convert to 12-hour format
 
-// Move stock items to transactions immediately
-useEffect(() => {
-  const moveStockItems = async () => {
-    try {
-      const soldItemsRef = ref(database, 'SoldItems');
-      const snapshot = await get(soldItemsRef);
-      
+    return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
+  };
+
+  useEffect(() => {
+    const soldItemsRef = ref(database, 'SoldItems');
+
+    const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        
+        const updates = [];
+
         for (const key in data) {
           if (data[key].paymentStatus === 'Stock') {
             const stockItem = data[key];
             const transactionsRef = ref(database, `transactions/${key}`);
 
-            // Move item to transactions
-            await set(transactionsRef, {
-              ...stockItem,
-              movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
-            });
-
-            // Remove from SoldItems
-            await remove(ref(database, `SoldItems/${key}`));
+            updates.push(
+              set(transactionsRef, {
+                ...stockItem,
+                movedToTransactionsAt: new Date().toISOString(),
+              }).then(() => remove(ref(database, `SoldItems/${key}`)))
+            );
           }
         }
-      }
-    } catch (error) {
-      console.error('Error moving stock items:', error);
-    }
-  };
 
-  moveStockItems();
-}, []);
+        await Promise.all(updates);
+      }
+    });
+
+    return () => unsubscribe(); // Cleanup on unmount
+  }, []);
+
+  // Move stock items to transactions immediately
+  useEffect(() => {
+    const moveStockItems = async () => {
+      try {
+        const soldItemsRef = ref(database, 'SoldItems');
+        const snapshot = await get(soldItemsRef);
+        
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          
+          for (const key in data) {
+            if (data[key].paymentStatus === 'Stock') {
+              const stockItem = data[key];
+              const transactionsRef = ref(database, `transactions/${key}`);
+
+              // Move item to transactions
+              await set(transactionsRef, {
+                ...stockItem,
+                movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
+              });
+
+              // Remove from SoldItems
+              await remove(ref(database, `SoldItems/${key}`));
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error moving stock items:', error);
+      }
+    };
+
+    moveStockItems();
+  }, []);
 
   useEffect(() => {
     const fetchCustomersAndSoldItems = async () => {
@@ -121,8 +137,21 @@ useEffect(() => {
           }));
         }
   
-        console.log("Fetched Customers:", customerList); // Debugging
         setCustomers(customerList);
+  
+        // Fetch products for dropdown in add form
+        const productsRef = ref(database, 'products');
+        const productsSnapshot = await get(productsRef);
+        if (productsSnapshot.exists()) {
+          const productsData = productsSnapshot.val();
+          const productsList = Object.keys(productsData).map((key) => ({
+            id: key,
+            name: productsData[key].name,
+            cost: productsData[key].cost,
+            price: productsData[key].price,
+          }));
+          setProducts(productsList);
+        }
   
         // Fetch Sold Items
         const soldItemsRef = ref(database, 'SoldItems');
@@ -307,87 +336,359 @@ useEffect(() => {
     setItemIdToDelete(null);
   };
 
+  // Handle Add Form Input Changes
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewItem({
+      ...newItem,
+      [name]: value,
+    });
+
+    // Auto-fill price and cost if a product is selected
+    if (name === 'name') {
+      const selectedProduct = products.find(p => p.name === value);
+      if (selectedProduct) {
+        setNewItem(prev => ({
+          ...prev,
+          name: value,
+          price: selectedProduct.price || '',
+          cost: selectedProduct.cost || '',
+          totalCost: prev.quantity * (selectedProduct.price || 0)
+        }));
+      }
+    }
+
+    // Update total cost when quantity or price changes
+    if (name === 'quantity' || name === 'price') {
+      const quantity = name === 'quantity' ? Number(value) : Number(newItem.quantity);
+      const price = name === 'price' ? Number(value) : Number(newItem.price);
+      setNewItem(prev => ({
+        ...prev,
+        [name]: value,
+        totalCost: (quantity * price).toString()
+      }));
+    }
+  };
+
+  // Handle Date Change for manual add
+  const handleDateChange = (e) => {
+    const selectedDate = e.target.value;
+    // Create a date object at noon to avoid timezone issues
+    const date = new Date(selectedDate + 'T12:00:00');
+    setNewItem({
+      ...newItem,
+      dateScanned: date.toISOString()
+    });
+  };
+
+  // Submit New Item
+  const handleSubmitNewItem = async (e) => {
+    e.preventDefault();
+    
+    try {
+      // Validation
+      if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.price) {
+        setErrorMessage('Please fill in all required fields.');
+        setTimeout(() => setErrorMessage(null), 3000);
+        return;
+      }
+
+      // Add the current user as the one who added this item
+      const itemToAdd = {
+        ...newItem,
+        scannedBy: user?.email || 'Manual Entry',
+        quantity: Number(newItem.quantity),
+        price: Number(newItem.price),
+        cost: Number(newItem.cost),
+        totalCost: Number(newItem.totalCost),
+        manuallyAdded: true,
+        addedAt: new Date().toISOString()
+      };
+
+      // Push to database with a new unique key
+      const newItemRef = push(ref(database, 'SoldItems'));
+      await set(newItemRef, itemToAdd);
+
+      // Add to the local state with the new ID
+      const newItemWithId = {
+        id: newItemRef.key,
+        ...itemToAdd
+      };
+      
+      setSoldItems([...soldItems, newItemWithId]);
+      setFilteredItems([...filteredItems, newItemWithId]);
+      
+      // Reset form
+      setNewItem({
+        customerName: '',
+        name: '',
+        quantity: 1,
+        price: '',
+        cost: '',
+        totalCost: '',
+        remark: '',
+        paymentStatus: 'Paid',
+        dateScanned: new Date().toISOString()
+      });
+      
+      setSuccessMessage('Item added successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      
+      // Hide form after successful addition
+      setShowAddForm(false);
+    } catch (error) {
+      console.error('Error adding new item:', error);
+      setErrorMessage('Failed to add item. Please try again.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
+  };
+
+  // Get Today's Date in YYYY-MM-DD format for the date input
+  const getTodayFormatted = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   return (
     <div className="sold-items-container">
       <h1 className="sold-items-title">Sold Items</h1>
 
       {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
+      {successMessage && <div className="sold-items-success">{successMessage}</div>}
 
-      <div className="sold-items-filters">
-        <select
-          value={filterType}
-          onChange={(e) => {
-            setFilterType(e.target.value);
-            setSearchTerm('');
-            setDateFilter('');
-            setMonthFilter('');
-          }}
+      <div className="sold-items-actions">
+        <button 
+          className="add-item-button"
+          onClick={() => setShowAddForm(!showAddForm)}
         >
-          <option value="All">All</option>
-          <option value="Customer">By Customer</option>
-          <option value="Date">By Date</option>
-          <option value="Month">By Month</option>
-          <option value="By Unpaid">unPaid</option>
-          <option value="By Paid">Paid</option>
-          <option value="By Stock">Stock</option>
-          <option value="By Product">By Product</option>
-        </select>
+          {showAddForm ? 'Hide Add Form' : 'Add Item Manually'}
+        </button>
+        
+        <div className="sold-items-filters">
+          <select
+            value={filterType}
+            onChange={(e) => {
+              setFilterType(e.target.value);
+              setSearchTerm('');
+              setDateFilter('');
+              setMonthFilter('');
+            }}
+          >
+            <option value="All">All</option>
+            <option value="Customer">By Customer</option>
+            <option value="Date">By Date</option>
+            <option value="Month">By Month</option>
+            <option value="By Unpaid">unPaid</option>
+            <option value="By Paid">Paid</option>
+            <option value="By Stock">Stock</option>
+            <option value="By Product">By Product</option>
+          </select>
 
-        {filterType === 'Customer' && (
-          <div>
+          {filterType === 'Customer' && (
+            <div>
+              <input
+                type="text"
+                placeholder="Search customer"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <select
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              >
+                <option value="">Select Customer</option>
+                {customers.map((customer, index) => (
+                  <option key={index} value={customer.name}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {filterType === 'Date' && (
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+            />
+          )}
+
+          {filterType === 'Month' && (
+            <select
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+            >
+              <option value="">Select Month</option>
+              {[...Array(12).keys()].map((month) => (
+                <option key={month} value={month + 1}>
+                  {new Date(0, month).toLocaleString('default', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {filterType === 'By Product' && (
             <input
               type="text"
-              placeholder="Search customer"
+              placeholder="Search product"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <select
-  value={searchTerm}
-  onChange={(e) => setSearchTerm(e.target.value)}
->
-  <option value="">Select Customer</option>
-  {customers.map((customer, index) => (
-    <option key={index} value={customer.name}>
-      {customer.name}
-    </option>
-  ))}
-</select>
-          </div>
-        )}
+          )}
 
-        {filterType === 'Date' && (
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-          />
-        )}
-
-        {filterType === 'Month' && (
-          <select
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
-          >
-            <option value="">Select Month</option>
-            {[...Array(12).keys()].map((month) => (
-              <option key={month} value={month + 1}>
-                {new Date(0, month).toLocaleString('default', { month: 'long' })}
-              </option>
-            ))}
-          </select>
-        )}
-
-{filterType === 'By Product' && ( // New input for product search
-  <input
-    type="text"
-    placeholder="Search product"
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-  />
-)}
-
-        <button onClick={exportToCSV}>Export to CSV</button>
+          <button onClick={exportToCSV}>Export to CSV</button>
+        </div>
       </div>
+
+      {/* Manual Add Form */}
+      {showAddForm && (
+        <div className="manual-add-form">
+          <h3>Add New Sold Item</h3>
+          <form onSubmit={handleSubmitNewItem}>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="customerName">Customer*</label>
+                <select
+                  id="customerName"
+                  name="customerName"
+                  value={newItem.customerName}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">Select Customer</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.name}>
+                      {customer.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="name">Product*</label>
+                <select
+                  id="name"
+                  name="name"
+                  value={newItem.name}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">Select Product</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.name}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="quantity">Quantity*</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  name="quantity"
+                  min="1"
+                  value={newItem.quantity}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="price">Price*</label>
+                <input
+                  type="number"
+                  id="price"
+                  name="price"
+                  step="0.01"
+                  value={newItem.price}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="cost">Cost</label>
+                <input
+                  type="number"
+                  id="cost"
+                  name="cost"
+                  step="0.01"
+                  value={newItem.cost}
+                  onChange={handleInputChange}
+                />
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="totalCost">Total Cost*</label>
+                <input
+                  type="number"
+                  id="totalCost"
+                  name="totalCost"
+                  step="0.01"
+                  value={newItem.totalCost}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="dateScanned">Date*</label>
+                <input
+                  type="date"
+                  id="dateScanned"
+                  name="dateScanned"
+                  defaultValue={getTodayFormatted()}
+                  onChange={handleDateChange}
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="paymentStatus">Payment Status*</label>
+                <select
+                  id="paymentStatus"
+                  name="paymentStatus"
+                  value={newItem.paymentStatus}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="Paid">Paid</option>
+                  <option value="Unpaid">Unpaid</option>
+                  <option value="Stock">Stock</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="form-row">
+              <div className="form-group full-width">
+                <label htmlFor="remark">Remarks</label>
+                <textarea
+                  id="remark"
+                  name="remark"
+                  value={newItem.remark}
+                  onChange={handleInputChange}
+                  rows="2"
+                />
+              </div>
+            </div>
+            
+            <div className="form-buttons">
+              <button type="submit" className="submit-button">Add Item</button>
+              <button type="button" className="cancel-button" onClick={() => setShowAddForm(false)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Sold Items Table */}
       <div className="sold-items-list">
@@ -410,141 +711,127 @@ useEffect(() => {
               </tr>
             </thead>
             <tbody>
-  {filteredItems.map((item) => (
-    <tr key={item.id}>
-      <td>{formatDateTime(item.dateScanned)}</td>
-      <td>
-  {editingItem && editingItem.id === item.id ? (
-    <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
-      <option value="">Select Customer</option>
-      {customers.length > 0 ? (
-        customers.map((customer) => (
-          <option key={customer.id} value={customer.name}>
-            {customer.name}
-          </option>
-        ))
-      ) : (
-        <option disabled>No Customers Found</option>
-      )}
-    </select>
-  ) : (
-    item.customerName || 'N/A'
-  )}
-</td>
-      <td>
-        {editingItem && editingItem.id === item.id ? (
-          <input
-            type="text"
-            value={newProductType}
-            onChange={(e) => setNewProductType(e.target.value)}
-          />
-        ) : (
-          item.name || 'N/A'
-        )}
-      </td>
-      <td>
-        {editingItem && editingItem.id === item.id ? (
-          <input
-            type="number"
-            value={newQuantity}
-            onChange={(e) => setNewQuantity(e.target.value)}
-          />
-        ) : (
-          item.quantity || 0
-        )}
-      </td>
-      <td>{item.itemCost ? `$${item.itemCost.toFixed(2)}` : 'N/A'}</td>
-      <td>{item.scannedBy || 'N/A'}</td>
-      <td>
-        {editingItem && editingItem.id === item.id ? (
-          <input
-            type="text"
-            value={newRemark}
-            onChange={(e) => setNewRemark(e.target.value)}
-          />
-        ) : (
-          item.remark || 'N/A'
-        )}
-      </td>
-      <td>
-        {editingItem && editingItem.id === item.id ? (
-          <input
-            type="number"
-            value={newTotalCost}
-            onChange={(e) => setNewTotalCost(e.target.value)}
-          />
-        ) : (
-          item.totalCost ? `$${item.totalCost}` : 'N/A'
-        )}
-      </td>
-      {/* <td>
-        {editingItem && editingItem.id === item.id ? (
-          <select
-            value={newPaymentStatus}
-            onChange={(e) => setNewPaymentStatus(e.target.value)}
-          >
-            <option value="Paid">Paid</option>
-            <option value="Unpaid">Unpaid</option>
-            <option value="Stock">Stock</option>
-          </select>
-        ) : (
-          item.paymentStatus || 'Paid'
-        )}
-      </td> */}
-      <td>
-  {editingItem && editingItem.id === item.id ? (
-    <select
-      value={newPaymentStatus}
-      onChange={(e) => setNewPaymentStatus(e.target.value)}
-    >
-      <option value="Paid">Paid</option>
-      <option value="Unpaid">Unpaid</option>
-      <option value="Stock">Stock</option>
-    </select>
-  ) : (
-    <>
-      {item.paymentStatus}
-      {item.paymentStatus === 'Stock' && (
-        <button
-          onClick={async () => {
-            const itemRef = ref(database, `SoldItems/${item.id}`);
-            try {
-              await update(itemRef, { paymentStatus: 'Stock Confirmed' });
-              setSoldItems(soldItems.map((i) => 
-                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
-              ));
-              setFilteredItems(filteredItems.map((i) => 
-                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
-              ));
-            } catch (error) {
-              console.error('Error confirming item:', error);
-            }
-          }}
-          disabled={item.paymentStatus === 'Stock Confirmed'}
-          style={{ marginLeft: '10px' }}
-        >
-          Confirm
-        </button>
-      )}
-    </>
-  )}
-</td>
-      <td>
-        {editingItem && editingItem.id === item.id ? (
-          <>
-            <button onClick={saveEditedItem}>Save</button>
-            <button onClick={() => setEditingItem(null)}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => handleEdit(item)}>Edit</button>
-            <button onClick={() => handleDeleteConfirmation(item.id)}>Delete</button>
-          </>
-        )}
-      </td>
-    </tr>
-  ))}
-</tbody>
+            {filteredItems.map((item) => (
+              <tr key={item.id} className={item.manuallyAdded ? "manually-added" : ""}>
+                <td>{formatDateTime(item.dateScanned)}</td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
+                      <option value="">Select Customer</option>
+                      {customers.length > 0 ? (
+                        customers.map((customer) => (
+                          <option key={customer.id} value={customer.name}>
+                            {customer.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option disabled>No Customers Found</option>
+                      )}
+                    </select>
+                  ) : (
+                    item.customerName || 'N/A'
+                  )}
+                </td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <input
+                      type="text"
+                      value={newProductType}
+                      onChange={(e) => setNewProductType(e.target.value)}
+                    />
+                  ) : (
+                    item.name || 'N/A'
+                  )}
+                </td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <input
+                      type="number"
+                      value={newQuantity}
+                      onChange={(e) => setNewQuantity(e.target.value)}
+                    />
+                  ) : (
+                    item.quantity || 0
+                  )}
+                </td>
+                <td>{item.cost ? `$${Number(item.cost).toFixed(2)}` : 'N/A'}</td>
+                <td>{item.scannedBy || 'N/A'}</td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <input
+                      type="text"
+                      value={newRemark}
+                      onChange={(e) => setNewRemark(e.target.value)}
+                    />
+                  ) : (
+                    item.remark || 'N/A'
+                  )}
+                </td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <input
+                      type="number"
+                      value={newTotalCost}
+                      onChange={(e) => setNewTotalCost(e.target.value)}
+                    />
+                  ) : (
+                    item.totalCost ? `$${Number(item.totalCost).toFixed(2)}` : 'N/A'
+                  )}
+                </td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <select
+                      value={newPaymentStatus}
+                      onChange={(e) => setNewPaymentStatus(e.target.value)}
+                    >
+                      <option value="Paid">Paid</option>
+                      <option value="Unpaid">Unpaid</option>
+                      <option value="Stock">Stock</option>
+                    </select>
+                  ) : (
+                    <>
+                      {item.paymentStatus}
+                      {item.paymentStatus === 'Stock' && (
+                        <button
+                          onClick={async () => {
+                            const itemRef = ref(database, `SoldItems/${item.id}`);
+                            try {
+                              await update(itemRef, { paymentStatus: 'Stock Confirmed' });
+                              setSoldItems(soldItems.map((i) => 
+                                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
+                              ));
+                              setFilteredItems(filteredItems.map((i) => 
+                                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
+                              ));
+                            } catch (error) {
+                              console.error('Error confirming item:', error);
+                            }
+                          }}
+                          disabled={item.paymentStatus === 'Stock Confirmed'}
+                          style={{ marginLeft: '10px' }}
+                        >
+                          Confirm
+                        </button>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <>
+                      <button onClick={saveEditedItem}>Save</button>
+                      <button onClick={() => setEditingItem(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => handleEdit(item)}>Edit</button>
+                      <button onClick={() => handleDeleteConfirmation(item.id)}>Delete</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+            </tbody>
           </table>
         )}
       </div>

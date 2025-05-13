@@ -20,6 +20,8 @@ const RemainingProducts = () => {
   const [statusFilter, setStatusFilter] = useState('All');
 
   const [excludedProducts, setExcludedProducts] = useState([]);
+
+  const [showOnlyDropdownItems, setShowOnlyDropdownItems] = useState(false);
   
   const scannerRef = useRef(null);
 
@@ -458,9 +460,43 @@ const RemainingProducts = () => {
     if (statusFilter !== 'All') {
       filteredData = filteredData.filter(row => row.Status === statusFilter);
     }
+
+     // Add filter for dropdown items
+  if (showOnlyDropdownItems) {
+    filteredData = filteredData.filter(row => !excludedProducts.includes(row.Barcode));
+  }
+  
     
     return filteredData;
   };
+
+  // Add a new export function for dropdown items
+const exportDropdownItemsToExcel = async () => {
+  // Get all products that are still in dropdown (not excluded)
+  const dropdownItems = products.filter(product => 
+    !excludedProducts.includes(product.barcode)
+  ).map(product => ({
+    Barcode: product.barcode,
+    Name: product.name,
+    Status: 'Pending' // These are by definition not confirmed/not confirmed
+  }));
+
+  if (dropdownItems.length === 0) {
+    alert('No pending products available to export.');
+    return;
+  }
+
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(dropdownItems);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pending Products');
+
+    const fileName = `Pending_Products_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  } catch (error) {
+    console.error('Error exporting pending products:', error);
+  }
+};
 
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
@@ -645,9 +681,30 @@ const RemainingProducts = () => {
     </select>
   </div>
 
+  {/* <button className="action-button" onClick={exportToExcel}>
+    Export as Excel
+  </button> */}
+
+<div className="dropdown-filter">
+    <label>
+      <input 
+        type="checkbox" 
+        checked={showOnlyDropdownItems}
+        onChange={() => setShowOnlyDropdownItems(!showOnlyDropdownItems)}
+      />
+      Show only pending products
+    </label>
+  </div>
+
   <button className="action-button" onClick={exportToExcel}>
     Export as Excel
   </button>
+
+  {showOnlyDropdownItems && (
+    <button className="action-button" onClick={exportDropdownItemsToExcel}>
+      Export Pending Products
+    </button>
+  )}
 </div>
 
       {showScanner && (

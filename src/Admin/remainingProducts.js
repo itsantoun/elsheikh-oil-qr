@@ -16,6 +16,8 @@ const RemainingProducts = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [inputQuantity, setInputQuantity] = useState('');
+
+  const [statusFilter, setStatusFilter] = useState('All');
   
   const scannerRef = useRef(null);
 
@@ -145,24 +147,52 @@ const RemainingProducts = () => {
     fetchTableData();
   }, [startDate, endDate]);
 
+  // const exportToExcel = async () => {
+  //   if (tableData.length === 0) {
+  //     alert('No data available to export.');
+  //     return;
+  //   }
+
+  //   try {
+  //     const worksheet = XLSX.utils.json_to_sheet(tableData);
+  //     const workbook = XLSX.utils.book_new();
+  //     XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
+
+  //     // Format the filename with date range
+  //     const fileName = `Remaining_Stock_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
+  //     XLSX.writeFile(workbook, fileName);
+  //   } catch (error) {
+  //     console.error('Error exporting data:', error);
+  //   }
+  // };
+
+
   const exportToExcel = async () => {
-    if (tableData.length === 0) {
+    const filteredData = getFilteredData();
+    
+    if (filteredData.length === 0) {
       alert('No data available to export.');
       return;
     }
-
+  
     try {
-      const worksheet = XLSX.utils.json_to_sheet(tableData);
+      const worksheet = XLSX.utils.json_to_sheet(filteredData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
-
-      // Format the filename with date range
-      const fileName = `Remaining_Stock_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
+  
+      // Format the filename with date range and status filter
+      let fileName = `Remaining_Stock_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}`;
+      if (statusFilter !== 'All') {
+        fileName += `_${statusFilter.replace(' ', '_')}`;
+      }
+      fileName += '.xlsx';
+      
       XLSX.writeFile(workbook, fileName);
     } catch (error) {
       console.error('Error exporting data:', error);
     }
   };
+
 
   const getCurrentDateKey = () => {
     const now = new Date();
@@ -172,10 +202,10 @@ const RemainingProducts = () => {
   const handleConfirmQuantity = (useExisting = false) => {
     let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
 
-    if (finalQuantity <= 0 || isNaN(finalQuantity)) {
-      alert('Please enter a valid quantity.');
-      return;
-    }
+    // if (finalQuantity <= 0 || isNaN(finalQuantity)) {
+    //   alert('Please enter a valid quantity.');
+    //   return;
+    // }
 
     const dateKey = getCurrentDateKey();
     const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
@@ -378,6 +408,16 @@ const RemainingProducts = () => {
     }
   };
 
+  const getFilteredData = () => {
+    let filteredData = sortedTableData();
+    
+    if (statusFilter !== 'All') {
+      filteredData = filteredData.filter(row => row.Status === statusFilter);
+    }
+    
+    return filteredData;
+  };
+
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
       const newData = [...prevData];
@@ -515,6 +555,7 @@ const RemainingProducts = () => {
             </select>
           </div>
         </div>
+        
 
         <button className="action-button" onClick={exportToExcel}>
           Export as Excel
@@ -543,6 +584,27 @@ const RemainingProducts = () => {
           Search for Product
         </button>
       </div>
+
+    <div className="date-range-container">
+  {/* Existing date range controls */}
+  
+  <div className="status-filter">
+    <label htmlFor="status-filter">Filter by Status:</label>
+    <select 
+      id="status-filter"
+      value={statusFilter} 
+      onChange={(e) => setStatusFilter(e.target.value)}
+    >
+      <option value="All">All Status</option>
+      <option value="Confirmed">Confirmed</option>
+      <option value="Not Confirmed">Not Confirmed</option>
+    </select>
+  </div>
+
+  <button className="action-button" onClick={exportToExcel}>
+    Export as Excel
+  </button>
+</div>
 
       {showScanner && (
         <div className="scanner-container">
@@ -632,7 +694,8 @@ const RemainingProducts = () => {
           </thead>
            
           <tbody>
-            {sortedTableData().map((row, index) => (
+            {/* {sortedTableData().map((row, index) => ( */}
+              {getFilteredData().map((row, index) => (
               <tr key={`${row.Barcode}-${index}`} className={editingRow === index ? 'editing-row' : ''}>
                 <td>{row.Barcode}</td>
                 <td>{row.Name}</td>

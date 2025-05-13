@@ -14,6 +14,7 @@ const FetchProducts = () => {
     name: '',
     productType: '', // Product Type (oil or filters)
     itemCost: '', // Item Cost
+    purchasingPrice: '', // Purchasing Price
     quantity: '',
   });
   const [editingProduct, setEditingProduct] = useState(null);
@@ -98,11 +99,13 @@ const FetchProducts = () => {
       }
   
       const parsedItemCost = parseFloat(newProduct.itemCost);
+      const parsedPurchasingPrice = parseFloat(newProduct.purchasingPrice);
   
       await set(productRef, {
         name: newProduct.name.trim() || 'Unnamed Product',
         productType: newProduct.productType.trim() || 'Unknown Type',
         itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
+        purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
         quantity: newProduct.quantity || 0, // Save quantity
       });
   
@@ -113,13 +116,14 @@ const FetchProducts = () => {
           id: sanitizedId,
           ...newProduct,
           itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
+          purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
         },
       ];
       // Sort products alphabetically by name after adding a new product
       const sortedProducts = sortProducts(updatedProducts, 'name', 'asc');
       setProducts(sortedProducts);
   
-      setNewProduct({ id: '', name: '', productType: '', itemCost: '', quantity: '' });
+      setNewProduct({ id: '', name: '', productType: '', itemCost: '', purchasingPrice: '', quantity: '' });
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error adding product:', error);
@@ -161,17 +165,23 @@ const FetchProducts = () => {
     const productRef = ref(database, `products/${editingProduct.id}`);
     try {
       const parsedItemCost = parseFloat(editingProduct.itemCost);
+      const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
 
       await set(productRef, {
         name: editingProduct.name.trim() || 'Unnamed Product',
         productType: editingProduct.productType.trim() || 'Unknown Type',
         itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
+        purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
         quantity: editingProduct.quantity || 0, // Save quantity
       });
 
       const updatedProducts = products.map((product) =>
         product.id === editingProduct.id
-          ? { ...editingProduct, itemCost: parsedItemCost }
+          ? { 
+              ...editingProduct, 
+              itemCost: parsedItemCost,
+              purchasingPrice: parsedPurchasingPrice
+            }
           : product
       );
       
@@ -310,6 +320,18 @@ const FetchProducts = () => {
           }
           className="admin-input"
         />
+        <p>Purchasing Price</p>
+        <input
+          type="text"
+          placeholder="Purchasing Price"
+          value={editingProduct ? editingProduct.purchasingPrice : newProduct.purchasingPrice}
+          onChange={(e) =>
+            editingProduct
+              ? setEditingProduct({ ...editingProduct, purchasingPrice: e.target.value })
+              : setNewProduct({ ...newProduct, purchasingPrice: e.target.value })
+          }
+          className="admin-input"
+        />
         {editingProduct ? (
           <>
             <button onClick={handleSaveChanges} className="admin-button">
@@ -370,6 +392,7 @@ const FetchProducts = () => {
                 Type {sortBy.field === 'productType' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
               </th>
               <th>Item Cost</th>
+              <th>Purchasing Price</th>
               <th>Quantity</th>
               <th>Actions</th>
             </tr>
@@ -431,6 +454,20 @@ const FetchProducts = () => {
                     />
                   ) : (
                     product.itemCost
+                  )}
+                </td>
+                <td>
+                  {editingProduct && editingProduct.id === product.id ? (
+                    <input
+                      type="text"
+                      value={editingProduct.purchasingPrice}
+                      onChange={(e) =>
+                        setEditingProduct({ ...editingProduct, purchasingPrice: e.target.value })
+                      }
+                      className="admin-input"
+                    />
+                  ) : (
+                    product.purchasingPrice
                   )}
                 </td>
                 <td>

@@ -39,13 +39,13 @@
       customerName: '',
       name: '',
       quantity: 1,
-      price: '',
-      cost: '',
+      cost: '', // This will be populated with itemCost
       totalCost: '',
       remark: '',
       paymentStatus: 'Paid',
       dateScanned: new Date().toISOString()
     });
+
     const [products, setProducts] = useState([]);
     const [successMessage, setSuccessMessage] = useState(null);
 
@@ -146,18 +146,31 @@
           setCustomers(customerList);
     
           // Fetch products for dropdown in add form
-          const productsRef = ref(database, 'products');
-          const productsSnapshot = await get(productsRef);
-          if (productsSnapshot.exists()) {
-            const productsData = productsSnapshot.val();
-            const productsList = Object.keys(productsData).map((key) => ({
-              id: key,
-              name: productsData[key].name,
-              cost: productsData[key].cost,
-              price: productsData[key].price,
-            }));
-            setProducts(productsList);
-          }
+          // const productsRef = ref(database, 'products');
+          // const productsSnapshot = await get(productsRef);
+          // if (productsSnapshot.exists()) {
+          //   const productsData = productsSnapshot.val();
+          //   const productsList = Object.keys(productsData).map((key) => ({
+          //     id: key,
+          //     name: productsData[key].name,
+          //     cost: productsData[key].cost,
+          //     price: productsData[key].price,
+          //   }));
+          //   setProducts(productsList);
+          // }
+
+          // In your fetchCustomersAndSoldItems function:
+const productsRef = ref(database, 'products');
+const productsSnapshot = await get(productsRef);
+if (productsSnapshot.exists()) {
+  const productsData = productsSnapshot.val();
+  const productsList = Object.keys(productsData).map((key) => ({
+    id: key,
+    name: productsData[key].name,
+    itemCost: productsData[key].itemCost
+  }));
+  setProducts(productsList);
+}
     
           // Fetch Sold Items
           const soldItemsRef = ref(database, 'SoldItems');
@@ -390,39 +403,103 @@ useEffect(() => {
       setItemIdToDelete(null);
     };
 
-    // Handle Add Form Input Changes
-    const handleInputChange = (e) => {
+    // // Handle Add Form Input Changes
+    // const handleInputChange = (e) => {
+    //   const { name, value } = e.target;
+    //   setNewItem({
+    //     ...newItem,
+    //     [name]: value,
+    //   });
+
+    //   // Auto-fill price and cost if a product is selected
+    //   if (name === 'name') {
+    //     const selectedProduct = products.find(p => p.name === value);
+    //     if (selectedProduct) {
+    //       setNewItem(prev => ({
+    //         ...prev,
+    //         name: value,
+    //         price: selectedProduct.price || '',
+    //         cost: selectedProduct.cost || '',
+    //         totalCost: prev.quantity * (selectedProduct.price || 0)
+    //       }));
+    //     }
+    //   }
+
+    //   // Update total cost when quantity or price changes
+    //   if (name === 'quantity' || name === 'price') {
+    //     const quantity = name === 'quantity' ? Number(value) : Number(newItem.quantity);
+    //     const price = name === 'price' ? Number(value) : Number(newItem.price);
+    //     setNewItem(prev => ({
+    //       ...prev,
+    //       [name]: value,
+    //       totalCost: (quantity * price).toString()
+    //     }));
+    //   }
+    // };
+
+    const handleInputChange = async (e) => {
       const { name, value } = e.target;
-      setNewItem({
-        ...newItem,
-        [name]: value,
-      });
-
-      // Auto-fill price and cost if a product is selected
+      
+      // For product name changes
       if (name === 'name') {
-        const selectedProduct = products.find(p => p.name === value);
-        if (selectedProduct) {
-          setNewItem(prev => ({
-            ...prev,
-            name: value,
-            price: selectedProduct.price || '',
-            cost: selectedProduct.cost || '',
-            totalCost: prev.quantity * (selectedProduct.price || 0)
-          }));
+        setNewItem(prev => ({ ...prev, [name]: value }));
+        
+        // Fetch product details when a product is selected
+        if (value) {
+          const product = await fetchProductDetails(value);
+          if (product) {
+            setNewItem(prev => ({
+              ...prev,
+              cost: product.itemCost || '', // Set itemCost from Firebase
+              totalCost: (prev.quantity * (product.itemCost || 0)).toFixed(2)
+            }));
+          }
         }
+        return;
       }
-
-      // Update total cost when quantity or price changes
-      if (name === 'quantity' || name === 'price') {
-        const quantity = name === 'quantity' ? Number(value) : Number(newItem.quantity);
-        const price = name === 'price' ? Number(value) : Number(newItem.price);
+      
+      // For quantity changes
+      if (name === 'quantity') {
+        const quantity = Number(value) || 0;
+        const cost = Number(newItem.cost) || 0;
         setNewItem(prev => ({
           ...prev,
           [name]: value,
-          totalCost: (quantity * price).toString()
+          totalCost: (quantity * cost).toFixed(2)
         }));
+        return;
       }
+      
+      // For all other fields
+      setNewItem(prev => ({ ...prev, [name]: value }));
     };
+
+   const fetchProductDetails = async (productName) => {
+  try {
+    const productsRef = ref(database, 'products');
+    const snapshot = await get(productsRef);
+    
+    if (snapshot.exists()) {
+      const productsData = snapshot.val();
+      const productEntry = Object.entries(productsData).find(
+        ([key, product]) => product.name.toLowerCase() === productName.toLowerCase()
+      );
+      
+      if (productEntry) {
+        const [productId, productData] = productEntry;
+        return {
+          id: productId,
+          ...productData,
+          itemCost: productData.itemCost || 0
+        };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching product details:', error);
+    return null;
+  }
+};
 
     // Handle Date Change for manual add
     const handleDateChange = (e) => {
@@ -435,35 +512,92 @@ useEffect(() => {
       });
     };
 
-    // Submit New Item
+    // // Submit New Item
+    // const handleSubmitNewItem = async (e) => {
+    //   e.preventDefault();
+      
+    //   try {
+    //     // Validation
+    //     if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.price) {
+    //       setErrorMessage('Please fill in all required fields.');
+    //       setTimeout(() => setErrorMessage(null), 3000);
+    //       return;
+    //     }
+
+    //     // Add the current user as the one who added this item
+    //     const itemToAdd = {
+    //       ...newItem,
+    //       scannedBy: user?.email || 'Manual Entry',
+    //       quantity: Number(newItem.quantity),
+    //       price: Number(newItem.price),
+    //       cost: Number(newItem.cost),
+    //       totalCost: Number(newItem.totalCost),
+    //       manuallyAdded: true,
+    //       addedAt: new Date().toISOString()
+    //     };
+
+    //     // Push to database with a new unique key
+    //     const newItemRef = push(ref(database, 'SoldItems'));
+    //     await set(newItemRef, itemToAdd);
+
+    //     // Add to the local state with the new ID
+    //     const newItemWithId = {
+    //       id: newItemRef.key,
+    //       ...itemToAdd
+    //     };
+        
+    //     setSoldItems([...soldItems, newItemWithId]);
+    //     setFilteredItems([...filteredItems, newItemWithId]);
+        
+    //     // Reset form
+    //     setNewItem({
+    //       customerName: '',
+    //       name: '',
+    //       quantity: 1,
+    //       price: '',
+    //       cost: '',
+    //       totalCost: '',
+    //       remark: '',
+    //       paymentStatus: 'Paid',
+    //       dateScanned: new Date().toISOString()
+    //     });
+        
+    //     setSuccessMessage('Item added successfully');
+    //     setTimeout(() => setSuccessMessage(null), 3000);
+        
+    //     // Hide form after successful addition
+    //     setShowAddForm(false);
+    //   } catch (error) {
+    //     console.error('Error adding new item:', error);
+    //     setErrorMessage('Failed to add item. Please try again.');
+    //     setTimeout(() => setErrorMessage(null), 3000);
+    //   }
+    // };
+
     const handleSubmitNewItem = async (e) => {
       e.preventDefault();
       
       try {
         // Validation
-        if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.price) {
+        if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.cost) {
           setErrorMessage('Please fill in all required fields.');
           setTimeout(() => setErrorMessage(null), 3000);
           return;
         }
-
-        // Add the current user as the one who added this item
+    
         const itemToAdd = {
           ...newItem,
           scannedBy: user?.email || 'Manual Entry',
           quantity: Number(newItem.quantity),
-          price: Number(newItem.price),
           cost: Number(newItem.cost),
           totalCost: Number(newItem.totalCost),
           manuallyAdded: true,
           addedAt: new Date().toISOString()
         };
-
-        // Push to database with a new unique key
+    
         const newItemRef = push(ref(database, 'SoldItems'));
         await set(newItemRef, itemToAdd);
-
-        // Add to the local state with the new ID
+    
         const newItemWithId = {
           id: newItemRef.key,
           ...itemToAdd
@@ -477,7 +611,6 @@ useEffect(() => {
           customerName: '',
           name: '',
           quantity: 1,
-          price: '',
           cost: '',
           totalCost: '',
           remark: '',
@@ -488,7 +621,6 @@ useEffect(() => {
         setSuccessMessage('Item added successfully');
         setTimeout(() => setSuccessMessage(null), 3000);
         
-        // Hide form after successful addition
         setShowAddForm(false);
       } catch (error) {
         console.error('Error adding new item:', error);
@@ -659,19 +791,19 @@ useEffect(() => {
                 <div className="form-group">
                   <label htmlFor="name">Product*</label>
                   <select
-                    id="name"
-                    name="name"
-                    value={newItem.name}
-                    onChange={handleInputChange}
-                    required
-                  >
-                    <option value="">Select Product</option>
-                    {products.map((product) => (
-                      <option key={product.id} value={product.name}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </select>
+  id="name"
+  name="name"
+  value={newItem.name}
+  onChange={handleInputChange}
+  required
+>
+  <option value="">Select Product</option>
+  {products.map((product) => (
+    <option key={product.id} value={product.name}>
+      {product.name} (Cost: ${product.itemCost})
+    </option>
+  ))}
+</select>
                 </div>
                 
                 <div className="form-group">
@@ -689,86 +821,46 @@ useEffect(() => {
               </div>
               
               <div className="form-row">
-                <div className="form-group">
-                  <label htmlFor="price">Price*</label>
-                  <input
-                    type="number"
-                    id="price"
-                    name="price"
-                    step="0.01"
-                    value={newItem.price}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label htmlFor="cost">Cost</label>
-                  <input
-                    type="number"
-                    id="cost"
-                    name="cost"
-                    step="0.01"
-                    value={newItem.itemCost}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label htmlFor="totalCost">Total Cost*</label>
-                  <input
-                    type="number"
-                    id="totalCost"
-                    name="totalCost"
-                    step="0.01"
-                    value={newItem.totalCost}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-              </div>
-              
-              <div className="form-row">
-                <div className="form-group">
-                  <label htmlFor="dateScanned">Date*</label>
-                  <input
-                    type="date"
-                    id="dateScanned"
-                    name="dateScanned"
-                    defaultValue={getTodayFormatted()}
-                    onChange={handleDateChange}
-                    required
-                  />
-                </div>
-                
-                <div className="form-group">
-                  <label htmlFor="paymentStatus">Payment Status*</label>
-                  <select
-                    id="paymentStatus"
-                    name="paymentStatus"
-                    value={newItem.paymentStatus}
-                    onChange={handleInputChange}
-                    required
-                  >
-                    <option value="Paid">Paid</option>
-                    <option value="Unpaid">Unpaid</option>
-                    <option value="Stock">Stock</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div className="form-row">
-                <div className="form-group full-width">
-                  <label htmlFor="remark">Remarks</label>
-                  <textarea
-                    id="remark"
-                    name="remark"
-                    value={newItem.remark}
-                    onChange={handleInputChange}
-                    rows="2"
-                  />
-                </div>
-              </div>
+  
+  <div className="form-group">
+    <label htmlFor="cost">Item Cost*</label>
+    <input
+      type="number"
+      id="cost"
+      name="cost"
+      step="0.01"
+      value={newItem.cost}
+      onChange={handleInputChange}
+      required
+      readOnly  // Since it comes from Firebase
+    />
+  </div>
+  
+  <div className="form-group">
+    <label htmlFor="totalCost">Total Cost*</label>
+    <input
+      type="number"
+      id="totalCost"
+      name="totalCost"
+      step="0.01"
+      value={newItem.totalCost}
+      readOnly
+      required
+    />
+  </div>
+</div>
+
+<div className="form-group">
+    <label htmlFor="remark">Remarks</label>
+    <input
+      type="text"
+      id="remark"
+      name="remark"
+      value={newItem.remark}
+      onChange={handleInputChange}
+      placeholder="Additional notes (optional)"
+    />
+  </div>
               
               <div className="form-buttons">
                 <button type="submit" className="submit-button">Add Item</button>

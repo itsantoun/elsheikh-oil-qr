@@ -724,7 +724,9 @@ const RemainingProducts = () => {
       )}
 
       <div className="table-container">
-        <h2>Remaining Stock for {new Date(startDate.year, startDate.month - 1, startDate.day).toLocaleDateString()} to {new Date(endDate.year, endDate.month - 1, endDate.day).toLocaleDateString()}</h2>
+      <h2>
+  Remaining Stock for {String(startDate.day).padStart(2, '0')}/{String(startDate.month).padStart(2, '0')}/{startDate.year} to {String(endDate.day).padStart(2, '0')}/{String(endDate.month).padStart(2, '0')}/{endDate.year}
+</h2>
         <table>
           <thead>
             <tr>

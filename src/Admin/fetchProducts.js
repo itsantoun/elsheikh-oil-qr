@@ -1,4 +1,4 @@
-import React, { useState, useEffect,useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ref, get, set, remove } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
@@ -6,6 +6,9 @@ import * as XLSX from 'xlsx';
 
 const FetchProducts = () => {
   const [products, setProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchCategory, setSearchCategory] = useState('all');
   const [newProduct, setNewProduct] = useState({
     id: '', // Barcode Number
     name: '',
@@ -31,6 +34,7 @@ const FetchProducts = () => {
           // Sort products alphabetically by name after fetching
           const sortedProducts = sortProducts(productList, 'name', 'asc');
           setProducts(sortedProducts);
+          setFilteredProducts(sortedProducts);
         }
       } catch (error) {
         console.error("Error fetching products:", error);
@@ -39,6 +43,37 @@ const FetchProducts = () => {
   
     fetchProducts();
   }, []);
+
+  useEffect(() => {
+    handleSearch();
+  }, [searchTerm, searchCategory, products]);
+
+  const handleSearch = () => {
+    if (!searchTerm.trim()) {
+      setFilteredProducts(products);
+      return;
+    }
+
+    const term = searchTerm.toLowerCase().trim();
+    const filtered = products.filter(product => {
+      if (searchCategory === 'all') {
+        return (
+          product.name.toLowerCase().includes(term) ||
+          product.id.toLowerCase().includes(term) ||
+          product.productType.toLowerCase().includes(term)
+        );
+      } else if (searchCategory === 'name') {
+        return product.name.toLowerCase().includes(term);
+      } else if (searchCategory === 'id') {
+        return product.id.toLowerCase().includes(term);
+      } else if (searchCategory === 'type') {
+        return product.productType.toLowerCase().includes(term);
+      }
+      return false;
+    });
+
+    setFilteredProducts(filtered);
+  };
 
   const sanitizeId = (id) => {
     return id.replace(/[.#$/[\]]/g, '_');
@@ -112,19 +147,14 @@ const FetchProducts = () => {
     }
   };
 
-  // // Start Editing Product
-  // const handleEditProduct = (product) => {
-  //   setEditingProduct({ ...product });
-  // };
-
   const rowRef = useRef(null);
 
-const handleEditProduct = (product) => {
-  setEditingProduct({ ...product });
-  setTimeout(() => {
-    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, 100);
-};
+  const handleEditProduct = (product) => {
+    setEditingProduct({ ...product });
+    setTimeout(() => {
+      rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  };
 
   // Save Changes to Product
   const handleSaveChanges = async () => {
@@ -139,11 +169,13 @@ const handleEditProduct = (product) => {
         quantity: editingProduct.quantity || 0, // Save quantity
       });
 
-      setProducts(products.map((product) =>
+      const updatedProducts = products.map((product) =>
         product.id === editingProduct.id
           ? { ...editingProduct, itemCost: parsedItemCost }
           : product
-      ));
+      );
+      
+      setProducts(updatedProducts);
 
       setSuccessMessage('Product updated successfully!');
       setEditingProduct(null);
@@ -171,32 +203,45 @@ const handleEditProduct = (product) => {
 
   const [sortBy, setSortBy] = useState({ field: 'productType', order: 'asc' });
 
-const sortProducts = (products, field, order) => {
-  return [...products].sort((a, b) => {
-    if (a[field] < b[field]) return order === 'asc' ? -1 : 1;
-    if (a[field] > b[field]) return order === 'asc' ? 1 : -1;
-    return 0;
-  });
-};
+  const sortProducts = (products, field, order) => {
+    return [...products].sort((a, b) => {
+      if (a[field] < b[field]) return order === 'asc' ? -1 : 1;
+      if (a[field] > b[field]) return order === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
 
-useEffect(() => {
-  if (products.length) {
-    setProducts(sortProducts(products, sortBy.field, sortBy.order));
-  }
-}, [sortBy]);
+  useEffect(() => {
+    if (products.length) {
+      const sorted = sortProducts(products, sortBy.field, sortBy.order);
+      setProducts(sorted);
+      
+      // Apply the search filter to the sorted products
+      if (searchTerm.trim()) {
+        handleSearch();
+      } else {
+        setFilteredProducts(sorted);
+      }
+    }
+  }, [sortBy]);
 
-const handleSort = (field) => {
-  setSortBy((prev) => ({
-    field,
-    order: prev.field === field && prev.order === 'asc' ? 'desc' : 'asc',
-  }));
-};
+  const handleSort = (field) => {
+    setSortBy((prev) => ({
+      field,
+      order: prev.field === field && prev.order === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const handleClearSearch = () => {
+    setSearchTerm('');
+    setSearchCategory('all');
+    setFilteredProducts(products);
+  };
 
   return (
     <div className="admin-container">
       <h1 className="admin-title">Product Management</h1>
       
-
       {successMessage && <div className="admin-success">{successMessage}</div>}
       {errorMessage && <div className="admin-error">{errorMessage}</div>}
 
@@ -284,30 +329,53 @@ const handleSort = (field) => {
         )}
       </div>
 
+      <div className="search-container">
+        <h2>Search Products</h2>
+        <div className="search-controls">
+          <input
+            type="text"
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="admin-input search-input"
+          />
+          <button onClick={handleClearSearch} className="admin-button">
+            Clear
+          </button>
+        </div>
+        <div className="search-info">
+          {searchTerm && (
+            <p>
+              Found {filteredProducts.length} product(s) matching "{searchTerm}"
+              {searchCategory !== 'all' ? ` in ${searchCategory}` : ''}
+            </p>
+          )}
+        </div>
+      </div>
+
       <button onClick={handleExportToExcel} className="admin-button">
-  Export to Excel
-</button>
+        Export to Excel
+      </button>
 
       <div className="admin-products">
         <h2>Product List</h2>
         <table className="admin-table">
           <thead>
-  <tr>
-    <th>Barcode Number</th>
-    <th onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
-      Name {sortBy.field === 'name' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
-    </th>
-    <th onClick={() => handleSort('productType')} style={{ cursor: 'pointer' }}>
-      Type {sortBy.field === 'productType' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
-    </th>
-    <th>Item Cost</th>
-    <th>Quantity</th>
-    <th>Actions</th>
-  </tr>
-</thead>
+            <tr>
+              <th>Barcode Number</th>
+              <th onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>
+                Name {sortBy.field === 'name' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th onClick={() => handleSort('productType')} style={{ cursor: 'pointer' }}>
+                Type {sortBy.field === 'productType' ? (sortBy.order === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th>Item Cost</th>
+              <th>Quantity</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
-            {products.map((product) => (
-              // <tr key={product.id}>
+            {filteredProducts.map((product) => (
               <tr key={product.id} ref={editingProduct?.id === product.id ? rowRef : null}>
                 <td>
                   {editingProduct && editingProduct.id === product.id ? (

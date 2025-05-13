@@ -18,6 +18,8 @@ const RemainingProducts = () => {
   const [inputQuantity, setInputQuantity] = useState('');
 
   const [statusFilter, setStatusFilter] = useState('All');
+
+  const [excludedProducts, setExcludedProducts] = useState([]);
   
   const scannerRef = useRef(null);
 
@@ -274,11 +276,16 @@ const RemainingProducts = () => {
         const productsSnapshot = await get(child(dbRef, 'products'));
         if (productsSnapshot.exists()) {
           const productsData = productsSnapshot.val();
-          const productsList = Object.keys(productsData).map((barcode) => ({
+          let productsList = Object.keys(productsData).map((barcode) => ({
             barcode,
             ...productsData[barcode],
           }));
-
+  
+          // Filter out excluded products for the current month
+          productsList = productsList.filter(product => 
+            !excludedProducts.includes(product.barcode)
+          );
+  
           const sortedProducts = productsList.sort((a, b) => a.name.localeCompare(b.name));
           setProducts(sortedProducts);
         }
@@ -286,9 +293,46 @@ const RemainingProducts = () => {
         console.error('Error fetching products:', error);
       }
     };
-
+  
     fetchProducts();
-  }, []);
+  }, [excludedProducts]);
+
+  useEffect(() => {
+    if (tableData.length > 0) {
+      const currentMonthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
+      const startMonthKey = `${startDate.year}-${startDate.month}`;
+      
+      // Only update excluded products if we're looking at current month data
+      if (startMonthKey === currentMonthKey) {
+        const excluded = tableData
+          .filter(row => row.Status === 'Confirmed' || row.Status === 'Not Confirmed')
+          .map(row => row.Barcode);
+        
+        setExcludedProducts(excluded);
+      }
+    }
+  }, [tableData, startDate.month, startDate.year]);
+
+  useEffect(() => {
+    const checkForNewMonth = () => {
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+      
+      // If it's a new month, reset the excluded products
+      if (currentMonth !== startDate.month || currentYear !== startDate.year) {
+        setExcludedProducts([]);
+      }
+    };
+  
+    // Check every hour (you can adjust this interval)
+    const interval = setInterval(checkForNewMonth, 60 * 60 * 1000);
+    
+    // Also check immediately when component mounts
+    checkForNewMonth();
+    
+    return () => clearInterval(interval);
+  }, [startDate.month, startDate.year]);
 
   const applyZoom = async () => {
     try {

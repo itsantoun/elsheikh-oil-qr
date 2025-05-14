@@ -1,12 +1,28 @@
 /* remainingProducts.css */
 
+:root {
+  --primary-color: #0a3d62;
+  --primary-gradient: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
+  --secondary-color: #1e88e5;
+  --success-gradient: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+  --info-gradient: linear-gradient(135deg, #2196f3 0%, #0d47a1 100%);
+  --border-color: rgba(10, 61, 98, 0.2);
+  --hover-bg-color: rgba(0, 180, 219, 0.05);
+  --shadow-color: rgba(0, 0, 0, 0.1);
+  --shadow-hover: rgba(10, 61, 98, 0.3);
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --container-bg: rgba(255, 255, 255, 0.95);
+  --text-color: #333;
+  --light-text-color: white;
+}
+
 .container {
   max-width: 1200px;
   margin: 1.5rem auto;
   padding: 1.5rem;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--container-bg);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 16px var(--shadow-color);
 }
 
 .export-container {
@@ -18,7 +34,7 @@
 
 .export-container select {
   padding: 0.6rem;
-  border: 1px solid rgba(10, 61, 98, 0.2);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 0.9rem;
   min-width: 150px;
@@ -33,8 +49,8 @@
 
 .action-button {
   padding: 0.7rem 1rem;
-  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
-  color: white;
+  background: var(--primary-gradient);
+  color: var(--light-text-color);
   border: none;
   border-radius: 4px;
   font-size: 0.9rem;
@@ -44,7 +60,7 @@
 
 .action-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 61, 98, 0.3);
+  box-shadow: 0 2px 8px var(--shadow-hover);
 }
 
 .scanner-container {
@@ -55,14 +71,14 @@
 .scanner {
   width: 100%;
   max-width: 500px;
-  border: 2px solid #0a3d62;
+  border: 2px solid var(--primary-color);
   border-radius: 4px;
 }
 
 .status {
   margin-top: 0.5rem;
   font-size: 0.9rem;
-  color: #0a3d62;
+  color: var(--primary-color);
 }
 
 .zoom-controls {
@@ -75,8 +91,8 @@
 
 .zoom-controls button {
   padding: 0.4rem 0.8rem;
-  background: #0a3d62;
-  color: white;
+  background: var(--primary-color);
+  color: var(--light-text-color);
   border: none;
   border-radius: 4px;
   font-size: 0.8rem;
@@ -93,7 +109,7 @@
 
 .dropdown-container select {
   padding: 0.6rem;
-  border: 1px solid rgba(10, 61, 98, 0.2);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 0.9rem;
   width: 100%;
@@ -106,7 +122,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-bg);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -130,12 +146,12 @@
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #0a3d62;
+  color: var(--primary-color);
 }
 
 .modal-title {
   margin-top: 0;
-  color: #0a3d62;
+  color: var(--primary-color);
   font-size: 1.3rem;
 }
 
@@ -150,7 +166,7 @@
 
 .modal-content input {
   padding: 0.6rem;
-  border: 1px solid rgba(10, 61, 98, 0.2);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 0.9rem;
   width: 100%;
@@ -170,13 +186,13 @@
 }
 
 .modal-btn-confirm {
-  background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
-  color: white;
+  background: var(--success-gradient);
+  color: var(--light-text-color);
 }
 
 .modal-btn-save {
-  background: linear-gradient(135deg, #2196f3 0%, #0d47a1 100%);
-  color: white;
+  background: var(--info-gradient);
+  color: var(--light-text-color);
 }
 
 .table-container {
@@ -185,7 +201,7 @@
 }
 
 .table-container h2 {
-  color: #0a3d62;
+  color: var(--primary-color);
   font-size: 1.3rem;
   margin-bottom: 1rem;
 }
@@ -196,13 +212,13 @@ table {
   background: white;
   border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px var(--shadow-color);
   font-size: 0.9rem;
 }
 
 th {
-  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
-  color: white;
+  background: var(--primary-gradient);
+  color: var(--light-text-color);
   padding: 0.8rem;
   text-align: left;
   font-weight: 500;
@@ -211,7 +227,7 @@ th {
 
 td {
   padding: 0.6rem 0.8rem;
-  border-bottom: 1px solid rgba(10, 61, 98, 0.1);
+  border-bottom: 1px solid var(--border-color);
 }
 
 tr:last-child td {
@@ -219,12 +235,12 @@ tr:last-child td {
 }
 
 tr:hover td {
-  background-color: rgba(0, 180, 219, 0.05);
+  background-color: var(--hover-bg-color);
 }
 
 input[type="number"] {
   padding: 0.4rem;
-  border: 1px solid rgba(10, 61, 98, 0.2);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   font-size: 0.9rem;
   width: 80px;
@@ -232,15 +248,15 @@ input[type="number"] {
 
 select {
   padding: 0.4rem;
-  border: 1px solid rgba(10, 61, 98, 0.2);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   font-size: 0.9rem;
 }
 
 button {
   padding: 0.4rem 0.8rem;
-  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
-  color: white;
+  background: var(--primary-gradient);
+  color: var(--light-text-color);
   border: none;
   border-radius: 3px;
   font-size: 0.8rem;
@@ -274,28 +290,31 @@ button:hover {
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
   .container {
-      padding: 1rem;
-      margin: 0.5rem;
+    padding: 1rem;
+    margin: 0.5rem;
   }
   
-  .export-container, .button-container {
-      flex-direction: column;
-      gap: 0.5rem;
+  .export-container, 
+  .button-container {
+    flex-direction: column;
+    gap: 0.5rem;
   }
   
-  .export-container select, .dropdown-container select {
-      width: 100%;
+  .export-container select, 
+  .dropdown-container select {
+    width: 100%;
+    min-width: auto;
   }
   
   table {
-      font-size: 0.8rem;
+    font-size: 0.8rem;
   }
   
   th, td {
-      padding: 0.5rem;
+    padding: 0.5rem;
   }
   
   input[type="number"] {
-      width: 60px;
+    width: 60px;
   }
 }

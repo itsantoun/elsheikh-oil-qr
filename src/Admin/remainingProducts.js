@@ -151,26 +151,6 @@ const RemainingProducts = () => {
     fetchTableData();
   }, [startDate, endDate]);
 
-  // const exportToExcel = async () => {
-  //   if (tableData.length === 0) {
-  //     alert('No data available to export.');
-  //     return;
-  //   }
-
-  //   try {
-  //     const worksheet = XLSX.utils.json_to_sheet(tableData);
-  //     const workbook = XLSX.utils.book_new();
-  //     XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
-
-  //     // Format the filename with date range
-  //     const fileName = `Remaining_Stock_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
-  //     XLSX.writeFile(workbook, fileName);
-  //   } catch (error) {
-  //     console.error('Error exporting data:', error);
-  //   }
-  // };
-
-
   const exportToExcel = async () => {
     const filteredData = getFilteredData();
     
@@ -197,7 +177,6 @@ const RemainingProducts = () => {
     }
   };
 
-
   const getCurrentDateKey = () => {
     const now = new Date();
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
@@ -206,10 +185,11 @@ const RemainingProducts = () => {
   const handleConfirmQuantity = (useExisting = false) => {
     let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
 
-    // if (finalQuantity <= 0 || isNaN(finalQuantity)) {
-    //   alert('Please enter a valid quantity.');
-    //   return;
-    // }
+    // Validation check removed to allow zero quantity
+    if (isNaN(finalQuantity)) {
+      alert('Please enter a valid quantity.');
+      return;
+    }
 
     const dateKey = getCurrentDateKey();
     const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
@@ -430,10 +410,13 @@ const RemainingProducts = () => {
   };
 
   const handleSave = async (index) => {
-    const row = tableData[index];
-    const monthKey = `${endDate.year}-${endDate.month}`;
-    
     try {
+      const row = tableData[index];
+      const monthKey = `${endDate.year}-${endDate.month}`;
+      
+      // Reset editingRow before making database calls to prevent double-saving
+      setEditingRow(null);
+      
       // Prepare only the data we want to save
       const updateData = {
         barcode: row.Barcode,
@@ -442,15 +425,18 @@ const RemainingProducts = () => {
         status: row.Status || 'Not Confirmed',
         recordedDate: getCurrentDateKey() // Add a timestamp of when the record was updated
       };
-  
+    
       // Only update the specific fields we want
       await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
       
-      setEditingRow(null);
-      fetchTableData(); // Refresh to get any server-side calculations
+      // Refresh to get any server-side calculations
+      fetchTableData();
+      // alert('Changes saved successfully!');
     } catch (error) {
       console.error('Error saving data:', error);
       alert('Failed to save changes. Please try again.');
+      // Reset editing row if save fails
+      setEditingRow(null);
     }
   };
 
@@ -461,42 +447,41 @@ const RemainingProducts = () => {
       filteredData = filteredData.filter(row => row.Status === statusFilter);
     }
 
-     // Add filter for dropdown items
-  if (showOnlyDropdownItems) {
-    filteredData = filteredData.filter(row => !excludedProducts.includes(row.Barcode));
-  }
-  
+    // Add filter for dropdown items
+    if (showOnlyDropdownItems) {
+      filteredData = filteredData.filter(row => !excludedProducts.includes(row.Barcode));
+    }
     
     return filteredData;
   };
 
   // Add a new export function for dropdown items
-const exportDropdownItemsToExcel = async () => {
-  // Get all products that are still in dropdown (not excluded)
-  const dropdownItems = products.filter(product => 
-    !excludedProducts.includes(product.barcode)
-  ).map(product => ({
-    Barcode: product.barcode,
-    Name: product.name,
-    Status: 'Pending' // These are by definition not confirmed/not confirmed
-  }));
+  const exportDropdownItemsToExcel = async () => {
+    // Get all products that are still in dropdown (not excluded)
+    const dropdownItems = products.filter(product => 
+      !excludedProducts.includes(product.barcode)
+    ).map(product => ({
+      Barcode: product.barcode,
+      Name: product.name,
+      Status: 'Pending' // These are by definition not confirmed/not confirmed
+    }));
 
-  if (dropdownItems.length === 0) {
-    alert('No pending products available to export.');
-    return;
-  }
+    if (dropdownItems.length === 0) {
+      alert('No pending products available to export.');
+      return;
+    }
 
-  try {
-    const worksheet = XLSX.utils.json_to_sheet(dropdownItems);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pending Products');
+    try {
+      const worksheet = XLSX.utils.json_to_sheet(dropdownItems);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Pending Products');
 
-    const fileName = `Pending_Products_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
-  } catch (error) {
-    console.error('Error exporting pending products:', error);
-  }
-};
+      const fileName = `Pending_Products_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+    } catch (error) {
+      console.error('Error exporting pending products:', error);
+    }
+  };
 
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
@@ -560,95 +545,146 @@ const exportDropdownItemsToExcel = async () => {
   };
 
   return (
-    <div className="container">
-      <div className="date-range-container">
-        <div className="date-selector">
-          <h3>FROM:</h3>
-          <div className="date-inputs">
-            <select 
-              value={startDate.day} 
-              onChange={(e) => handleStartDateChange('day', e.target.value)}
-            >
-              {generateDayOptions(startDate.month, startDate.year).map(day => (
-                <option key={`start-day-${day}`} value={day}>{day}</option>
-              ))}
-            </select>
-            
-            <select 
-              value={startDate.month} 
-              onChange={(e) => handleStartDateChange('month', e.target.value)}
-            >
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={`start-month-${i + 1}`} value={i + 1}>
-                  {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-            
-            <select 
-              value={startDate.year} 
-              onChange={(e) => handleStartDateChange('year', e.target.value)}
-            >
-              {Array.from({ length: 10 }, (_, i) => {
-                const year = today.getFullYear() - i;
-                return (
-                  <option key={`start-year-${year}`} value={year}>{year}</option>
-                );
-              })}
-            </select>
+    <div className="container" style={{ 
+      padding: '20px', 
+      maxWidth: '95%', 
+      margin: '0 auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '20px'
+    }}>
+      {/* Date Range Section */}
+      <div style={{ 
+        display: 'flex', 
+        flexWrap: 'wrap', 
+        gap: '20px',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '15px',
+        backgroundColor: '#f5f5f5',
+        borderRadius: '8px'
+      }}>
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+          <div className="date-selector">
+            <h3 style={{ margin: '0 0 8px 0' }}>FROM:</h3>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <select 
+                value={startDate.day} 
+                onChange={(e) => handleStartDateChange('day', e.target.value)}
+                style={{ fontSize: '1rem', padding: '8px', minWidth: '80px' }}
+              >
+                {generateDayOptions(startDate.month, startDate.year).map(day => (
+                  <option key={`start-day-${day}`} value={day}>{day}</option>
+                ))}
+              </select>
+              
+              <select 
+                value={startDate.month} 
+                onChange={(e) => handleStartDateChange('month', e.target.value)}
+                style={{ fontSize: '1rem', padding: '8px', minWidth: '120px' }}
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={`start-month-${i + 1}`} value={i + 1}>
+                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                  </option>
+                ))}
+              </select>
+              
+              <select 
+                value={startDate.year} 
+                onChange={(e) => handleStartDateChange('year', e.target.value)}
+                style={{ fontSize: '1rem', padding: '8px', minWidth: '100px' }}
+              >
+                {Array.from({ length: 10 }, (_, i) => {
+                  const year = today.getFullYear() - i;
+                  return (
+                    <option key={`start-year-${year}`} value={year}>{year}</option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          <div className="date-selector">
+            <h3 style={{ margin: '0 0 8px 0' }}>TO:</h3>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <select 
+                value={endDate.day} 
+                onChange={(e) => handleEndDateChange('day', e.target.value)}
+                style={{ fontSize: '1rem', padding: '8px', minWidth: '80px' }}
+              >
+                {generateDayOptions(endDate.month, endDate.year).map(day => (
+                  <option key={`end-day-${day}`} value={day}>{day}</option>
+                ))}
+              </select>
+              
+              <select 
+                value={endDate.month} 
+                onChange={(e) => handleEndDateChange('month', e.target.value)}
+                style={{ fontSize: '1rem', padding: '8px', minWidth: '120px' }}
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={`end-month-${i + 1}`} value={i + 1}>
+                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                  </option>
+                ))}
+              </select>
+              
+              <select 
+                value={endDate.year} 
+                onChange={(e) => handleEndDateChange('year', e.target.value)}
+                style={{ fontSize: '1rem', padding: '8px', minWidth: '100px' }}
+              >
+                {Array.from({ length: 10 }, (_, i) => {
+                  const year = today.getFullYear() - i;
+                  return (
+                    <option key={`end-year-${year}`} value={year}>{year}</option>
+                  );
+                })}
+              </select>
+            </div>
           </div>
         </div>
 
-        <div className="date-selector">
-          <h3>TO:</h3>
-          <div className="date-inputs">
-            <select 
-              value={endDate.day} 
-              onChange={(e) => handleEndDateChange('day', e.target.value)}
-            >
-              {generateDayOptions(endDate.month, endDate.year).map(day => (
-                <option key={`end-day-${day}`} value={day}>{day}</option>
-              ))}
-            </select>
-            
-            <select 
-              value={endDate.month} 
-              onChange={(e) => handleEndDateChange('month', e.target.value)}
-            >
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={`end-month-${i + 1}`} value={i + 1}>
-                  {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-            
-            <select 
-              value={endDate.year} 
-              onChange={(e) => handleEndDateChange('year', e.target.value)}
-            >
-              {Array.from({ length: 10 }, (_, i) => {
-                const year = today.getFullYear() - i;
-                return (
-                  <option key={`end-year-${year}`} value={year}>{year}</option>
-                );
-              })}
-            </select>
-          </div>
-        </div>
-        
-
-        <button className="action-button" onClick={exportToExcel}>
+        <button 
+          className="action-button" 
+          onClick={exportToExcel}
+          style={{ 
+            fontSize: '1rem', 
+            padding: '10px 15px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
           Export as Excel
         </button>
       </div>
 
-      <div className="button-container">
+      {/* Action Buttons */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '15px',
+        justifyContent: 'center',
+        flexWrap: 'wrap'
+      }}>
         <button
           className="action-button"
           onClick={() => {
             setShowScanner(true);
             setShowDropdown(false);
             setScanStatus('Align the barcode within the frame.');
+          }}
+          style={{ 
+            fontSize: '1rem', 
+            padding: '12px 20px', 
+            backgroundColor: '#2196F3',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
           }}
         >
           Scan Barcode
@@ -660,60 +696,124 @@ const exportDropdownItemsToExcel = async () => {
             setShowScanner(false);
             setScanStatus('Select a product from the dropdown.');
           }}
+          style={{ 
+            fontSize: '1rem', 
+            padding: '12px 20px', 
+            backgroundColor: '#2196F3',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
         >
           Search for Product
         </button>
       </div>
 
-    <div className="date-range-container">
-  {/* Existing date range controls */}
-  
-  <div className="status-filter">
-    <label htmlFor="status-filter">Filter by Status:</label>
-    <select 
-      id="status-filter"
-      value={statusFilter} 
-      onChange={(e) => setStatusFilter(e.target.value)}
-    >
-      <option value="All">All Status</option>
-      <option value="Confirmed">Confirmed</option>
-      <option value="Not Confirmed">Not Confirmed</option>
-    </select>
-  </div>
+      {/* Filters Section */}
+      <div style={{ 
+        display: 'flex', 
+        flexWrap: 'wrap',
+        gap: '20px',
+        alignItems: 'center',
+        padding: '15px',
+        backgroundColor: '#f5f5f5',
+        borderRadius: '8px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <label htmlFor="status-filter" style={{ fontSize: '1rem' }}>Filter by Status:</label>
+          <select 
+            id="status-filter"
+            value={statusFilter} 
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ fontSize: '1rem', padding: '8px', minWidth: '150px' }}
+          >
+            <option value="All">All Status</option>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Not Confirmed">Not Confirmed</option>
+          </select>
+        </div>
 
-  {/* <button className="action-button" onClick={exportToExcel}>
-    Export as Excel
-  </button> */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input 
+            type="checkbox" 
+            checked={showOnlyDropdownItems}
+            onChange={() => setShowOnlyDropdownItems(!showOnlyDropdownItems)}
+            style={{ transform: 'scale(1.3)', marginRight: '8px' }}
+          />
+          <label style={{ fontSize: '1rem' }}>Show only pending products</label>
+        </div>
 
-<div className="dropdown-filter">
-    <label>
-      <input 
-        type="checkbox" 
-        checked={showOnlyDropdownItems}
-        onChange={() => setShowOnlyDropdownItems(!showOnlyDropdownItems)}
-      />
-      Show only pending products
-    </label>
-  </div>
+        {showOnlyDropdownItems && (
+          <button 
+            className="action-button" 
+            onClick={exportDropdownItemsToExcel}
+            style={{ 
+              fontSize: '1rem', 
+              padding: '10px 15px',
+              backgroundColor: '#4CAF50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginLeft: 'auto'
+            }}
+          >
+            Export Pending Products
+          </button>
+        )}
+      </div>
 
-  <button className="action-button" onClick={exportToExcel}>
-    Export as Excel
-  </button>
-
-  {showOnlyDropdownItems && (
-    <button className="action-button" onClick={exportDropdownItemsToExcel}>
-      Export Pending Products
-    </button>
-  )}
-</div>
-
+      {/* Scanner Section */}
       {showScanner && (
-        <div className="scanner-container">
-          <video ref={scannerRef} className="scanner"></video>
-          <p className="status">{scanStatus}</p>
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '20px',
+          backgroundColor: '#f5f5f5',
+          borderRadius: '8px'
+        }}>
+          <video 
+            ref={scannerRef} 
+            style={{ 
+              width: '100%', 
+              maxWidth: '800px', 
+              height: 'auto',
+              borderRadius: '8px',
+              border: '2px solid #ddd'
+            }}
+          ></video>
+          <p style={{ 
+            fontSize: '1.1rem', 
+            fontWeight: 'bold', 
+            margin: '15px 0',
+            textAlign: 'center'
+          }}>
+            {scanStatus}
+          </p>
 
-          <div className="zoom-controls">
-            <button onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}>Zoom Out</button>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            gap: '15px',
+            width: '100%',
+            maxWidth: '500px'
+          }}>
+            <button 
+              onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}
+              style={{ 
+                fontSize: '1rem', 
+                padding: '8px 15px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Zoom Out
+            </button>
             <input
               type="range"
               min="0.5"
@@ -721,15 +821,45 @@ const exportDropdownItemsToExcel = async () => {
               step="0.1"
               value={zoomLevel}
               onChange={(e) => changeZoom(parseFloat(e.target.value))}
+              style={{ flex: 1 }}
             />
-            <button onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}>Zoom In</button>
+            <button 
+              onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}
+              style={{ 
+                fontSize: '1rem', 
+                padding: '8px 15px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Zoom In
+            </button>
           </div>
         </div>
       )}
 
+      {/* Dropdown Section */}
       {showDropdown && (
-        <div className="dropdown-container">
-          <select value={selectedProduct} onChange={handleProductSelect}>
+        <div style={{ 
+          padding: '15px',
+          backgroundColor: '#f5f5f5',
+          borderRadius: '8px'
+        }}>
+          <select 
+            value={selectedProduct} 
+            onChange={handleProductSelect}
+            style={{ 
+              fontSize: '1rem', 
+              padding: '10px', 
+              width: '100%',
+              maxWidth: '600px',
+              borderRadius: '4px',
+              border: '1px solid #ddd'
+            }}
+          >
             <option value="">Select a product</option>
             {products.map((product) => (
               <option key={product.barcode} value={product.barcode}>
@@ -740,28 +870,68 @@ const exportDropdownItemsToExcel = async () => {
         </div>
       )}
 
+      {/* Popup Modal */}
       {isPopupOpen && scannedProduct && (
-        <div className="modal-overlay">
-          <div className="modal-container">
+        <div style={{ 
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{ 
+            backgroundColor: 'white',
+            padding: '25px',
+            borderRadius: '8px',
+            width: '90%',
+            maxWidth: '500px',
+            position: 'relative'
+          }}>
             <button
-              className="modal-close-btn"
               onClick={() => {
                 setIsPopupOpen(false);
                 setInputQuantity('');
               }}
-              aria-label="Close"
+              style={{ 
+                position: 'absolute',
+                top: '10px',
+                right: '10px',
+                fontSize: '1.5rem',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
             >
               ×
             </button>
-            <h3 className="modal-title">Product Details</h3>
-            <div className="modal-content">
+            <h3 style={{ fontSize: '1.5rem', margin: '0 0 20px 0' }}>Product Details</h3>
+            <div style={{ fontSize: '1.1rem', marginBottom: '20px' }}>
               <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
               <p><strong>Name:</strong> {scannedProduct.name}</p>
               <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
               <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
               <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
               <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
-              <button className="modal-btn-confirm" onClick={() => handleConfirmQuantity(true)}>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button 
+                onClick={() => handleConfirmQuantity(true)}
+                style={{ 
+                  fontSize: '1rem',
+                  padding: '12px',
+                  backgroundColor: '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
                 Confirm Existing Quantity
               </button>
 
@@ -770,9 +940,26 @@ const exportDropdownItemsToExcel = async () => {
                 value={inputQuantity}
                 onChange={(e) => setInputQuantity(e.target.value)}
                 placeholder="Enter new quantity"
+                style={{ 
+                  fontSize: '1rem',
+                  padding: '12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px'
+                }}
               />
 
-              <button className="modal-btn-save" onClick={() => handleConfirmQuantity(false)}>
+              <button 
+                onClick={() => handleConfirmQuantity(false)}
+                style={{ 
+                  fontSize: '1rem',
+                  padding: '12px',
+                  backgroundColor: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
                 Save Quantity
               </button>
             </div>
@@ -780,83 +967,250 @@ const exportDropdownItemsToExcel = async () => {
         </div>
       )}
 
-      <div className="table-container">
-      <h2>
-  Remaining Stock for {String(startDate.day).padStart(2, '0')}/{String(startDate.month).padStart(2, '0')}/{startDate.year} to {String(endDate.day).padStart(2, '0')}/{String(endDate.month).padStart(2, '0')}/{endDate.year}
-</h2>
-        <table>
-          <thead>
-            <tr>
-              {['Barcode', 'Name', 'Initial_Quantity', 'Sold_Quantity', 'Remaining_Quantity', 'Recorded_Quantity', 'Status'].map((key) => (
-                <th key={key} onClick={() => handleSort(key)} style={{ cursor: 'pointer' }}>
-                  {key} {sortConfig.key === key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-                </th>
-              ))}
-              <th>Actions</th>
-            </tr>
-          </thead>
-           
-          <tbody>
-            {/* {sortedTableData().map((row, index) => ( */}
-              {getFilteredData().map((row, index) => (
-              <tr key={`${row.Barcode}-${index}`} className={editingRow === index ? 'editing-row' : ''}>
-                <td>{row.Barcode}</td>
-                <td>{row.Name}</td>
-                <td>{row.Initial_Quantity}</td>
-                <td>
-                  {editingRow === index ? (
-                    <input
-                      type="number"
-                      min="0"
-                      value={row.Sold_Quantity}
-                      onChange={(e) => handleChange(index, 'Sold_Quantity', parseInt(e.target.value) || 0)}
-                    />
-                  ) : (
-                    row.Sold_Quantity
-                  )}
-                </td>
-                <td>{row.Remaining_Quantity}</td>
-                <td>
-                  {editingRow === index ? (
-                    <input
-                      type="number"
-                      min="0"
-                      value={row.Recorded_Quantity}
-                      onChange={(e) => handleChange(index, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
-                    />
-                  ) : (
-                    row.Recorded_Quantity
-                  )}
-                </td>
-                <td>
-                  {editingRow === index ? (
-                    <select
-                      value={row.Status}
-                      onChange={(e) => handleChange(index, 'Status', e.target.value)}
-                    >
-                      <option value="Not Confirmed">Not Confirmed</option>
-                      <option value="Confirmed">Confirmed</option>
-                    </select>
-                  ) : (
-                    row.Status
-                  )}
-                </td>
-                <td>
-                  {editingRow === index ? (
-                    <>
-                      <button onClick={() => handleSave(index)}>Save</button>
-                      <button onClick={() => setEditingRow(null)}>Cancel</button>
-                    </>
-                  ) : (
-                    <button onClick={() => handleEdit(index)}>Edit</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      {/* Table Section */}
+     {/* Table Section */}
+<div style={{ 
+  width: '100%',
+  overflowX: 'auto',
+  marginTop: '20px'
+}}>
+  <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>
+    Remaining Stock for {String(startDate.day).padStart(2, '0')}/{String(startDate.month).padStart(2, '0')}/{startDate.year} to {String(endDate.day).padStart(2, '0')}/{String(endDate.month).padStart(2, '0')}/{endDate.year}
+  </h2>
+  
+  <div style={{ 
+    width: '100%',
+    maxHeight: '70vh',
+    overflow: 'auto',
+    border: '1px solid #ddd',
+    borderRadius: '8px'
+  }}>
+    <table style={{ 
+      width: '100%',
+      borderCollapse: 'collapse',
+      fontSize: '0.95rem'
+    }}>
+      <thead>
+        <tr style={{ backgroundColor: '#f2f2f2', position: 'sticky', top: 0 }}>
+          <th 
+            onClick={() => handleSort('Barcode')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'left',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Barcode {sortConfig.key === 'Barcode' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th 
+            onClick={() => handleSort('Name')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'left',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer'
+            }}
+          >
+            Name {sortConfig.key === 'Name' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th 
+            onClick={() => handleSort('Initial_Quantity')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'right',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Initial Quantity {sortConfig.key === 'Initial_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th 
+            onClick={() => handleSort('Sold_Quantity')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'right',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Sold Quantity {sortConfig.key === 'Sold_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th 
+            onClick={() => handleSort('Remaining_Quantity')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'right',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Remaining Quantity {sortConfig.key === 'Remaining_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th 
+            onClick={() => handleSort('Recorded_Quantity')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'right',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Recorded Quantity {sortConfig.key === 'Recorded_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th 
+            onClick={() => handleSort('Status')}
+            style={{ 
+              padding: '12px 8px',
+              textAlign: 'left',
+              borderBottom: '1px solid #ddd',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Status {sortConfig.key === 'Status' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th style={{ 
+            padding: '12px 8px',
+            textAlign: 'center',
+            borderBottom: '1px solid #ddd',
+            whiteSpace: 'nowrap'
+          }}>
+            Actions
+          </th>
+        </tr>
+      </thead>
+       
+      <tbody>
+        {getFilteredData().map((row, index) => (
+          <tr 
+            key={`${row.Barcode}-${index}`} 
+            style={{ 
+              borderBottom: '1px solid #ddd',
+              backgroundColor: editingRow === index ? '#f0f7ff' : 'transparent',
+              transition: 'background-color 0.2s'
+            }}
+          >
+            <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', textAlign: 'left' }}>{row.Barcode}</td>
+            <td style={{ padding: '10px 8px', textAlign: 'left' }}>{row.Name}</td>
+            <td style={{ padding: '10px 8px', textAlign: 'right' }}>{row.Initial_Quantity}</td>
+            <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+              {editingRow === index ? (
+                <input
+                  type="number"
+                  min="0"
+                  value={row.Sold_Quantity}
+                  onChange={(e) => handleChange(index, 'Sold_Quantity', parseInt(e.target.value) || 0)}
+                  style={{ 
+                    width: '80px',
+                    padding: '5px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    textAlign: 'right'
+                  }}
+                />
+              ) : (
+                row.Sold_Quantity
+              )}
+            </td>
+            <td style={{ padding: '10px 8px', textAlign: 'right' }}>{row.Remaining_Quantity}</td>
+            <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+              {editingRow === index ? (
+                <input
+                  type="number"
+                  min="0"
+                  value={row.Recorded_Quantity}
+                  onChange={(e) => handleChange(index, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
+                  style={{ 
+                    width: '80px',
+                    padding: '5px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    textAlign: 'right'
+                  }}
+                />
+              ) : (
+                row.Recorded_Quantity
+              )}
+            </td>
+            <td style={{ padding: '10px 8px', textAlign: 'left' }}>
+              {editingRow === index ? (
+                <select
+                  value={row.Status}
+                  onChange={(e) => handleChange(index, 'Status', e.target.value)}
+                  style={{ 
+                    padding: '5px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    minWidth: '120px'
+                  }}
+                >
+                  <option value="Not Confirmed">Not Confirmed</option>
+                  <option value="Confirmed">Confirmed</option>
+                </select>
+              ) : (
+                row.Status
+              )}
+            </td>
+            <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', textAlign: 'center' }}>
+              {editingRow === index ? (
+                <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
+                  <button 
+                    onClick={() => handleSave(index)}
+                    style={{ 
+                      padding: '5px 10px',
+                      backgroundColor: '#4CAF50',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Save
+                  </button>
+                  <button 
+                    onClick={() => setEditingRow(null)}
+                    style={{ 
+                      padding: '5px 10px',
+                      backgroundColor: '#f44336',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => handleEdit(index)}
+                  style={{ 
+                    padding: '5px 10px',
+                    backgroundColor: '#2196F3',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Edit
+                </button>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  </div>
+  </div>
   );
 };
 

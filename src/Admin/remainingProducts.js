@@ -182,38 +182,92 @@ const RemainingProducts = () => {
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
   };
 
-  const handleConfirmQuantity = (useExisting = false) => {
-    let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
+  // const handleConfirmQuantity = (useExisting = false) => {
+  //   let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
 
-    // Validation check removed to allow zero quantity
+  //   // Validation check removed to allow zero quantity
+  //   if (isNaN(finalQuantity)) {
+  //     alert('Please enter a valid quantity.');
+  //     return;
+  //   }
+
+  //   const dateKey = getCurrentDateKey();
+  //   const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
+    
+  //   // Still save to month-based structure for backward compatibility
+  //   const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+
+  //   const status = useExisting ? "Confirmed" : "Not Confirmed";
+
+  //   set(productRef, {
+  //     barcode: scannedProduct.barcode,
+  //     name: scannedProduct.name,
+  //     recordedQuantity: finalQuantity,
+  //     status: status,
+  //     recordedDate: dateKey // Add this to track when the quantity was recorded
+  //   })
+  //     .then(() => {
+  //       console.log('Data saved successfully');
+  //       setRemainingQuantity(finalQuantity);
+  //       setIsPopupOpen(false);
+  //       setInputQuantity('');
+  //       fetchTableData(); // Refresh table data after saving
+  //     })
+  //     .catch((error) => console.error('Error saving data:', error));
+  // };
+
+  const handleConfirmQuantity = async (useExisting = false) => {
+    let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
+  
     if (isNaN(finalQuantity)) {
       alert('Please enter a valid quantity.');
       return;
     }
-
+  
     const dateKey = getCurrentDateKey();
     const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
-    
-    // Still save to month-based structure for backward compatibility
     const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
-
-    const status = useExisting ? "Confirmed" : "Not Confirmed";
-
-    set(productRef, {
-      barcode: scannedProduct.barcode,
-      name: scannedProduct.name,
-      recordedQuantity: finalQuantity,
-      status: status,
-      recordedDate: dateKey // Add this to track when the quantity was recorded
-    })
-      .then(() => {
-        console.log('Data saved successfully');
-        setRemainingQuantity(finalQuantity);
-        setIsPopupOpen(false);
-        setInputQuantity('');
-        fetchTableData(); // Refresh table data after saving
-      })
-      .catch((error) => console.error('Error saving data:', error));
+    const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
+    const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
+  
+    try {
+      // Get product's initial quantity
+      const productSnapshot = await get(productMainRef);
+      if (!productSnapshot.exists()) {
+        alert('Product not found.');
+        return;
+      }
+  
+      const product = productSnapshot.val();
+      const initialQuantity = product.quantity;
+  
+      const newSoldQuantity = initialQuantity - finalQuantity;
+  
+      // Update sold item
+      await set(soldItemsRef, {
+        barcode: scannedProduct.barcode,
+        name: scannedProduct.name,
+        quantity: newSoldQuantity,
+        date: dateKey
+      });
+  
+      // Update remaining stock
+      await set(productRef, {
+        barcode: scannedProduct.barcode,
+        name: scannedProduct.name,
+        recordedQuantity: finalQuantity,
+        status: useExisting ? 'Confirmed' : 'Not Confirmed',
+        recordedDate: dateKey
+      });
+  
+      console.log('Data saved successfully');
+      setRemainingQuantity(finalQuantity);
+      setIsPopupOpen(false);
+      setInputQuantity('');
+      fetchTableData(); // Refresh table data after saving
+    } catch (error) {
+      console.error('Error saving data:', error);
+    }
   };
 
   useEffect(() => {

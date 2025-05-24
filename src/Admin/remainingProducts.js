@@ -537,13 +537,27 @@ const RemainingProducts = () => {
     }
   };
 
+  // const handleChange = (index, field, value) => {
+  //   setTableData(prevData => {
+  //     const newData = [...prevData];
+  //     // Create a new object for the row we're editing
+  //     newData[index] = { ...newData[index], [field]: value };
+      
+  //     // Only auto-update Remaining_Quantity if Sold_Quantity changes
+  //     if (field === 'Sold_Quantity') {
+  //       newData[index].Remaining_Quantity = newData[index].Initial_Quantity - value;
+  //     }
+      
+  //     return newData;
+  //   });
+  // };
+
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
       const newData = [...prevData];
-      // Create a new object for the row we're editing
       newData[index] = { ...newData[index], [field]: value };
       
-      // Only auto-update Remaining_Quantity if Sold_Quantity changes
+      // Auto-update logic for quantities
       if (field === 'Sold_Quantity') {
         newData[index].Remaining_Quantity = newData[index].Initial_Quantity - value;
       }
@@ -1194,19 +1208,33 @@ const RemainingProducts = () => {
             </td>
             <td style={{ padding: '10px 8px', textAlign: 'left' }}>
               {editingRow === index ? (
+                // <select
+                //   value={row.Status}
+                //   onChange={(e) => handleChange(index, 'Status', e.target.value)}
+                //   style={{ 
+                //     padding: '5px',
+                //     border: '1px solid #ddd',
+                //     borderRadius: '4px',
+                //     minWidth: '120px'
+                //   }}
+                // >
+                //   <option value="Not Confirmed">Not Confirmed</option>
+                //   <option value="Confirmed">Confirmed</option>
+                // </select>
+
                 <select
-                  value={row.Status}
-                  onChange={(e) => handleChange(index, 'Status', e.target.value)}
-                  style={{ 
-                    padding: '5px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    minWidth: '120px'
-                  }}
-                >
-                  <option value="Not Confirmed">Not Confirmed</option>
-                  <option value="Confirmed">Confirmed</option>
-                </select>
+  value={row.Status}
+  onChange={(e) => handleChange(index, 'Status', e.target.value)}
+  style={{ 
+    padding: '5px',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    minWidth: '120px'
+  }}
+>
+  <option value="Not Confirmed">Not Confirmed</option>
+  <option value="Confirmed">Confirmed</option>
+</select>
               ) : (
                 row.Status
               )}

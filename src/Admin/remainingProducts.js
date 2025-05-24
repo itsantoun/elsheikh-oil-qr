@@ -967,12 +967,13 @@ const RemainingProducts = () => {
         </div>
       )}
 
-      {/* Table Section */}
      {/* Table Section */}
-<div style={{ 
+     <div style={{ 
   width: '100%',
   overflowX: 'auto',
-  marginTop: '20px'
+  marginTop: '20px',
+  height: '70vh', // Fixed height
+  overflowY: 'auto' // Vertical scroll
 }}>
   <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>
     Remaining Stock for {String(startDate.day).padStart(2, '0')}/{String(startDate.month).padStart(2, '0')}/{startDate.year} to {String(endDate.day).padStart(2, '0')}/{String(endDate.month).padStart(2, '0')}/{endDate.year}
@@ -980,7 +981,6 @@ const RemainingProducts = () => {
   
   <div style={{ 
     width: '100%',
-    maxHeight: '70vh',
     overflow: 'auto',
     border: '1px solid #ddd',
     borderRadius: '8px'

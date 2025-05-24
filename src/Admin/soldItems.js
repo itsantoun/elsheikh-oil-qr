@@ -201,48 +201,6 @@ if (productsSnapshot.exists()) {
       fetchCustomersAndSoldItems();
     }, []);
     
-//     // Handle Filtering
-//     useEffect(() => {
-//       let filtered = [...soldItems];
-    
-//       if (filterType === 'Customer' && searchTerm) {
-//         filtered = filtered.filter((item) =>
-//           item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
-//         );
-//       } else if (filterType === 'Date' && dateFilter) {
-//         filtered = filtered.filter(
-//           (item) =>
-//             new Date(item.dateScanned).toLocaleDateString() ===
-//             new Date(dateFilter).toLocaleDateString()
-//         );
-//       } else if (filterType === 'Month' && monthFilter) {
-//         filtered = filtered.filter(
-//           (item) =>
-//             new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
-//         );
-//       } else if (filterType === 'By Unpaid') {
-//         filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
-//       } else if (filterType === 'By Stock') {
-//         filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
-//       } else if (filterType === 'By Paid') { // New filter logic for Paid status
-//         filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
-//       } else if (filterType === 'By Product' && searchTerm) { // New filter logic for Products
-//         filtered = filtered.filter((item) =>
-//           item.name?.toLowerCase().includes(searchTerm.toLowerCase())
-//         );
-        
-//     // Apply check filter
-//   if (checkFilter === 'checked') {
-//     filtered = filtered.filter((item) => checkedItems.includes(item.id));
-//   } else if (checkFilter === 'unchecked') {
-//     filtered = filtered.filter((item) => !checkedItems.includes(item.id));
-//   }
-// }
-    
-// setFilteredItems(filtered);
-// }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
-
-// Handle Filtering
 useEffect(() => {
   let filtered = [...soldItems];
 
@@ -383,6 +341,46 @@ useEffect(() => {
       link.click();
       document.body.removeChild(link);
     };
+
+    const updateRemainingStock = async (productName, quantitySold) => {
+      try {
+        // Find the product by name to get its barcode
+        const productsRef = ref(database, 'products');
+        const snapshot = await get(productsRef);
+        
+        if (snapshot.exists()) {
+          const productsData = snapshot.val();
+          const productEntry = Object.entries(productsData).find(
+            ([key, product]) => product.name.toLowerCase() === productName.toLowerCase()
+          );
+          
+          if (productEntry) {
+            const [productId, productData] = productEntry;
+            const currentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
+            const remainingStockRef = ref(database, `remainingStock/${currentMonthKey}/${productId}`);
+            
+            // Get current remaining stock data
+            const remainingSnapshot = await get(remainingStockRef);
+            let currentRecordedQuantity = 0;
+            
+            if (remainingSnapshot.exists()) {
+              currentRecordedQuantity = remainingSnapshot.val().recordedQuantity || 0;
+            }
+            
+            // Update the remaining quantity
+            await set(remainingStockRef, {
+              barcode: productId,
+              name: productData.name,
+              recordedQuantity: currentRecordedQuantity - quantitySold,
+              status: 'Not Confirmed',
+              lastUpdated: new Date().toISOString()
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error updating remaining stock:', error);
+      }
+    };
     
     // Show Confirmation Pop-Up
     const handleDeleteConfirmation = (itemId) => {
@@ -403,39 +401,7 @@ useEffect(() => {
       setItemIdToDelete(null);
     };
 
-    // // Handle Add Form Input Changes
-    // const handleInputChange = (e) => {
-    //   const { name, value } = e.target;
-    //   setNewItem({
-    //     ...newItem,
-    //     [name]: value,
-    //   });
 
-    //   // Auto-fill price and cost if a product is selected
-    //   if (name === 'name') {
-    //     const selectedProduct = products.find(p => p.name === value);
-    //     if (selectedProduct) {
-    //       setNewItem(prev => ({
-    //         ...prev,
-    //         name: value,
-    //         price: selectedProduct.price || '',
-    //         cost: selectedProduct.cost || '',
-    //         totalCost: prev.quantity * (selectedProduct.price || 0)
-    //       }));
-    //     }
-    //   }
-
-    //   // Update total cost when quantity or price changes
-    //   if (name === 'quantity' || name === 'price') {
-    //     const quantity = name === 'quantity' ? Number(value) : Number(newItem.quantity);
-    //     const price = name === 'price' ? Number(value) : Number(newItem.price);
-    //     setNewItem(prev => ({
-    //       ...prev,
-    //       [name]: value,
-    //       totalCost: (quantity * price).toString()
-    //     }));
-    //   }
-    // };
 
     const handleInputChange = async (e) => {
       const { name, value } = e.target;
@@ -512,67 +478,6 @@ useEffect(() => {
       });
     };
 
-    // // Submit New Item
-    // const handleSubmitNewItem = async (e) => {
-    //   e.preventDefault();
-      
-    //   try {
-    //     // Validation
-    //     if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.price) {
-    //       setErrorMessage('Please fill in all required fields.');
-    //       setTimeout(() => setErrorMessage(null), 3000);
-    //       return;
-    //     }
-
-    //     // Add the current user as the one who added this item
-    //     const itemToAdd = {
-    //       ...newItem,
-    //       scannedBy: user?.email || 'Manual Entry',
-    //       quantity: Number(newItem.quantity),
-    //       price: Number(newItem.price),
-    //       cost: Number(newItem.cost),
-    //       totalCost: Number(newItem.totalCost),
-    //       manuallyAdded: true,
-    //       addedAt: new Date().toISOString()
-    //     };
-
-    //     // Push to database with a new unique key
-    //     const newItemRef = push(ref(database, 'SoldItems'));
-    //     await set(newItemRef, itemToAdd);
-
-    //     // Add to the local state with the new ID
-    //     const newItemWithId = {
-    //       id: newItemRef.key,
-    //       ...itemToAdd
-    //     };
-        
-    //     setSoldItems([...soldItems, newItemWithId]);
-    //     setFilteredItems([...filteredItems, newItemWithId]);
-        
-    //     // Reset form
-    //     setNewItem({
-    //       customerName: '',
-    //       name: '',
-    //       quantity: 1,
-    //       price: '',
-    //       cost: '',
-    //       totalCost: '',
-    //       remark: '',
-    //       paymentStatus: 'Paid',
-    //       dateScanned: new Date().toISOString()
-    //     });
-        
-    //     setSuccessMessage('Item added successfully');
-    //     setTimeout(() => setSuccessMessage(null), 3000);
-        
-    //     // Hide form after successful addition
-    //     setShowAddForm(false);
-    //   } catch (error) {
-    //     console.error('Error adding new item:', error);
-    //     setErrorMessage('Failed to add item. Please try again.');
-    //     setTimeout(() => setErrorMessage(null), 3000);
-    //   }
-    // };
 
     const handleSubmitNewItem = async (e) => {
       e.preventDefault();
@@ -597,6 +502,9 @@ useEffect(() => {
     
         const newItemRef = push(ref(database, 'SoldItems'));
         await set(newItemRef, itemToAdd);
+    
+        // Update remaining stock
+        await updateRemainingStock(newItem.name, Number(newItem.quantity));
     
         const newItemWithId = {
           id: newItemRef.key,

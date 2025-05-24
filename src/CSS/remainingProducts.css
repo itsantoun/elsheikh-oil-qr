@@ -198,8 +198,12 @@
 .table-container {
   margin-top: 1.5rem;
   overflow-x: auto;
+  height: 70vh; /* Add fixed height */
+  overflow-y: auto; /* Enable vertical scrolling */
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px var(--shadow-color);
 }
-
 .table-container h2 {
   color: var(--primary-color);
   font-size: 1.3rem;
@@ -210,20 +214,22 @@ table {
   width: 100%;
   border-collapse: collapse;
   background: white;
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px var(--shadow-color);
   font-size: 0.9rem;
 }
 
+
 th {
+  position: sticky; /* Make headers stick when scrolling */
+  top: 0;
   background: var(--primary-gradient);
   color: var(--light-text-color);
   padding: 0.8rem;
   text-align: left;
   font-weight: 500;
   cursor: pointer;
+  z-index: 10; /* Ensure headers stay above content when scrolling */
 }
+
 
 td {
   padding: 0.6rem 0.8rem;

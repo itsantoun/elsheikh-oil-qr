@@ -674,109 +674,141 @@ useEffect(() => {
 
         {/* Manual Add Form */}
         {showAddForm && (
-          <div className="manual-add-form">
-            <h3>Add New Sold Item</h3>
-            <form onSubmit={handleSubmitNewItem}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label htmlFor="customerName">Customer*</label>
-                  <select
-                    id="customerName"
-                    name="customerName"
-                    value={newItem.customerName}
-                    onChange={handleInputChange}
-                    required
-                  >
-                    <option value="">Select Customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.name}>
-                        {customer.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="form-group">
-                  <label htmlFor="name">Product*</label>
-                  <select
-  id="name"
-  name="name"
-  value={newItem.name}
-  onChange={handleInputChange}
+  <div className="manual-add-form">
+    <h3>Add New Sold Item</h3>
+    <form onSubmit={handleSubmitNewItem}>
+      <div className="form-row">
+        <div className="form-group">
+          <label htmlFor="customerName">Customer*</label>
+          <select
+            id="customerName"
+            name="customerName"
+            value={newItem.customerName}
+            onChange={handleInputChange}
+            required
+          >
+            <option value="">Select Customer</option>
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.name}>
+                {customer.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="name">Product*</label>
+          <select
+            id="name"
+            name="name"
+            value={newItem.name}
+            onChange={handleInputChange}
+            required
+          >
+            <option value="">Select Product</option>
+            {products.map((product) => (
+              <option key={product.id} value={product.name}>
+                {product.name} (Cost: ${product.itemCost})
+              </option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="quantity">Quantity*</label>
+          <input
+            type="number"
+            id="quantity"
+            name="quantity"
+            min="1"
+            value={newItem.quantity}
+            onChange={handleInputChange}
+            required
+          />
+        </div>
+      </div>
+      
+      <div className="form-row">
+        <div className="form-group">
+          <label htmlFor="dateScanned">Date*</label>
+          <input
+  type="date"
+  id="dateScanned"
+  name="dateScanned"
+  value={newItem.dateScanned.slice(0, 10)}  // Only YYYY-MM-DD
+  onChange={(e) => {
+    const date = new Date(e.target.value);
+    setNewItem({
+      ...newItem,
+      dateScanned: date.toISOString()  // Still store it in full ISO format if needed
+    });
+  }}
   required
->
-  <option value="">Select Product</option>
-  {products.map((product) => (
-    <option key={product.id} value={product.name}>
-      {product.name} (Cost: ${product.itemCost})
-    </option>
-  ))}
-</select>
-                </div>
-                
-                <div className="form-group">
-                  <label htmlFor="quantity">Quantity*</label>
-                  <input
-                    type="number"
-                    id="quantity"
-                    name="quantity"
-                    min="1"
-                    value={newItem.quantity}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-              </div>
-              
-              <div className="form-row">
-  
-  <div className="form-group">
-    <label htmlFor="cost">Item Cost*</label>
-    <input
-      type="number"
-      id="cost"
-      name="cost"
-      step="0.01"
-      value={newItem.cost}
-      onChange={handleInputChange}
-      required
-      readOnly  // Since it comes from Firebase
-    />
-  </div>
-  
-  <div className="form-group">
-    <label htmlFor="totalCost">Total Cost*</label>
-    <input
-      type="number"
-      id="totalCost"
-      name="totalCost"
-      step="0.01"
-      value={newItem.totalCost}
-      readOnly
-      required
-    />
-  </div>
-</div>
+/>
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="cost">Item Cost*</label>
+          <input
+            type="number"
+            id="cost"
+            name="cost"
+            step="0.01"
+            value={newItem.cost}
+            onChange={handleInputChange}
+            required
+            readOnly  // Since it comes from Firebase
+          />
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="totalCost">Total Cost*</label>
+          <input
+            type="number"
+            id="totalCost"
+            name="totalCost"
+            step="0.01"
+            value={newItem.totalCost}
+            readOnly
+            required
+          />
+        </div>
+      </div>
 
-<div className="form-group">
-    <label htmlFor="remark">Remarks</label>
-    <input
-      type="text"
-      id="remark"
-      name="remark"
-      value={newItem.remark}
-      onChange={handleInputChange}
-      placeholder="Additional notes (optional)"
-    />
+      <div className="form-group">
+        <label htmlFor="remark">Remarks</label>
+        <input
+          type="text"
+          id="remark"
+          name="remark"
+          value={newItem.remark}
+          onChange={handleInputChange}
+          placeholder="Additional notes (optional)"
+        />
+      </div>
+      
+      <div className="form-group">
+        <label htmlFor="paymentStatus">Payment Status*</label>
+        <select
+          id="paymentStatus"
+          name="paymentStatus"
+          value={newItem.paymentStatus}
+          onChange={handleInputChange}
+          required
+        >
+          <option value="Paid">Paid</option>
+          <option value="Unpaid">Unpaid</option>
+          <option value="Stock">Stock</option>
+        </select>
+      </div>
+      
+      <div className="form-buttons">
+        <button type="submit" className="submit-button">Add Item</button>
+        <button type="button" className="cancel-button" onClick={() => setShowAddForm(false)}>Cancel</button>
+      </div>
+    </form>
   </div>
-              
-              <div className="form-buttons">
-                <button type="submit" className="submit-button">Add Item</button>
-                <button type="button" className="cancel-button" onClick={() => setShowAddForm(false)}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
+)}
 
         {/* Sold Items Table */}
         <div className="sold-items-list">

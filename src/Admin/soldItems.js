@@ -15,6 +15,8 @@ const SoldItems = () => {
   const [customers, setCustomers] = useState([]);
   const [errorMessage, setErrorMessage] = useState(null);
 
+  const [newDate, setNewDate] = useState('');
+
   const [editingItem, setEditingItem] = useState(null); // State to track the item being edited
   const [newRemark, setNewRemark] = useState('');
   const [newTotalCost, setNewTotalCost] = useState('');
@@ -199,6 +201,14 @@ const SoldItems = () => {
   }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
 
   const handleEdit = (item) => {
+    // setEditingItem(item);
+    // setNewRemark(item.remark || '');
+    // setNewTotalCost(item.totalCost || '');
+    // setNewPaymentStatus(item.paymentStatus || 'Paid');
+    // setNewCustomer(item.customerName || '');
+    // setNewProductType(item.name || '');
+    // setNewQuantity(item.quantity || 0);
+
     setEditingItem(item);
     setNewRemark(item.remark || '');
     setNewTotalCost(item.totalCost || '');
@@ -206,7 +216,42 @@ const SoldItems = () => {
     setNewCustomer(item.customerName || '');
     setNewProductType(item.name || '');
     setNewQuantity(item.quantity || 0);
+    setNewDate(item.dateScanned || new Date().toISOString()); // Add this line
   };
+
+  // const saveEditedItem = async () => {
+  //   if (editingItem) {
+  //     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
+  //     try {
+  //       await update(itemRef, {
+  //         remark: newRemark,
+  //         totalCost: newTotalCost,
+  //         paymentStatus: newPaymentStatus,
+  //         customerName: newCustomer,
+  //         name: newProductType,
+  //         quantity: newQuantity,
+  //       });
+  //       const updatedItems = soldItems.map((item) =>
+  //         item.id === editingItem.id
+  //           ? {
+  //               ...item,
+  //               remark: newRemark,
+  //               totalCost: newTotalCost,
+  //               paymentStatus: newPaymentStatus,
+  //               customerName: newCustomer,
+  //               name: newProductType,
+  //               quantity: newQuantity,
+  //             }
+  //           : item
+  //       );
+  //       setSoldItems(updatedItems);
+  //       setFilteredItems(updatedItems);
+  //       setEditingItem(null);
+  //     } catch (error) {
+  //       console.error('Error updating the item:', error);
+  //     }
+  //   }
+  // };
 
   const saveEditedItem = async () => {
     if (editingItem) {
@@ -219,6 +264,7 @@ const SoldItems = () => {
           customerName: newCustomer,
           name: newProductType,
           quantity: newQuantity,
+          dateScanned: newDate, // Add this line
         });
         const updatedItems = soldItems.map((item) =>
           item.id === editingItem.id
@@ -230,6 +276,7 @@ const SoldItems = () => {
                 customerName: newCustomer,
                 name: newProductType,
                 quantity: newQuantity,
+                dateScanned: newDate, // Add this line
               }
             : item
         );
@@ -539,7 +586,7 @@ const SoldItems = () => {
             {filteredItems.map((item) => (
               <tr key={item.id} className={item.manuallyAdded ? "manually-added" : ""}>
                 <td>{formatDateTime(item.dateScanned)}</td>
-                <td>
+                {/* <td>
                   {editingItem && editingItem.id === item.id ? (
                     <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
                       <option value="">Select Customer</option>
@@ -556,7 +603,18 @@ const SoldItems = () => {
                   ) : (
                     item.customerName || 'N/A'
                   )}
-                  </td>
+                  </td> */}
+                  <td>
+  {editingItem && editingItem.id === item.id ? (
+    <input
+      type="datetime-local"
+      value={newDate ? newDate.slice(0, 16) : ''}
+      onChange={(e) => setNewDate(new Date(e.target.value).toISOString())}
+    />
+  ) : (
+    formatDateTime(item.dateScanned)
+  )}
+</td>
                   <td>
                     {editingItem && editingItem.id === item.id ? (
                       <input

@@ -515,9 +515,22 @@ const RemainingProducts = () => {
     }
   };
 
-  const handleEdit = (index) => {
-    setEditingRow(index);
+  // const handleEdit = (index) => {
+  //   setEditingRow(index);
+  // };
+
+  const handleEdit = (filteredIndex) => {
+    const filteredData = getFilteredData();
+    const actualRow = filteredData[filteredIndex];
+    
+    // Find the actual index in the original tableData array
+    const actualIndex = tableData.findIndex(row => row.Barcode === actualRow.Barcode);
+    
+    if (actualIndex !== -1) {
+      setEditingRow(actualIndex);
+    }
   };
+  
 
   // const handleSave = async (index) => {
   //   try {
@@ -550,24 +563,65 @@ const RemainingProducts = () => {
   //   }
   // };
 
-  const handleSave = async (index) => {
+  // const handleSave = async (index) => {
+  //   try {
+  //     const row = tableData[index];
+  //     const monthKey = `${endDate.year}-${endDate.month}`;
+      
+  //     // Reset editingRow before making database calls to prevent double-saving
+  //     setEditingRow(null);
+      
+  //     // Prepare the data to save - make sure Status is properly mapped
+  //     const updateData = {
+  //       barcode: row.Barcode,
+  //       name: row.Name,
+  //       recordedQuantity: Number(row.Recorded_Quantity) || 0,
+  //       status: row.Status || 'Not Confirmed', // This should now work properly
+  //       recordedDate: getCurrentDateKey()
+  //     };
+    
+  //     console.log('Saving data:', updateData); // Add this for debugging
+    
+  //     // Update the database
+  //     await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
+      
+  //     // Refresh the table data
+  //     await fetchTableData();
+  //   } catch (error) {
+  //     console.error('Error saving data:', error);
+  //     alert('Failed to save changes. Please try again.');
+  //     // Reset editing row if save fails
+  //     setEditingRow(null);
+  //   }
+  // };
+
+
+  const handleSave = async (filteredIndex) => {
     try {
-      const row = tableData[index];
+      const filteredData = getFilteredData();
+      const actualRow = filteredData[filteredIndex];
+      
+      // Find the actual index in the original tableData array
+      const actualIndex = tableData.findIndex(row => row.Barcode === actualRow.Barcode);
+      
+      if (actualIndex === -1) return; // Safety check
+      
+      const row = tableData[actualIndex];
       const monthKey = `${endDate.year}-${endDate.month}`;
       
-      // Reset editingRow before making database calls to prevent double-saving
+      // Reset editingRow before making database calls
       setEditingRow(null);
       
-      // Prepare the data to save - make sure Status is properly mapped
+      // Prepare the data to save
       const updateData = {
         barcode: row.Barcode,
         name: row.Name,
         recordedQuantity: Number(row.Recorded_Quantity) || 0,
-        status: row.Status || 'Not Confirmed', // This should now work properly
+        status: row.Status || 'Not Confirmed',
         recordedDate: getCurrentDateKey()
       };
     
-      console.log('Saving data:', updateData); // Add this for debugging
+      console.log('Saving data:', updateData);
     
       // Update the database
       await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
@@ -577,10 +631,11 @@ const RemainingProducts = () => {
     } catch (error) {
       console.error('Error saving data:', error);
       alert('Failed to save changes. Please try again.');
-      // Reset editing row if save fails
       setEditingRow(null);
     }
   };
+
+  
 
   const getFilteredData = () => {
     let filteredData = sortedTableData();
@@ -654,10 +709,36 @@ const RemainingProducts = () => {
   //   });
   // };
 
-  const handleChange = (index, field, value) => {
+  // const handleChange = (index, field, value) => {
+  //   setTableData(prevData => {
+  //     const newData = [...prevData];
+  //     const updatedRow = { ...newData[index] };
+      
+  //     // Update the specific field
+  //     updatedRow[field] = value;
+      
+  //     // Auto-update logic for quantities only
+  //     if (field === 'Sold_Quantity') {
+  //       updatedRow.Remaining_Quantity = updatedRow.Initial_Quantity - parseInt(value);
+  //     }
+      
+  //     newData[index] = updatedRow;
+  //     return newData;
+  //   });
+  // };
+
+  const handleChange = (filteredIndex, field, value) => {
+    const filteredData = getFilteredData();
+    const actualRow = filteredData[filteredIndex];
+    
+    // Find the actual index in the original tableData array
+    const actualIndex = tableData.findIndex(row => row.Barcode === actualRow.Barcode);
+    
+    if (actualIndex === -1) return; // Safety check
+    
     setTableData(prevData => {
       const newData = [...prevData];
-      const updatedRow = { ...newData[index] };
+      const updatedRow = { ...newData[actualIndex] };
       
       // Update the specific field
       updatedRow[field] = value;
@@ -667,7 +748,7 @@ const RemainingProducts = () => {
         updatedRow.Remaining_Quantity = updatedRow.Initial_Quantity - parseInt(value);
       }
       
-      newData[index] = updatedRow;
+      newData[actualIndex] = updatedRow;
       return newData;
     });
   };
@@ -1282,7 +1363,7 @@ const RemainingProducts = () => {
         </tr>
       </thead>
        
-      <tbody>
+      {/* <tbody>
         {getFilteredData().map((row, index) => (
           <tr 
             key={`${row.Barcode}-${index}`} 
@@ -1402,7 +1483,134 @@ const RemainingProducts = () => {
             </td>
           </tr>
         ))}
-      </tbody>
+      </tbody> */}
+
+<tbody>
+  {getFilteredData().map((row, filteredIndex) => {
+    // Find the actual index in original tableData for editing state
+    const actualIndex = tableData.findIndex(originalRow => originalRow.Barcode === row.Barcode);
+    const isEditing = editingRow === actualIndex;
+    
+    return (
+      <tr 
+        key={`${row.Barcode}-${filteredIndex}`} 
+        style={{ 
+          borderBottom: '1px solid #ddd',
+          backgroundColor: isEditing ? '#f0f7ff' : 'transparent',
+          transition: 'background-color 0.2s'
+        }}
+      >
+        <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', textAlign: 'left' }}>{row.Barcode}</td>
+        <td style={{ padding: '10px 8px', textAlign: 'left' }}>{row.Name}</td>
+        <td style={{ padding: '10px 8px', textAlign: 'right' }}>{row.Initial_Quantity}</td>
+        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+          {isEditing ? (
+            <input
+              type="number"
+              min="0"
+              value={row.Sold_Quantity}
+              onChange={(e) => handleChange(filteredIndex, 'Sold_Quantity', parseInt(e.target.value) || 0)}
+              style={{ 
+                width: '80px',
+                padding: '5px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                textAlign: 'right'
+              }}
+            />
+          ) : (
+            row.Sold_Quantity
+          )}
+        </td>
+        <td style={{ padding: '10px 8px', textAlign: 'right' }}>{row.Remaining_Quantity}</td>
+        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+          {isEditing ? (
+            <input
+              type="number"
+              min="0"
+              value={row.Recorded_Quantity}
+              onChange={(e) => handleChange(filteredIndex, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
+              style={{ 
+                width: '80px',
+                padding: '5px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                textAlign: 'right'
+              }}
+            />
+          ) : (
+            row.Recorded_Quantity
+          )}
+        </td>
+        <td style={{ padding: '10px 8px', textAlign: 'left' }}>
+          {isEditing ? (
+            <select
+              value={row.Status}
+              onChange={(e) => handleChange(filteredIndex, 'Status', e.target.value)}
+              style={{ 
+                padding: '5px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                minWidth: '120px'
+              }}
+            >
+              <option value="Not Confirmed">Not Confirmed</option>
+              <option value="Confirmed">Confirmed</option>
+            </select>
+          ) : (
+            row.Status
+          )}
+        </td>
+        <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', textAlign: 'center' }}>
+          {isEditing ? (
+            <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
+              <button 
+                onClick={() => handleSave(filteredIndex)}
+                style={{ 
+                  padding: '5px 10px',
+                  backgroundColor: '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+              <button 
+                onClick={() => setEditingRow(null)}
+                style={{ 
+                  padding: '5px 10px',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => handleEdit(filteredIndex)}
+              style={{ 
+                padding: '5px 10px',
+                backgroundColor: '#2196F3',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Edit
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
     </table>
   </div>
 

@@ -463,6 +463,37 @@ const RemainingProducts = () => {
     setEditingRow(index);
   };
 
+  // const handleSave = async (index) => {
+  //   try {
+  //     const row = tableData[index];
+  //     const monthKey = `${endDate.year}-${endDate.month}`;
+      
+  //     // Reset editingRow before making database calls to prevent double-saving
+  //     setEditingRow(null);
+      
+  //     // Prepare only the data we want to save
+  //     const updateData = {
+  //       barcode: row.Barcode,
+  //       name: row.Name,
+  //       recordedQuantity: Number(row.Recorded_Quantity) || 0,
+  //       status: row.Status || 'Not Confirmed',
+  //       recordedDate: getCurrentDateKey() // Add a timestamp of when the record was updated
+  //     };
+    
+  //     // Only update the specific fields we want
+  //     await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
+      
+  //     // Refresh to get any server-side calculations
+  //     fetchTableData();
+  //     // alert('Changes saved successfully!');
+  //   } catch (error) {
+  //     console.error('Error saving data:', error);
+  //     alert('Failed to save changes. Please try again.');
+  //     // Reset editing row if save fails
+  //     setEditingRow(null);
+  //   }
+  // };
+
   const handleSave = async (index) => {
     try {
       const row = tableData[index];
@@ -471,21 +502,20 @@ const RemainingProducts = () => {
       // Reset editingRow before making database calls to prevent double-saving
       setEditingRow(null);
       
-      // Prepare only the data we want to save
+      // Prepare the data to save
       const updateData = {
         barcode: row.Barcode,
         name: row.Name,
         recordedQuantity: Number(row.Recorded_Quantity) || 0,
-        status: row.Status || 'Not Confirmed',
-        recordedDate: getCurrentDateKey() // Add a timestamp of when the record was updated
+        status: row.Status || 'Not Confirmed', // Ensure status is properly included
+        recordedDate: getCurrentDateKey()
       };
     
-      // Only update the specific fields we want
+      // Update the database
       await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
       
-      // Refresh to get any server-side calculations
-      fetchTableData();
-      // alert('Changes saved successfully!');
+      // Refresh the table data
+      await fetchTableData();
     } catch (error) {
       console.error('Error saving data:', error);
       alert('Failed to save changes. Please try again.');
@@ -493,6 +523,7 @@ const RemainingProducts = () => {
       setEditingRow(null);
     }
   };
+
 
   const getFilteredData = () => {
     let filteredData = sortedTableData();
@@ -1208,21 +1239,8 @@ const RemainingProducts = () => {
             </td>
             <td style={{ padding: '10px 8px', textAlign: 'left' }}>
               {editingRow === index ? (
-                // <select
-                //   value={row.Status}
-                //   onChange={(e) => handleChange(index, 'Status', e.target.value)}
-                //   style={{ 
-                //     padding: '5px',
-                //     border: '1px solid #ddd',
-                //     borderRadius: '4px',
-                //     minWidth: '120px'
-                //   }}
-                // >
-                //   <option value="Not Confirmed">Not Confirmed</option>
-                //   <option value="Confirmed">Confirmed</option>
-                // </select>
 
-                <select
+               <select
   value={row.Status}
   onChange={(e) => handleChange(index, 'Status', e.target.value)}
   style={{ 

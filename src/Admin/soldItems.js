@@ -1,206 +1,197 @@
-  import React, { useState, useEffect, useContext } from 'react';
-  import { database } from '../Auth/firebase';
-  import { ref, set, get, update, remove, onValue, push } from 'firebase/database';
-  import { UserContext } from '../Auth/userContext'; // Import the context
-  import '../CSS/soldItems.css';
+import React, { useState, useEffect, useContext } from 'react';
+import { database } from '../Auth/firebase';
+import { ref, set, get, update, remove, onValue, push, child } from 'firebase/database';
+import { UserContext } from '../Auth/userContext'; // Import the context
+import '../CSS/soldItems.css';
 
-  const SoldItems = () => {
-    const { user } = useContext(UserContext); // Access the logged-in user
-    const [soldItems, setSoldItems] = useState([]);
-    const [filteredItems, setFilteredItems] = useState([]);
-    const [filterType, setFilterType] = useState('All');
-    const [searchTerm, setSearchTerm] = useState('');
-    const [dateFilter, setDateFilter] = useState('');
-    const [monthFilter, setMonthFilter] = useState('');
-    const [customers, setCustomers] = useState([]);
-    const [errorMessage, setErrorMessage] = useState(null);
+const SoldItems = () => {
+  const { user } = useContext(UserContext); // Access the logged-in user
+  const [soldItems, setSoldItems] = useState([]);
+  const [filteredItems, setFilteredItems] = useState([]);
+  const [filterType, setFilterType] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState('');
+  const [customers, setCustomers] = useState([]);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-    const [editingItem, setEditingItem] = useState(null); // State to track the item being edited
-    const [newRemark, setNewRemark] = useState('');
-    const [newTotalCost, setNewTotalCost] = useState('');
-    const [newPaymentStatus, setNewPaymentStatus] = useState('');
+  const [editingItem, setEditingItem] = useState(null); // State to track the item being edited
+  const [newRemark, setNewRemark] = useState('');
+  const [newTotalCost, setNewTotalCost] = useState('');
+  const [newPaymentStatus, setNewPaymentStatus] = useState('');
 
-    const [showConfirmation, setShowConfirmation] = useState(false); // Track confirmation modal visibility
-    const [itemIdToDelete, setItemIdToDelete] = useState(null);
+  const [showConfirmation, setShowConfirmation] = useState(false); // Track confirmation modal visibility
+  const [itemIdToDelete, setItemIdToDelete] = useState(null);
 
-    const [newCustomer, setNewCustomer] = useState('');
-    const [newProductType, setNewProductType] = useState('');
-    const [newQuantity, setNewQuantity] = useState('');
+  const [newCustomer, setNewCustomer] = useState('');
+  const [newProductType, setNewProductType] = useState('');
+  const [newQuantity, setNewQuantity] = useState('');
+  
+  const [checkedItems, setCheckedItems] = useState(() => {
+    const saved = localStorage.getItem('checkedSoldItems');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [checkFilter, setCheckFilter] = useState('all'); // 'all', 'checked', 'unchecked'
+
+  // State for manual add form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newItem, setNewItem] = useState({
+    customerName: '',
+    name: '',
+    quantity: 1,
+    itemCost: '', // Changed from 'cost' to 'itemCost' to match scanner
+    totalCost: '',
+    remark: '',
+    paymentStatus: 'Paid',
+    dateScanned: new Date().toISOString(),
+    barcode: '', // Add barcode field for consistency
+    price: '', // Add price field for consistency
+    category: '' // Add category field for consistency
+  });
+
+  const [products, setProducts] = useState([]);
+  const [successMessage, setSuccessMessage] = useState(null);
+
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0'); 
+    const month = String(date.getMonth() + 1).padStart(2, '0'); 
+    const year = date.getFullYear();
     
-    const [checkedItems, setCheckedItems] = useState(() => {
-      const saved = localStorage.getItem('checkedSoldItems');
-      return saved ? JSON.parse(saved) : [];
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12; // Convert to 12-hour format
+
+    return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
+  };
+
+  useEffect(() => {
+    const soldItemsRef = ref(database, 'SoldItems');
+
+    const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const updates = [];
+
+        for (const key in data) {
+          if (data[key].paymentStatus === 'Stock') {
+            const stockItem = data[key];
+            const transactionsRef = ref(database, `transactions/${key}`);
+
+            updates.push(
+              set(transactionsRef, {
+                ...stockItem,
+                movedToTransactionsAt: new Date().toISOString(),
+              }).then(() => remove(ref(database, `SoldItems/${key}`)))
+            );
+          }
+        }
+
+        await Promise.all(updates);
+      }
     });
-    const [checkFilter, setCheckFilter] = useState('all'); // 'all', 'checked', 'unchecked'
 
-    // State for manual add form
-    const [showAddForm, setShowAddForm] = useState(false);
-    const [newItem, setNewItem] = useState({
-      customerName: '',
-      name: '',
-      quantity: 1,
-      cost: '', // This will be populated with itemCost
-      totalCost: '',
-      remark: '',
-      paymentStatus: 'Paid',
-      dateScanned: new Date().toISOString()
-    });
+    return () => unsubscribe(); // Cleanup on unmount
+  }, []);
 
-    const [products, setProducts] = useState([]);
-    const [successMessage, setSuccessMessage] = useState(null);
-
-    const formatDateTime = (dateString) => {
-      const date = new Date(dateString);
-      const day = String(date.getDate()).padStart(2, '0'); 
-      const month = String(date.getMonth() + 1).padStart(2, '0'); 
-      const year = date.getFullYear();
-      
-      let hours = date.getHours();
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12 || 12; // Convert to 12-hour format
-
-      return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
-    };
-
-    useEffect(() => {
-      const soldItemsRef = ref(database, 'SoldItems');
-
-      const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
+  // Move stock items to transactions immediately
+  useEffect(() => {
+    const moveStockItems = async () => {
+      try {
+        const soldItemsRef = ref(database, 'SoldItems');
+        const snapshot = await get(soldItemsRef);
+        
         if (snapshot.exists()) {
           const data = snapshot.val();
-          const updates = [];
-
+          
           for (const key in data) {
             if (data[key].paymentStatus === 'Stock') {
               const stockItem = data[key];
               const transactionsRef = ref(database, `transactions/${key}`);
 
-              updates.push(
-                set(transactionsRef, {
-                  ...stockItem,
-                  movedToTransactionsAt: new Date().toISOString(),
-                }).then(() => remove(ref(database, `SoldItems/${key}`)))
-              );
+              // Move item to transactions
+              await set(transactionsRef, {
+                ...stockItem,
+                movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
+              });
+
+              // Remove from SoldItems
+              await remove(ref(database, `SoldItems/${key}`));
             }
           }
-
-          await Promise.all(updates);
         }
-      });
+      } catch (error) {
+        console.error('Error moving stock items:', error);
+      }
+    };
 
-      return () => unsubscribe(); // Cleanup on unmount
-    }, []);
+    moveStockItems();
+  }, []);
 
-    // Move stock items to transactions immediately
-    useEffect(() => {
-      const moveStockItems = async () => {
-        try {
-          const soldItemsRef = ref(database, 'SoldItems');
-          const snapshot = await get(soldItemsRef);
-          
-          if (snapshot.exists()) {
-            const data = snapshot.val();
-            
-            for (const key in data) {
-              if (data[key].paymentStatus === 'Stock') {
-                const stockItem = data[key];
-                const transactionsRef = ref(database, `transactions/${key}`);
+  useEffect(() => {
+    const fetchCustomersAndSoldItems = async () => {
+      try {
+        // Fetch customers data
+        const customersRef = ref(database, 'customers');
+        const customersSnapshot = await get(customersRef);
+        let customerList = [];
 
-                // Move item to transactions
-                await set(transactionsRef, {
-                  ...stockItem,
-                  movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
-                });
-
-                // Remove from SoldItems
-                await remove(ref(database, `SoldItems/${key}`));
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error moving stock items:', error);
+        if (customersSnapshot.exists()) {
+          const customersData = customersSnapshot.val();
+          customerList = Object.keys(customersData).map((key) => ({
+            id: key,
+            name: customersData[key].name, // English name
+            nameArabic: customersData[key].nameArabic, // Arabic name
+          }));
         }
-      };
 
-      moveStockItems();
-    }, []);
+        setCustomers(customerList);
 
-    useEffect(() => {
-      const fetchCustomersAndSoldItems = async () => {
-        try {
-          // Fetch customers data
-          const customersRef = ref(database, 'customers');
-          const customersSnapshot = await get(customersRef);
-          let customerList = [];
-    
-          if (customersSnapshot.exists()) {
-            const customersData = customersSnapshot.val();
-            customerList = Object.keys(customersData).map((key) => ({
-              id: key,
-              name: customersData[key].name, // English name
-              nameArabic: customersData[key].nameArabic, // Arabic name
-            }));
-          }
-    
-          setCustomers(customerList);
-    
-          // Fetch products for dropdown in add form
-          // const productsRef = ref(database, 'products');
-          // const productsSnapshot = await get(productsRef);
-          // if (productsSnapshot.exists()) {
-          //   const productsData = productsSnapshot.val();
-          //   const productsList = Object.keys(productsData).map((key) => ({
-          //     id: key,
-          //     name: productsData[key].name,
-          //     cost: productsData[key].cost,
-          //     price: productsData[key].price,
-          //   }));
-          //   setProducts(productsList);
-          // }
-
-          // In your fetchCustomersAndSoldItems function:
-const productsRef = ref(database, 'products');
-const productsSnapshot = await get(productsRef);
-if (productsSnapshot.exists()) {
-  const productsData = productsSnapshot.val();
-  const productsList = Object.keys(productsData).map((key) => ({
-    id: key,
-    name: productsData[key].name,
-    itemCost: productsData[key].itemCost
-  }));
-  setProducts(productsList);
-}
-    
-          // Fetch Sold Items
-          const soldItemsRef = ref(database, 'SoldItems');
-          const soldItemsSnapshot = await get(soldItemsRef);
-          if (soldItemsSnapshot.exists()) {
-            const soldData = soldItemsSnapshot.val();
-            const soldItemList = Object.keys(soldData).map((key) => ({
-              id: key,
-              ...soldData[key],
-              customerName:
-                customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-                soldData[key].customerName, // Convert Arabic to English if found
-            }));
-    
-            setSoldItems(soldItemList);
-            setFilteredItems(soldItemList);
-          } else {
-            setSoldItems([]);
-            setFilteredItems([]);
-          }
-        } catch (error) {
-          console.error('Error fetching data:', error);
-          setErrorMessage('Failed to fetch sold items.');
-          setTimeout(() => setErrorMessage(null), 3000);
+        // Fetch products for dropdown in add form - Updated to fetch from products/{barcode}
+        const productsRef = ref(database, 'products');
+        const productsSnapshot = await get(productsRef);
+        if (productsSnapshot.exists()) {
+          const productsData = productsSnapshot.val();
+          const productsList = Object.keys(productsData).map((barcode) => ({
+            barcode: barcode, // This is the barcode (key)
+            name: productsData[barcode].name,
+            itemCost: productsData[barcode].itemCost,
+            price: productsData[barcode].price,
+            category: productsData[barcode].category
+          }));
+          setProducts(productsList);
         }
-      };
-    
-      fetchCustomersAndSoldItems();
-    }, []);
-    
+
+        // Fetch Sold Items
+        const soldItemsRef = ref(database, 'SoldItems');
+        const soldItemsSnapshot = await get(soldItemsRef);
+        if (soldItemsSnapshot.exists()) {
+          const soldData = soldItemsSnapshot.val();
+          const soldItemList = Object.keys(soldData).map((key) => ({
+            id: key,
+            ...soldData[key],
+            customerName:
+              customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+              soldData[key].customerName, // Convert Arabic to English if found
+          }));
+
+          setSoldItems(soldItemList);
+          setFilteredItems(soldItemList);
+        } else {
+          setSoldItems([]);
+          setFilteredItems([]);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setErrorMessage('Failed to fetch sold items.');
+        setTimeout(() => setErrorMessage(null), 3000);
+      }
+    };
+
+    fetchCustomersAndSoldItems();
+  }, []);
+  
 useEffect(() => {
   let filtered = [...soldItems];
 
@@ -241,617 +232,678 @@ useEffect(() => {
   setFilteredItems(filtered);
 }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
 
-    const handleEdit = (item) => {
-      setEditingItem(item);
-      setNewRemark(item.remark || '');
-      setNewTotalCost(item.totalCost || '');
-      setNewPaymentStatus(item.paymentStatus || 'Paid');
-      setNewCustomer(item.customerName || '');
-      setNewProductType(item.name || '');
-      setNewQuantity(item.quantity || 0);
-    };
+  const handleEdit = (item) => {
+    setEditingItem(item);
+    setNewRemark(item.remark || '');
+    setNewTotalCost(item.totalCost || '');
+    setNewPaymentStatus(item.paymentStatus || 'Paid');
+    setNewCustomer(item.customerName || '');
+    setNewProductType(item.name || '');
+    setNewQuantity(item.quantity || 0);
+  };
 
-    const saveEditedItem = async () => {
-      if (editingItem) {
-        const itemRef = ref(database, `SoldItems/${editingItem.id}`);
-        try {
-          await update(itemRef, {
-            remark: newRemark,
-            totalCost: newTotalCost,
-            paymentStatus: newPaymentStatus,
-            customerName: newCustomer,
-            name: newProductType,
-            quantity: newQuantity,
+  const saveEditedItem = async () => {
+    if (editingItem) {
+      const itemRef = ref(database, `SoldItems/${editingItem.id}`);
+      try {
+        await update(itemRef, {
+          remark: newRemark,
+          totalCost: newTotalCost,
+          paymentStatus: newPaymentStatus,
+          customerName: newCustomer,
+          name: newProductType,
+          quantity: newQuantity,
+        });
+        const updatedItems = soldItems.map((item) =>
+          item.id === editingItem.id
+            ? {
+                ...item,
+                remark: newRemark,
+                totalCost: newTotalCost,
+                paymentStatus: newPaymentStatus,
+                customerName: newCustomer,
+                name: newProductType,
+                quantity: newQuantity,
+              }
+            : item
+        );
+        setSoldItems(updatedItems);
+        setFilteredItems(updatedItems);
+        setEditingItem(null);
+      } catch (error) {
+        console.error('Error updating the item:', error);
+      }
+    }
+  };
+
+  // Handle Delete Action
+  // const handleDelete = async (itemId) => {
+  //   const itemRef = ref(database, `SoldItems/${itemId}`);
+  //   await remove(itemRef);
+  //   setSoldItems(soldItems.filter((item) => item.id !== itemId)); 
+  //   setFilteredItems(filteredItems.filter((item) => item.id !== itemId)); 
+  //   setShowConfirmation(false);
+  // };
+
+  const handleDelete = async (itemId) => {
+    try {
+      // Find the item being deleted
+      const itemToDelete = soldItems.find(item => item.id === itemId);
+      
+      if (!itemToDelete) {
+        console.error('Item not found');
+        return;
+      }
+  
+      // 1. Update the stock in the products database
+      if (itemToDelete.barcode) {
+        const productRef = ref(database, `products/${itemToDelete.barcode}`);
+        const snapshot = await get(productRef);
+        
+        if (snapshot.exists()) {
+          const productData = snapshot.val();
+          const currentQuantity = productData.quantity || 0;
+          const newQuantity = currentQuantity + Number(itemToDelete.quantity);
+          
+          await update(productRef, {
+            quantity: newQuantity
           });
-          const updatedItems = soldItems.map((item) =>
-            item.id === editingItem.id
-              ? {
-                  ...item,
-                  remark: newRemark,
-                  totalCost: newTotalCost,
-                  paymentStatus: newPaymentStatus,
-                  customerName: newCustomer,
-                  name: newProductType,
-                  quantity: newQuantity,
-                }
-              : item
-          );
-          setSoldItems(updatedItems);
-          setFilteredItems(updatedItems);
-          setEditingItem(null);
-        } catch (error) {
-          console.error('Error updating the item:', error);
         }
       }
-    };
-
-    // Handle Delete Action
-    const handleDelete = async (itemId) => {
+  
+      // 2. Update remaining stock (if applicable)
+      if (itemToDelete.name) {
+        await updateRemainingStock(itemToDelete.name, -Number(itemToDelete.quantity)); // Negative quantity to increase stock
+      }
+  
+      // 3. Delete the sold item
       const itemRef = ref(database, `SoldItems/${itemId}`);
       await remove(itemRef);
+      
+      // Update local state
       setSoldItems(soldItems.filter((item) => item.id !== itemId)); 
       setFilteredItems(filteredItems.filter((item) => item.id !== itemId)); 
       setShowConfirmation(false);
-    };
+      
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      setErrorMessage('Failed to delete item. Please try again.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
+  };
 
-    const exportToCSV = () => {
-      if (filteredItems.length === 0) {
-        alert("No data to export.");
-        return;
-      }
-    
-      const headers = [
-        "Date",
-        "Customer",
-        "Product Type",
-        "Quantity Sold",
-        "Price",
-        "Item Cost",
-        "Employee",
-        "Remarks",
-        "Total Cost",
-        "Payment Status",
-      ];
-    
-      const rows = filteredItems.map((item) => [
-        formatDateTime(item.dateScanned), // Ensure proper date formatting
-        item.customerName || "N/A",
-        item.name || "N/A",
-        item.quantity || 0,
-        item.price || "N/A",
-        item.itemCost        || "N/A",
-        item.scannedBy || "N/A",
-        item.remark || "N/A",
-        item.totalCost || "N/A",
-        item.paymentStatus || "Paid",
-      ]);
-    
-      const csvContent =
-        "\ufeff" + // Add BOM to support special characters
-        [headers, ...rows]
-          .map((row) => row.map((cell) => `"${cell}"`).join(",")) // Wrap each cell in quotes to handle commas
-          .join("\n");
-    
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", "filtered_sold_items.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    };
+  
+  const exportToCSV = () => {
+    if (filteredItems.length === 0) {
+      alert("No data to export.");
+      return;
+    }
 
-    const updateRemainingStock = async (productName, quantitySold) => {
-      try {
-        // Find the product by name to get its barcode
-        const productsRef = ref(database, 'products');
-        const snapshot = await get(productsRef);
+    const headers = [
+      "Date",
+      "Customer",
+      "Product Type",
+      "Quantity Sold",
+      "Price",
+      "Item Cost",
+      "Employee",
+      "Remarks",
+      "Total Cost",
+      "Payment Status",
+    ];
+
+    const rows = filteredItems.map((item) => [
+      formatDateTime(item.dateScanned), // Ensure proper date formatting
+      item.customerName || "N/A",
+      item.name || "N/A",
+      item.quantity || 0,
+      item.price || "N/A",
+      item.itemCost || "N/A",
+      item.scannedBy || "N/A",
+      item.remark || "N/A",
+      item.totalCost || "N/A",
+      item.paymentStatus || "Paid",
+    ]);
+
+    const csvContent =
+      "\ufeff" + // Add BOM to support special characters
+      [headers, ...rows]
+        .map((row) => row.map((cell) => `"${cell}"`).join(",")) // Wrap each cell in quotes to handle commas
+        .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "filtered_sold_items.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const updateRemainingStock = async (productName, quantitySold) => {
+    try {
+      // Find the product by name to get its barcode
+      const productsRef = ref(database, 'products');
+      const snapshot = await get(productsRef);
+      
+      if (snapshot.exists()) {
+        const productsData = snapshot.val();
+        const productEntry = Object.entries(productsData).find(
+          ([key, product]) => product.name.toLowerCase() === productName.toLowerCase()
+        );
         
-        if (snapshot.exists()) {
-          const productsData = snapshot.val();
-          const productEntry = Object.entries(productsData).find(
-            ([key, product]) => product.name.toLowerCase() === productName.toLowerCase()
-          );
+        if (productEntry) {
+          const [productId, productData] = productEntry;
+          const currentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
+          const remainingStockRef = ref(database, `remainingStock/${currentMonthKey}/${productId}`);
           
-          if (productEntry) {
-            const [productId, productData] = productEntry;
-            const currentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
-            const remainingStockRef = ref(database, `remainingStock/${currentMonthKey}/${productId}`);
-            
-            // Get current remaining stock data
-            const remainingSnapshot = await get(remainingStockRef);
-            let currentRecordedQuantity = 0;
-            
-            if (remainingSnapshot.exists()) {
-              currentRecordedQuantity = remainingSnapshot.val().recordedQuantity || 0;
-            }
-            
-            // Update the remaining quantity
-            await set(remainingStockRef, {
-              barcode: productId,
-              name: productData.name,
-              recordedQuantity: currentRecordedQuantity - quantitySold,
-              status: 'Not Confirmed',
-              lastUpdated: new Date().toISOString()
-            });
+          // Get current remaining stock data
+          const remainingSnapshot = await get(remainingStockRef);
+          let currentRecordedQuantity = 0;
+          
+          if (remainingSnapshot.exists()) {
+            currentRecordedQuantity = remainingSnapshot.val().recordedQuantity || 0;
           }
+          
+          // Update the remaining quantity
+          await set(remainingStockRef, {
+            barcode: productId,
+            name: productData.name,
+            recordedQuantity: currentRecordedQuantity - quantitySold,
+            status: 'Not Confirmed',
+            lastUpdated: new Date().toISOString()
+          });
         }
-      } catch (error) {
-        console.error('Error updating remaining stock:', error);
       }
-    };
+    } catch (error) {
+      console.error('Error updating remaining stock:', error);
+    }
+  };
+  
+  // Show Confirmation Pop-Up
+  const handleDeleteConfirmation = (itemId) => {
+    setItemIdToDelete(itemId); 
+    setShowConfirmation(true);
+  };
+
+  // Confirm Delete
+  const confirmDelete = () => {
+    if (itemIdToDelete) {
+      handleDelete(itemIdToDelete);
+    }
+  };
+
+  // Cancel Delete
+  const cancelDelete = () => {
+    setShowConfirmation(false);
+    setItemIdToDelete(null);
+  };
+
+  // Updated fetchProductDetails function to match the barcode scanner approach
+  const fetchProductDetails = async (productBarcode) => {
+    const dbRef = ref(database);
+    try {
+      const snapshot = await get(child(dbRef, `products/${productBarcode}`));
+      if (snapshot.exists()) {
+        const product = snapshot.val();
+        return {
+          barcode: productBarcode,
+          ...product
+        };
+      } else {
+        console.error("Product not found for barcode:", productBarcode);
+        return null;
+      }
+    } catch (error) {
+      console.error("Error retrieving product information:", error);
+      return null;
+    }
+  };
+
+  // Updated handleInputChange to work with barcode selection
+  const handleInputChange = async (e) => {
+    const { name, value } = e.target;
     
-    // Show Confirmation Pop-Up
-    const handleDeleteConfirmation = (itemId) => {
-      setItemIdToDelete(itemId); 
-      setShowConfirmation(true);
-    };
-
-    // Confirm Delete
-    const confirmDelete = () => {
-      if (itemIdToDelete) {
-        handleDelete(itemIdToDelete);
-      }
-    };
-
-    // Cancel Delete
-    const cancelDelete = () => {
-      setShowConfirmation(false);
-      setItemIdToDelete(null);
-    };
-
-
-
-    const handleInputChange = async (e) => {
-      const { name, value } = e.target;
+    // For product selection by barcode
+    if (name === 'name') {
+      // Find the selected product
+      const selectedProduct = products.find(p => p.barcode === value);
       
-      // For product name changes
-      if (name === 'name') {
-        setNewItem(prev => ({ ...prev, [name]: value }));
+      if (selectedProduct) {
+        // Fetch complete product details from Firebase using barcode
+        const productDetails = await fetchProductDetails(selectedProduct.barcode);
         
-        // Fetch product details when a product is selected
-        if (value) {
-          const product = await fetchProductDetails(value);
-          if (product) {
-            setNewItem(prev => ({
-              ...prev,
-              cost: product.itemCost || '', // Set itemCost from Firebase
-              totalCost: (prev.quantity * (product.itemCost || 0)).toFixed(2)
-            }));
-          }
+        if (productDetails) {
+          setNewItem(prev => ({
+            ...prev,
+            name: productDetails.name,
+            barcode: productDetails.barcode,
+            itemCost: productDetails.itemCost || 0,
+            price: productDetails.price || 0,
+            category: productDetails.category || 'Unknown',
+            totalCost: (prev.quantity * (productDetails.itemCost || 0)).toFixed(2)
+          }));
         }
-        return;
-      }
-      
-      // For quantity changes
-      if (name === 'quantity') {
-        const quantity = Number(value) || 0;
-        const cost = Number(newItem.cost) || 0;
+      } else {
+        // Reset if no product selected
         setNewItem(prev => ({
           ...prev,
-          [name]: value,
-          totalCost: (quantity * cost).toFixed(2)
+          name: '',
+          barcode: '',
+          itemCost: '',
+          price: '',
+          category: '',
+          totalCost: ''
         }));
+      }
+      return;
+    }
+    
+    // For quantity changes
+    if (name === 'quantity') {
+      const quantity = Number(value) || 0;
+      const itemCost = Number(newItem.itemCost) || 0;
+      setNewItem(prev => ({
+        ...prev,
+        [name]: value,
+        totalCost: (quantity * itemCost).toFixed(2)
+      }));
+      return;
+    }
+    
+    // For all other fields
+    setNewItem(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Handle Date Change for manual add
+  const handleDateChange = (e) => {
+    const selectedDate = e.target.value;
+    // Create a date object at noon to avoid timezone issues
+    const date = new Date(selectedDate + 'T12:00:00');
+    setNewItem({
+      ...newItem,
+      dateScanned: date.toISOString()
+    });
+  };
+
+  const handleSubmitNewItem = async (e) => {
+    e.preventDefault();
+    
+    try {
+      // Validation
+      if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.itemCost) {
+        setErrorMessage('Please fill in all required fields.');
+        setTimeout(() => setErrorMessage(null), 3000);
         return;
       }
-      
-      // For all other fields
-      setNewItem(prev => ({ ...prev, [name]: value }));
-    };
 
-   const fetchProductDetails = async (productName) => {
-  try {
-    const productsRef = ref(database, 'products');
-    const snapshot = await get(productsRef);
-    
-    if (snapshot.exists()) {
-      const productsData = snapshot.val();
-      const productEntry = Object.entries(productsData).find(
-        ([key, product]) => product.name.toLowerCase() === productName.toLowerCase()
-      );
-      
-      if (productEntry) {
-        const [productId, productData] = productEntry;
-        return {
-          id: productId,
-          ...productData,
-          itemCost: productData.itemCost || 0
-        };
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error('Error fetching product details:', error);
-    return null;
-  }
-};
+      const itemToAdd = {
+        barcode: newItem.barcode, // Include barcode like scanner does
+        name: newItem.name,
+        category: newItem.category || 'Unknown',
+        price: newItem.price || 0,
+        dateScanned: newItem.dateScanned,
+        scannedBy: user?.email || 'Manual Entry',
+        customerName: newItem.customerName,
+        quantity: Number(newItem.quantity),
+        paymentStatus: newItem.paymentStatus,
+        itemCost: Number(newItem.itemCost),
+        totalCost: Number(newItem.totalCost),
+        remark: newItem.remark || '',
+        manuallyAdded: true,
+        addedAt: new Date().toISOString()
+      };
 
-    // Handle Date Change for manual add
-    const handleDateChange = (e) => {
-      const selectedDate = e.target.value;
-      // Create a date object at noon to avoid timezone issues
-      const date = new Date(selectedDate + 'T12:00:00');
+      const newItemRef = push(ref(database, 'SoldItems'));
+      await set(newItemRef, itemToAdd);
+
+      // Update remaining stock
+      await updateRemainingStock(newItem.name, Number(newItem.quantity));
+
+      const newItemWithId = {
+        id: newItemRef.key,
+        ...itemToAdd
+      };
+      
+      setSoldItems([...soldItems, newItemWithId]);
+      setFilteredItems([...filteredItems, newItemWithId]);
+      
+      // Reset form
       setNewItem({
-        ...newItem,
-        dateScanned: date.toISOString()
+        customerName: '',
+        name: '',
+        quantity: 1,
+        itemCost: '',
+        totalCost: '',
+        remark: '',
+        paymentStatus: 'Paid',
+        dateScanned: new Date().toISOString(),
+        barcode: '',
+        price: '',
+        category: ''
       });
-    };
-
-
-    const handleSubmitNewItem = async (e) => {
-      e.preventDefault();
       
-      try {
-        // Validation
-        if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.cost) {
-          setErrorMessage('Please fill in all required fields.');
-          setTimeout(() => setErrorMessage(null), 3000);
-          return;
-        }
-    
-        const itemToAdd = {
-          ...newItem,
-          scannedBy: user?.email || 'Manual Entry',
-          quantity: Number(newItem.quantity),
-          cost: Number(newItem.cost),
-          totalCost: Number(newItem.totalCost),
-          manuallyAdded: true,
-          addedAt: new Date().toISOString()
-        };
-    
-        const newItemRef = push(ref(database, 'SoldItems'));
-        await set(newItemRef, itemToAdd);
-    
-        // Update remaining stock
-        await updateRemainingStock(newItem.name, Number(newItem.quantity));
-    
-        const newItemWithId = {
-          id: newItemRef.key,
-          ...itemToAdd
-        };
+      setSuccessMessage('Item added successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      
+      setShowAddForm(false);
+    } catch (error) {
+      console.error('Error adding new item:', error);
+      setErrorMessage('Failed to add item. Please try again.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
+  };
+
+  // Get Today's Date in YYYY-MM-DD format for the date input
+  const getTodayFormatted = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleCheckboxChange = (itemId) => {
+    setCheckedItems(prev => {
+      const newCheckedItems = prev.includes(itemId)
+        ? prev.filter(id => id !== itemId)
+        : [...prev, itemId];
+      localStorage.setItem('checkedSoldItems', JSON.stringify(newCheckedItems));
+      return newCheckedItems;
+    });
+  };
+
+  const clearAllChecks = () => {
+    localStorage.removeItem('checkedSoldItems');
+    setCheckedItems([]);
+  };
+
+  return (
+    <div className="sold-items-container">
+      <h1 className="sold-items-title">Sold Items</h1>
+
+      {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
+      {successMessage && <div className="sold-items-success">{successMessage}</div>}
+
+      <div className="sold-items-actions">
+        <button 
+          className="add-item-button"
+          onClick={() => setShowAddForm(!showAddForm)}
+        >
+          {showAddForm ? 'Hide Add Form' : 'Add Item Manually'}
+        </button>
         
-        setSoldItems([...soldItems, newItemWithId]);
-        setFilteredItems([...filteredItems, newItemWithId]);
-        
-        // Reset form
-        setNewItem({
-          customerName: '',
-          name: '',
-          quantity: 1,
-          cost: '',
-          totalCost: '',
-          remark: '',
-          paymentStatus: 'Paid',
-          dateScanned: new Date().toISOString()
-        });
-        
-        setSuccessMessage('Item added successfully');
-        setTimeout(() => setSuccessMessage(null), 3000);
-        
-        setShowAddForm(false);
-      } catch (error) {
-        console.error('Error adding new item:', error);
-        setErrorMessage('Failed to add item. Please try again.');
-        setTimeout(() => setErrorMessage(null), 3000);
-      }
-    };
-
-    // Get Today's Date in YYYY-MM-DD format for the date input
-    const getTodayFormatted = () => {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    const handleCheckboxChange = (itemId) => {
-      setCheckedItems(prev => {
-        const newCheckedItems = prev.includes(itemId)
-          ? prev.filter(id => id !== itemId)
-          : [...prev, itemId];
-        localStorage.setItem('checkedSoldItems', JSON.stringify(newCheckedItems));
-        return newCheckedItems;
-      });
-    };
-
-    const clearAllChecks = () => {
-      localStorage.removeItem('checkedSoldItems');
-      setCheckedItems([]);
-    };
-
-    return (
-      <div className="sold-items-container">
-        <h1 className="sold-items-title">Sold Items</h1>
-
-        {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
-        {successMessage && <div className="sold-items-success">{successMessage}</div>}
-
-        <div className="sold-items-actions">
-          <button 
-            className="add-item-button"
-            onClick={() => setShowAddForm(!showAddForm)}
+        <div className="sold-items-filters">
+          <select
+            value={filterType}
+            onChange={(e) => {
+              setFilterType(e.target.value);
+              setSearchTerm('');
+              setDateFilter('');
+              setMonthFilter('');
+            }}
           >
-            {showAddForm ? 'Hide Add Form' : 'Add Item Manually'}
-          </button>
-          
-          <div className="sold-items-filters">
+            <option value="All">All</option>
+            <option value="Customer">By Customer</option>
+            <option value="Date">By Date</option>
+            <option value="Month">By Month</option>
+            <option value="By Unpaid">unPaid</option>
+            <option value="By Paid">Paid</option>
+            <option value="By Stock">Stock</option>
+            <option value="By Product">By Product</option>
+          </select>
+
+          <div className="check-controls">
             <select
-              value={filterType}
-              onChange={(e) => {
-                setFilterType(e.target.value);
-                setSearchTerm('');
-                setDateFilter('');
-                setMonthFilter('');
-              }}
+              value={checkFilter}
+              onChange={(e) => setCheckFilter(e.target.value)}
+              className="check-filter"
             >
-              <option value="All">All</option>
-              <option value="Customer">By Customer</option>
-              <option value="Date">By Date</option>
-              <option value="Month">By Month</option>
-              <option value="By Unpaid">unPaid</option>
-              <option value="By Paid">Paid</option>
-              <option value="By Stock">Stock</option>
-              <option value="By Product">By Product</option>
+              <option value="all">All Items</option>
+              <option value="checked">Checked Items</option>
+              <option value="unchecked">Unchecked Items</option>
             </select>
+            
+            <button 
+              onClick={clearAllChecks}
+              className="clear-checks-button"
+            >
+              Clear All Checks
+            </button>
+          </div>
 
-            <div className="check-controls">
-  <select
-    value={checkFilter}
-    onChange={(e) => setCheckFilter(e.target.value)}
-    className="check-filter"
-  >
-    <option value="all">All Items</option>
-    <option value="checked">Checked Items</option>
-    <option value="unchecked">Unchecked Items</option>
-  </select>
-  
-  <button 
-    onClick={clearAllChecks}
-    className="clear-checks-button"
-  >
-    Clear All Checks
-  </button>
-</div>
+          {filterType === 'Customer' && (
+            <div>
+              <input
+                type="text"
+                placeholder="Search customer"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <select
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              >
+                <option value="">Select Customer</option>
+                {customers.map((customer, index) => (
+                  <option key={index} value={customer.name}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-            {filterType === 'Customer' && (
-              <div>
-                <input
-                  type="text"
-                  placeholder="Search customer"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+          {filterType === 'Date' && (
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+            />
+          )}
+
+          {filterType === 'Month' && (
+            <select
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+            >
+              <option value="">Select Month</option>
+              {[...Array(12).keys()].map((month) => (
+                <option key={month} value={month + 1}>
+                  {new Date(0, month).toLocaleString('default', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {filterType === 'By Product' && (
+            <input
+              type="text"
+              placeholder="Search product"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          )}
+
+          <button onClick={exportToCSV}>Export to CSV</button>
+        </div>
+      </div>
+
+      {/* Manual Add Form */}
+      {showAddForm && (
+        <div className="manual-add-form">
+          <h3>Add New Sold Item</h3>
+          <form onSubmit={handleSubmitNewItem}>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="customerName">Customer*</label>
                 <select
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  id="customerName"
+                  name="customerName"
+                  value={newItem.customerName}
+                  onChange={handleInputChange}
+                  required
                 >
                   <option value="">Select Customer</option>
-                  {customers.map((customer, index) => (
-                    <option key={index} value={customer.name}>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.name}>
                       {customer.name}
                     </option>
                   ))}
                 </select>
               </div>
-            )}
+              
+              <div className="form-group">
+                <label htmlFor="name">Product*</label>
+                <select
+                  id="name"
+                  name="name"
+                  value={newItem.barcode} // Use barcode as the value for selection
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">Select Product</option>
+                  {products.map((product) => (
+                    <option key={product.barcode} value={product.barcode}>
+                      {product.name} (Cost: ${product.itemCost})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="quantity">Quantity*</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  name="quantity"
+                  min="1"
+                  value={newItem.quantity}
+                  onChange={handleInputChange}
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="dateScanned">Date*</label>
+                <input
+                  type="date"
+                  id="dateScanned"
+                  name="dateScanned"
+                  value={newItem.dateScanned.slice(0, 10)}  // Only YYYY-MM-DD
+                  onChange={handleDateChange}
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="itemCost">Item Cost*</label>
+                <input
+                  type="number"
+                  id="itemCost"
+                  name="itemCost"
+                  step="0.01"
+                  value={newItem.itemCost}
+                  onChange={handleInputChange}
+                  required
+                  readOnly  // Since it comes from Firebase
+                />
+              </div>
+              
+              <div className="form-group">
+                <label htmlFor="totalCost">Total Cost*</label>
+                <input
+                  type="number"
+                  id="totalCost"
+                  name="totalCost"
+                  step="0.01"
+                  value={newItem.totalCost}
+                  readOnly
+                  required
+                />
+              </div>
+            </div>
 
-            {filterType === 'Date' && (
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-              />
-            )}
-
-            {filterType === 'Month' && (
-              <select
-                value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value)}
-              >
-                <option value="">Select Month</option>
-                {[...Array(12).keys()].map((month) => (
-                  <option key={month} value={month + 1}>
-                    {new Date(0, month).toLocaleString('default', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {filterType === 'By Product' && (
+            <div className="form-group">
+              <label htmlFor="remark">Remarks</label>
               <input
                 type="text"
-                placeholder="Search product"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                id="remark"
+                name="remark"
+                value={newItem.remark}
+                onChange={handleInputChange}
+                placeholder="Additional notes (optional)"
               />
-            )}
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="paymentStatus">Payment Status*</label>
+              <select
+                id="paymentStatus"
+                name="paymentStatus"
+                value={newItem.paymentStatus}
+                onChange={handleInputChange}
+                required
+              >
+                <option value="Paid">Paid</option>
+                <option value="Unpaid">Unpaid</option>
+                <option value="Stock">Stock</option>
+              </select>
+            </div>
+            
+            <div className="form-buttons">
+              <button type="submit" className="submit-button">Add Item</button>
+              <button type="button" className="cancel-button" onClick={() => setShowAddForm(false)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
 
-            <button onClick={exportToCSV}>Export to CSV</button>
-          </div>
-        </div>
-
-        {/* Manual Add Form */}
-        {showAddForm && (
-  <div className="manual-add-form">
-    <h3>Add New Sold Item</h3>
-    <form onSubmit={handleSubmitNewItem}>
-      <div className="form-row">
-        <div className="form-group">
-          <label htmlFor="customerName">Customer*</label>
-          <select
-            id="customerName"
-            name="customerName"
-            value={newItem.customerName}
-            onChange={handleInputChange}
-            required
-          >
-            <option value="">Select Customer</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.name}>
-                {customer.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        
-        <div className="form-group">
-          <label htmlFor="name">Product*</label>
-          <select
-            id="name"
-            name="name"
-            value={newItem.name}
-            onChange={handleInputChange}
-            required
-          >
-            <option value="">Select Product</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.name}>
-                {product.name} (Cost: ${product.itemCost})
-              </option>
-            ))}
-          </select>
-        </div>
-        
-        <div className="form-group">
-          <label htmlFor="quantity">Quantity*</label>
-          <input
-            type="number"
-            id="quantity"
-            name="quantity"
-            min="1"
-            value={newItem.quantity}
-            onChange={handleInputChange}
-            required
-          />
-        </div>
-      </div>
-      
-      <div className="form-row">
-        <div className="form-group">
-          <label htmlFor="dateScanned">Date*</label>
-          <input
-  type="date"
-  id="dateScanned"
-  name="dateScanned"
-  value={newItem.dateScanned.slice(0, 10)}  // Only YYYY-MM-DD
-  onChange={(e) => {
-    const date = new Date(e.target.value);
-    setNewItem({
-      ...newItem,
-      dateScanned: date.toISOString()  // Still store it in full ISO format if needed
-    });
-  }}
-  required
-/>
-        </div>
-        
-        <div className="form-group">
-          <label htmlFor="cost">Item Cost*</label>
-          <input
-            type="number"
-            id="cost"
-            name="cost"
-            step="0.01"
-            value={newItem.cost}
-            onChange={handleInputChange}
-            required
-            readOnly  // Since it comes from Firebase
-          />
-        </div>
-        
-        <div className="form-group">
-          <label htmlFor="totalCost">Total Cost*</label>
-          <input
-            type="number"
-            id="totalCost"
-            name="totalCost"
-            step="0.01"
-            value={newItem.totalCost}
-            readOnly
-            required
-          />
-        </div>
-      </div>
-
-      <div className="form-group">
-        <label htmlFor="remark">Remarks</label>
-        <input
-          type="text"
-          id="remark"
-          name="remark"
-          value={newItem.remark}
-          onChange={handleInputChange}
-          placeholder="Additional notes (optional)"
-        />
-      </div>
-      
-      <div className="form-group">
-        <label htmlFor="paymentStatus">Payment Status*</label>
-        <select
-          id="paymentStatus"
-          name="paymentStatus"
-          value={newItem.paymentStatus}
-          onChange={handleInputChange}
-          required
-        >
-          <option value="Paid">Paid</option>
-          <option value="Unpaid">Unpaid</option>
-          <option value="Stock">Stock</option>
-        </select>
-      </div>
-      
-      <div className="form-buttons">
-        <button type="submit" className="submit-button">Add Item</button>
-        <button type="button" className="cancel-button" onClick={() => setShowAddForm(false)}>Cancel</button>
-      </div>
-    </form>
-  </div>
-)}
-
-        {/* Sold Items Table */}
-        <div className="sold-items-list">
-          {filteredItems.length === 0 ? (
-            <p>No items match the filters.</p>
-          ) : (
-            <table className="sold-items-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Customer</th>
-                  <th>Product Type</th>
-                  <th>Quantity Sold</th>
-                  <th>Item Cost</th>
-                  <th>Employee</th>
-                  <th>Remarks</th>
-                  <th>Total Cost</th>
-                  <th>Payment Status</th>
-                  <th>Actions</th>
-                  <th>Check</th>
-                </tr>
-              </thead>
-              <tbody>
-              {filteredItems.map((item) => (
-                <tr key={item.id} className={item.manuallyAdded ? "manually-added" : ""}>
-                  <td>{formatDateTime(item.dateScanned)}</td>
-                  <td>
-                    {editingItem && editingItem.id === item.id ? (
-                      <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
-                        <option value="">Select Customer</option>
-                        {customers.length > 0 ? (
-                          customers.map((customer) => (
-                            <option key={customer.id} value={customer.name}>
-                              {customer.name}
-                            </option>
-                          ))
-                        ) : (
-                          <option disabled>No Customers Found</option>
-                        )}
-                      </select>
-                    ) : (
-                      item.customerName || 'N/A'
-                    )}
+      {/* Sold Items Table */}
+      <div className="sold-items-list">
+        {filteredItems.length === 0 ? (
+          <p>No items match the filters.</p>
+        ) : (
+          <table className="sold-items-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Product Type</th>
+                <th>Quantity Sold</th>
+                <th>Item Cost</th>
+                <th>Employee</th>
+                <th>Remarks</th>
+                <th>Total Cost</th>
+                <th>Payment Status</th>
+                <th>Actions</th>
+                <th>Check</th>
+              </tr>
+            </thead>
+            <tbody>
+            {filteredItems.map((item) => (
+              <tr key={item.id} className={item.manuallyAdded ? "manually-added" : ""}>
+                <td>{formatDateTime(item.dateScanned)}</td>
+                <td>
+                  {editingItem && editingItem.id === item.id ? (
+                    <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
+                      <option value="">Select Customer</option>
+                      {customers.length > 0 ? (
+                        customers.map((customer) => (
+                          <option key={customer.id} value={customer.name}>
+                            {customer.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option disabled>No Customers Found</option>
+                      )}
+                    </select>
+                  ) : (
+                    item.customerName || 'N/A'
+                  )}
                   </td>
                   <td>
                     {editingItem && editingItem.id === item.id ? (

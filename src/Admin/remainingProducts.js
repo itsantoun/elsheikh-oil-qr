@@ -216,12 +216,69 @@ const RemainingProducts = () => {
   //     .catch((error) => console.error('Error saving data:', error));
   // };
 
-  const handleConfirmQuantity = async (useExisting = false) => {
-    let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
+  // const handleConfirmQuantity = async (useExisting = false) => {
+  //   let finalQuantity = useExisting ? remainingQuantity : parseInt(inputQuantity, 10);
   
-    if (isNaN(finalQuantity)) {
-      alert('Please enter a valid quantity.');
-      return;
+  //   if (isNaN(finalQuantity)) {
+  //     alert('Please enter a valid quantity.');
+  //     return;
+  //   }
+  
+  //   const dateKey = getCurrentDateKey();
+  //   const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
+  //   const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+  //   const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
+  //   const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
+  
+  //   try {
+  //     // Get product's initial quantity
+  //     const productSnapshot = await get(productMainRef);
+  //     if (!productSnapshot.exists()) {
+  //       alert('Product not found.');
+  //       return;
+  //     }
+  
+  //     const product = productSnapshot.val();
+  //     const initialQuantity = product.quantity;
+  
+  //     const newSoldQuantity = initialQuantity - finalQuantity;
+  
+  //     // Update sold item
+  //     await set(soldItemsRef, {
+  //       barcode: scannedProduct.barcode,
+  //       name: scannedProduct.name,
+  //       quantity: newSoldQuantity,
+  //       date: dateKey
+  //     });
+  
+  //     // Update remaining stock
+  //     await set(productRef, {
+  //       barcode: scannedProduct.barcode,
+  //       name: scannedProduct.name,
+  //       recordedQuantity: finalQuantity,
+  //       status: useExisting ? 'Confirmed' : 'Not Confirmed',
+  //       recordedDate: dateKey
+  //     });
+  
+  //     console.log('Data saved successfully');
+  //     setRemainingQuantity(finalQuantity);
+  //     setIsPopupOpen(false);
+  //     setInputQuantity('');
+  //     fetchTableData(); // Refresh table data after saving
+  //   } catch (error) {
+  //     console.error('Error saving data:', error);
+  //   }
+  // };
+
+  const handleConfirmQuantity = async (useExisting = false) => {
+    let finalQuantity;
+    
+    if (useExisting) {
+      // Use the calculated remaining quantity from the product
+      finalQuantity = scannedProduct.remainingQuantity;
+    } else {
+      // Use the input quantity that was set before calling this function
+      finalQuantity = remainingQuantity;
     }
   
     const dateKey = getCurrentDateKey();
@@ -261,7 +318,6 @@ const RemainingProducts = () => {
       });
   
       console.log('Data saved successfully');
-      setRemainingQuantity(finalQuantity);
       setIsPopupOpen(false);
       setInputQuantity('');
       fetchTableData(); // Refresh table data after saving
@@ -583,19 +639,35 @@ const RemainingProducts = () => {
   //   });
   // };
 
+  // const handleChange = (index, field, value) => {
+  //   setTableData(prevData => {
+  //     const newData = [...prevData];
+  //     newData[index] = { ...newData[index], [field]: value };
+      
+  //     // Auto-update logic for quantities
+  //     if (field === 'Sold_Quantity') {
+  //       newData[index].Remaining_Quantity = newData[index].Initial_Quantity - value;
+  //     }
+      
+  //     return newData;
+  //   });
+  // };
+
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
       const newData = [...prevData];
-      newData[index] = { ...newData[index], [field]: value };
+      const updatedRow = { ...newData[index], [field]: value };
       
       // Auto-update logic for quantities
       if (field === 'Sold_Quantity') {
-        newData[index].Remaining_Quantity = newData[index].Initial_Quantity - value;
+        updatedRow.Remaining_Quantity = updatedRow.Initial_Quantity - value;
       }
       
+      newData[index] = updatedRow;
       return newData;
     });
   };
+
 
   const handleStartDateChange = (field, value) => {
     const newDate = { ...startDate, [field]: parseInt(value) };
@@ -971,100 +1043,121 @@ const RemainingProducts = () => {
 
       {/* Popup Modal */}
       {isPopupOpen && scannedProduct && (
-        <div style={{ 
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{ 
-            backgroundColor: 'white',
-            padding: '25px',
-            borderRadius: '8px',
-            width: '90%',
-            maxWidth: '500px',
-            position: 'relative'
-          }}>
-            <button
-              onClick={() => {
-                setIsPopupOpen(false);
-                setInputQuantity('');
-              }}
-              style={{ 
-                position: 'absolute',
-                top: '10px',
-                right: '10px',
-                fontSize: '1.5rem',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              ×
-            </button>
-            <h3 style={{ fontSize: '1.5rem', margin: '0 0 20px 0' }}>Product Details</h3>
-            <div style={{ fontSize: '1.1rem', marginBottom: '20px' }}>
-              <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
-              <p><strong>Name:</strong> {scannedProduct.name}</p>
-              <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
-              <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
-              <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
-              <p><strong>Remaining Quantity:</strong> {remainingQuantity}</p>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button 
-                onClick={() => handleConfirmQuantity(true)}
-                style={{ 
-                  fontSize: '1rem',
-                  padding: '12px',
-                  backgroundColor: '#4CAF50',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Confirm Existing Quantity
-              </button>
+  <div style={{ 
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000
+  }}>
+    <div style={{ 
+      backgroundColor: 'white',
+      padding: '25px',
+      borderRadius: '8px',
+      width: '90%',
+      maxWidth: '500px',
+      position: 'relative'
+    }}>
+      <button
+        onClick={() => {
+          setIsPopupOpen(false);
+          setInputQuantity('');
+        }}
+        style={{ 
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          fontSize: '1.5rem',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer'
+        }}
+      >
+        ×
+      </button>
+      <h3 style={{ fontSize: '1.5rem', margin: '0 0 20px 0' }}>Product Details</h3>
+      <div style={{ fontSize: '1.1rem', marginBottom: '20px' }}>
+        <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
+        <p><strong>Name:</strong> {scannedProduct.name}</p>
+        <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
+        <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
+        <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
+        <p><strong>Calculated Remaining Quantity:</strong> {scannedProduct.remainingQuantity}</p>
+        {remainingQuantity !== scannedProduct.remainingQuantity && (
+          <p><strong>Current Recorded Quantity:</strong> {remainingQuantity}</p>
+        )}
+      </div>
+      
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <button 
+          onClick={() => {
+            setRemainingQuantity(scannedProduct.remainingQuantity);
+            handleConfirmQuantity(true);
+          }}
+          style={{ 
+            fontSize: '1rem',
+            padding: '12px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Confirm Calculated Quantity ({scannedProduct.remainingQuantity})
+        </button>
 
-              <input
-                type="number"
-                value={inputQuantity}
-                onChange={(e) => setInputQuantity(e.target.value)}
-                placeholder="Enter new quantity"
-                style={{ 
-                  fontSize: '1rem',
-                  padding: '12px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px'
-                }}
-              />
-
-              <button 
-                onClick={() => handleConfirmQuantity(false)}
-                style={{ 
-                  fontSize: '1rem',
-                  padding: '12px',
-                  backgroundColor: '#2196F3',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Save Quantity
-              </button>
-            </div>
-          </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <input
+            type="number"
+            value={inputQuantity}
+            onChange={(e) => setInputQuantity(e.target.value)}
+            placeholder="Enter new quantity"
+            style={{ 
+              flex: 1,
+              fontSize: '1rem',
+              padding: '12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px'
+            }}
+          />
+          <button 
+            onClick={() => {
+              if (inputQuantity === '') {
+                alert('Please enter a quantity');
+                return;
+              }
+              const newQuantity = parseInt(inputQuantity, 10);
+              if (isNaN(newQuantity)) {
+                alert('Please enter a valid number');
+                return;
+              }
+              setRemainingQuantity(newQuantity);
+              handleConfirmQuantity(false);
+            }}
+            style={{ 
+              fontSize: '1rem',
+              padding: '12px',
+              backgroundColor: '#2196F3',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Save New Quantity
+          </button>
         </div>
-      )}
+      </div>
+    </div>
+  </div>
+)}
 
      {/* Table Section */}
      <div style={{ 
@@ -1240,18 +1333,21 @@ const RemainingProducts = () => {
             <td style={{ padding: '10px 8px', textAlign: 'left' }}>
               {editingRow === index ? (
 
-               <select
-  value={row.Status}
-  onChange={(e) => handleChange(index, 'Status', e.target.value)}
-  style={{ 
-    padding: '5px',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
-    minWidth: '120px'
-  }}
+<select
+value={row.Status}
+onChange={(e) => {
+  e.persist(); // For React's event pooling
+  handleChange(index, 'Status', e.target.value);
+}}
+style={{ 
+  padding: '5px',
+  border: '1px solid #ddd',
+  borderRadius: '4px',
+  minWidth: '120px'
+}}
 >
-  <option value="Not Confirmed">Not Confirmed</option>
-  <option value="Confirmed">Confirmed</option>
+<option value="Not Confirmed">Not Confirmed</option>
+<option value="Confirmed">Confirmed</option>
 </select>
               ) : (
                 row.Status

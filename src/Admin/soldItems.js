@@ -585,36 +585,36 @@ const SoldItems = () => {
             <tbody>
             {filteredItems.map((item) => (
               <tr key={item.id} className={item.manuallyAdded ? "manually-added" : ""}>
-                <td>{formatDateTime(item.dateScanned)}</td>
-                {/* <td>
-                  {editingItem && editingItem.id === item.id ? (
-                    <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
-                      <option value="">Select Customer</option>
-                      {customers.length > 0 ? (
-                        customers.map((customer) => (
-                          <option key={customer.id} value={customer.name}>
-                            {customer.name}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No Customers Found</option>
-                      )}
-                    </select>
-                  ) : (
-                    item.customerName || 'N/A'
-                  )}
-                  </td> */}
-                  <td>
-  {editingItem && editingItem.id === item.id ? (
-    <input
-      type="datetime-local"
-      value={newDate ? newDate.slice(0, 16) : ''}
-      onChange={(e) => setNewDate(new Date(e.target.value).toISOString())}
-    />
-  ) : (
-    formatDateTime(item.dateScanned)
-  )}
-</td>
+                {/* <td>{formatDateTime(item.dateScanned)}</td> */}
+                <td>
+    {editingItem && editingItem.id === item.id ? (
+      <input
+        type="datetime-local"
+        value={newDate ? newDate.slice(0, 16) : ''}
+        onChange={(e) => setNewDate(new Date(e.target.value).toISOString())}
+      />
+    ) : (
+      formatDateTime(item.dateScanned)
+    )}
+  </td>
+  <td>
+    {editingItem && editingItem.id === item.id ? (
+      <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)}>
+        <option value="">Select Customer</option>
+        {customers.length > 0 ? (
+          customers.map((customer) => (
+            <option key={customer.id} value={customer.name}>
+              {customer.name}
+            </option>
+          ))
+        ) : (
+          <option disabled>No Customers Found</option>
+        )}
+      </select>
+    ) : (
+      item.customerName || 'N/A'
+    )}
+  </td>
                   <td>
                     {editingItem && editingItem.id === item.id ? (
                       <input

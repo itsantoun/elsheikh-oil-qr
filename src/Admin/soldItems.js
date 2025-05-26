@@ -33,25 +33,6 @@ const SoldItems = () => {
   });
   const [checkFilter, setCheckFilter] = useState('all'); // 'all', 'checked', 'unchecked'
 
-  // State for manual add form
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({
-    customerName: '',
-    name: '',
-    quantity: 1,
-    itemCost: '', // Changed from 'cost' to 'itemCost' to match scanner
-    totalCost: '',
-    remark: '',
-    paymentStatus: 'Paid',
-    dateScanned: new Date().toISOString(),
-    barcode: '', // Add barcode field for consistency
-    price: '', // Add price field for consistency
-    category: '' // Add category field for consistency
-  });
-
-  const [products, setProducts] = useState([]);
-  const [successMessage, setSuccessMessage] = useState(null);
-
   const formatDateTime = (dateString) => {
     const date = new Date(dateString);
     const day = String(date.getDate()).padStart(2, '0'); 
@@ -148,21 +129,6 @@ const SoldItems = () => {
 
         setCustomers(customerList);
 
-        // Fetch products for dropdown in add form - Updated to fetch from products/{barcode}
-        const productsRef = ref(database, 'products');
-        const productsSnapshot = await get(productsRef);
-        if (productsSnapshot.exists()) {
-          const productsData = productsSnapshot.val();
-          const productsList = Object.keys(productsData).map((barcode) => ({
-            barcode: barcode, // This is the barcode (key)
-            name: productsData[barcode].name,
-            itemCost: productsData[barcode].itemCost,
-            price: productsData[barcode].price,
-            category: productsData[barcode].category
-          }));
-          setProducts(productsList);
-        }
-
         // Fetch Sold Items
         const soldItemsRef = ref(database, 'SoldItems');
         const soldItemsSnapshot = await get(soldItemsRef);
@@ -192,45 +158,45 @@ const SoldItems = () => {
     fetchCustomersAndSoldItems();
   }, []);
   
-useEffect(() => {
-  let filtered = [...soldItems];
+  useEffect(() => {
+    let filtered = [...soldItems];
 
-  if (filterType === 'Customer' && searchTerm) {
-    filtered = filtered.filter((item) =>
-      item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  } else if (filterType === 'Date' && dateFilter) {
-    filtered = filtered.filter(
-      (item) =>
-        new Date(item.dateScanned).toLocaleDateString() ===
-        new Date(dateFilter).toLocaleDateString()
-    );
-  } else if (filterType === 'Month' && monthFilter) {
-    filtered = filtered.filter(
-      (item) =>
-        new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
-    );
-  } else if (filterType === 'By Unpaid') {
-    filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
-  } else if (filterType === 'By Stock') {
-    filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
-  } else if (filterType === 'By Paid') {
-    filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
-  } else if (filterType === 'By Product' && searchTerm) {
-    filtered = filtered.filter((item) =>
-      item.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }
+    if (filterType === 'Customer' && searchTerm) {
+      filtered = filtered.filter((item) =>
+        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    } else if (filterType === 'Date' && dateFilter) {
+      filtered = filtered.filter(
+        (item) =>
+          new Date(item.dateScanned).toLocaleDateString() ===
+          new Date(dateFilter).toLocaleDateString()
+      );
+    } else if (filterType === 'Month' && monthFilter) {
+      filtered = filtered.filter(
+        (item) =>
+          new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
+      );
+    } else if (filterType === 'By Unpaid') {
+      filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
+    } else if (filterType === 'By Stock') {
+      filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
+    } else if (filterType === 'By Paid') {
+      filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
+    } else if (filterType === 'By Product' && searchTerm) {
+      filtered = filtered.filter((item) =>
+        item.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
 
-  // Apply check filter (this was incorrectly nested inside the By Product condition)
-  if (checkFilter === 'checked') {
-    filtered = filtered.filter((item) => checkedItems.includes(item.id));
-  } else if (checkFilter === 'unchecked') {
-    filtered = filtered.filter((item) => !checkedItems.includes(item.id));
-  }
+    // Apply check filter
+    if (checkFilter === 'checked') {
+      filtered = filtered.filter((item) => checkedItems.includes(item.id));
+    } else if (checkFilter === 'unchecked') {
+      filtered = filtered.filter((item) => !checkedItems.includes(item.id));
+    }
 
-  setFilteredItems(filtered);
-}, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
+    setFilteredItems(filtered);
+  }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
 
   const handleEdit = (item) => {
     setEditingItem(item);
@@ -275,15 +241,6 @@ useEffect(() => {
       }
     }
   };
-
-  // Handle Delete Action
-  // const handleDelete = async (itemId) => {
-  //   const itemRef = ref(database, `SoldItems/${itemId}`);
-  //   await remove(itemRef);
-  //   setSoldItems(soldItems.filter((item) => item.id !== itemId)); 
-  //   setFilteredItems(filteredItems.filter((item) => item.id !== itemId)); 
-  //   setShowConfirmation(false);
-  // };
 
   const handleDelete = async (itemId) => {
     try {
@@ -332,7 +289,6 @@ useEffect(() => {
     }
   };
 
-  
   const exportToCSV = () => {
     if (filteredItems.length === 0) {
       alert("No data to export.");
@@ -440,170 +396,6 @@ useEffect(() => {
     setItemIdToDelete(null);
   };
 
-  // Updated fetchProductDetails function to match the barcode scanner approach
-  const fetchProductDetails = async (productBarcode) => {
-    const dbRef = ref(database);
-    try {
-      const snapshot = await get(child(dbRef, `products/${productBarcode}`));
-      if (snapshot.exists()) {
-        const product = snapshot.val();
-        return {
-          barcode: productBarcode,
-          ...product
-        };
-      } else {
-        console.error("Product not found for barcode:", productBarcode);
-        return null;
-      }
-    } catch (error) {
-      console.error("Error retrieving product information:", error);
-      return null;
-    }
-  };
-
-  // Updated handleInputChange to work with barcode selection
-  const handleInputChange = async (e) => {
-    const { name, value } = e.target;
-    
-    // For product selection by barcode
-    if (name === 'name') {
-      // Find the selected product
-      const selectedProduct = products.find(p => p.barcode === value);
-      
-      if (selectedProduct) {
-        // Fetch complete product details from Firebase using barcode
-        const productDetails = await fetchProductDetails(selectedProduct.barcode);
-        
-        if (productDetails) {
-          setNewItem(prev => ({
-            ...prev,
-            name: productDetails.name,
-            barcode: productDetails.barcode,
-            itemCost: productDetails.itemCost || 0,
-            price: productDetails.price || 0,
-            category: productDetails.category || 'Unknown',
-            totalCost: (prev.quantity * (productDetails.itemCost || 0)).toFixed(2)
-          }));
-        }
-      } else {
-        // Reset if no product selected
-        setNewItem(prev => ({
-          ...prev,
-          name: '',
-          barcode: '',
-          itemCost: '',
-          price: '',
-          category: '',
-          totalCost: ''
-        }));
-      }
-      return;
-    }
-    
-    // For quantity changes
-    if (name === 'quantity') {
-      const quantity = Number(value) || 0;
-      const itemCost = Number(newItem.itemCost) || 0;
-      setNewItem(prev => ({
-        ...prev,
-        [name]: value,
-        totalCost: (quantity * itemCost).toFixed(2)
-      }));
-      return;
-    }
-    
-    // For all other fields
-    setNewItem(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Handle Date Change for manual add
-  const handleDateChange = (e) => {
-    const selectedDate = e.target.value;
-    // Create a date object at noon to avoid timezone issues
-    const date = new Date(selectedDate + 'T12:00:00');
-    setNewItem({
-      ...newItem,
-      dateScanned: date.toISOString()
-    });
-  };
-
-  const handleSubmitNewItem = async (e) => {
-    e.preventDefault();
-    
-    try {
-      // Validation
-      if (!newItem.customerName || !newItem.name || !newItem.quantity || !newItem.itemCost) {
-        setErrorMessage('Please fill in all required fields.');
-        setTimeout(() => setErrorMessage(null), 3000);
-        return;
-      }
-
-      const itemToAdd = {
-        barcode: newItem.barcode, // Include barcode like scanner does
-        name: newItem.name,
-        category: newItem.category || 'Unknown',
-        price: newItem.price || 0,
-        dateScanned: newItem.dateScanned,
-        scannedBy: user?.email || 'Manual Entry',
-        customerName: newItem.customerName,
-        quantity: Number(newItem.quantity),
-        paymentStatus: newItem.paymentStatus,
-        itemCost: Number(newItem.itemCost),
-        totalCost: Number(newItem.totalCost),
-        remark: newItem.remark || '',
-        manuallyAdded: true,
-        addedAt: new Date().toISOString()
-      };
-
-      const newItemRef = push(ref(database, 'SoldItems'));
-      await set(newItemRef, itemToAdd);
-
-      // Update remaining stock
-      await updateRemainingStock(newItem.name, Number(newItem.quantity));
-
-      const newItemWithId = {
-        id: newItemRef.key,
-        ...itemToAdd
-      };
-      
-      setSoldItems([...soldItems, newItemWithId]);
-      setFilteredItems([...filteredItems, newItemWithId]);
-      
-      // Reset form
-      setNewItem({
-        customerName: '',
-        name: '',
-        quantity: 1,
-        itemCost: '',
-        totalCost: '',
-        remark: '',
-        paymentStatus: 'Paid',
-        dateScanned: new Date().toISOString(),
-        barcode: '',
-        price: '',
-        category: ''
-      });
-      
-      setSuccessMessage('Item added successfully');
-      setTimeout(() => setSuccessMessage(null), 3000);
-      
-      setShowAddForm(false);
-    } catch (error) {
-      console.error('Error adding new item:', error);
-      setErrorMessage('Failed to add item. Please try again.');
-      setTimeout(() => setErrorMessage(null), 3000);
-    }
-  };
-
-  // Get Today's Date in YYYY-MM-DD format for the date input
-  const getTodayFormatted = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const handleCheckboxChange = (itemId) => {
     setCheckedItems(prev => {
       const newCheckedItems = prev.includes(itemId)
@@ -624,16 +416,8 @@ useEffect(() => {
       <h1 className="sold-items-title">Sold Items</h1>
 
       {errorMessage && <div className="sold-items-error">{errorMessage}</div>}
-      {successMessage && <div className="sold-items-success">{successMessage}</div>}
 
       <div className="sold-items-actions">
-        <button 
-          className="add-item-button"
-          onClick={() => setShowAddForm(!showAddForm)}
-        >
-          {showAddForm ? 'Hide Add Form' : 'Add Item Manually'}
-        </button>
-        
         <div className="sold-items-filters">
           <select
             value={filterType}
@@ -729,138 +513,6 @@ useEffect(() => {
           <button onClick={exportToCSV}>Export to CSV</button>
         </div>
       </div>
-
-      {/* Manual Add Form */}
-      {showAddForm && (
-        <div className="manual-add-form">
-          <h3>Add New Sold Item</h3>
-          <form onSubmit={handleSubmitNewItem}>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="customerName">Customer*</label>
-                <select
-                  id="customerName"
-                  name="customerName"
-                  value={newItem.customerName}
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="">Select Customer</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.name}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="name">Product*</label>
-                <select
-                  id="name"
-                  name="name"
-                  value={newItem.barcode} // Use barcode as the value for selection
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="">Select Product</option>
-                  {products.map((product) => (
-                    <option key={product.barcode} value={product.barcode}>
-                      {product.name} (Cost: ${product.itemCost})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="quantity">Quantity*</label>
-                <input
-                  type="number"
-                  id="quantity"
-                  name="quantity"
-                  min="1"
-                  value={newItem.quantity}
-                  onChange={handleInputChange}
-                  required
-                />
-              </div>
-            </div>
-            
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="dateScanned">Date*</label>
-                <input
-                  type="date"
-                  id="dateScanned"
-                  name="dateScanned"
-                  value={newItem.dateScanned.slice(0, 10)}  // Only YYYY-MM-DD
-                  onChange={handleDateChange}
-                  required
-                />
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="itemCost">Item Cost*</label>
-                <input
-                  type="number"
-                  id="itemCost"
-                  name="itemCost"
-                  step="0.01"
-                  value={newItem.itemCost}
-                  onChange={handleInputChange}
-                  required
-                  readOnly  // Since it comes from Firebase
-                />
-              </div>
-              
-              <div className="form-group">
-                <label htmlFor="totalCost">Total Cost*</label>
-                <input
-                  type="number"
-                  id="totalCost"
-                  name="totalCost"
-                  step="0.01"
-                  value={newItem.totalCost}
-                  readOnly
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="remark">Remarks</label>
-              <input
-                type="text"
-                id="remark"
-                name="remark"
-                value={newItem.remark}
-                onChange={handleInputChange}
-                placeholder="Additional notes (optional)"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="paymentStatus">Payment Status*</label>
-              <select
-                id="paymentStatus"
-                name="paymentStatus"
-                value={newItem.paymentStatus}
-                onChange={handleInputChange}
-                required
-              >
-                <option value="Paid">Paid</option>
-                <option value="Unpaid">Unpaid</option>
-                <option value="Stock">Stock</option>
-              </select>
-            </div>
-            
-            <div className="form-buttons">
-              <button type="submit" className="submit-button">Add Item</button>
-              <button type="button" className="cancel-button" onClick={() => setShowAddForm(false)}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* Sold Items Table */}
       <div className="sold-items-list">
@@ -1004,13 +656,12 @@ useEffect(() => {
                   </td>
 
                   <td>
-  <input 
-    type="checkbox"
-    checked={checkedItems.includes(item.id)}
-    onChange={() => handleCheckboxChange(item.id)}
-  />
-</td>
-
+                    <input 
+                      type="checkbox"
+                      checked={checkedItems.includes(item.id)}
+                      onChange={() => handleCheckboxChange(item.id)}
+                    />
+                  </td>
                 </tr>
               ))}
               </tbody>

@@ -558,14 +558,16 @@ const RemainingProducts = () => {
       // Reset editingRow before making database calls to prevent double-saving
       setEditingRow(null);
       
-      // Prepare the data to save
+      // Prepare the data to save - make sure Status is properly mapped
       const updateData = {
         barcode: row.Barcode,
         name: row.Name,
         recordedQuantity: Number(row.Recorded_Quantity) || 0,
-        status: row.Status || 'Not Confirmed', // Ensure status is properly included
+        status: row.Status || 'Not Confirmed', // This should now work properly
         recordedDate: getCurrentDateKey()
       };
+    
+      console.log('Saving data:', updateData); // Add this for debugging
     
       // Update the database
       await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
@@ -579,7 +581,6 @@ const RemainingProducts = () => {
       setEditingRow(null);
     }
   };
-
 
   const getFilteredData = () => {
     let filteredData = sortedTableData();
@@ -656,11 +657,14 @@ const RemainingProducts = () => {
   const handleChange = (index, field, value) => {
     setTableData(prevData => {
       const newData = [...prevData];
-      const updatedRow = { ...newData[index], [field]: value };
+      const updatedRow = { ...newData[index] };
       
-      // Auto-update logic for quantities
+      // Update the specific field
+      updatedRow[field] = value;
+      
+      // Auto-update logic for quantities only
       if (field === 'Sold_Quantity') {
-        updatedRow.Remaining_Quantity = updatedRow.Initial_Quantity - value;
+        updatedRow.Remaining_Quantity = updatedRow.Initial_Quantity - parseInt(value);
       }
       
       newData[index] = updatedRow;
@@ -1334,20 +1338,17 @@ const RemainingProducts = () => {
               {editingRow === index ? (
 
 <select
-value={row.Status}
-onChange={(e) => {
-  e.persist(); // For React's event pooling
-  handleChange(index, 'Status', e.target.value);
-}}
-style={{ 
-  padding: '5px',
-  border: '1px solid #ddd',
-  borderRadius: '4px',
-  minWidth: '120px'
-}}
+  value={row.Status}
+  onChange={(e) => handleChange(index, 'Status', e.target.value)}
+  style={{ 
+    padding: '5px',
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    minWidth: '120px'
+  }}
 >
-<option value="Not Confirmed">Not Confirmed</option>
-<option value="Confirmed">Confirmed</option>
+  <option value="Not Confirmed">Not Confirmed</option>
+  <option value="Confirmed">Confirmed</option>
 </select>
               ) : (
                 row.Status

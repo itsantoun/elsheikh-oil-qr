@@ -49,6 +49,14 @@ const SoldItems = () => {
     return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
   };
 
+  const sortItemsByDate = (items, order = 'asc') => {  // Changed default to 'asc'
+    return [...items].sort((a, b) => {
+      const dateA = new Date(a.dateScanned);
+      const dateB = new Date(b.dateScanned);
+      return order === 'asc' ? dateA - dateB : dateB - dateA;  // Changed comparison
+    });
+  };
+
   useEffect(() => {
     const soldItemsRef = ref(database, 'SoldItems');
 
@@ -112,6 +120,54 @@ const SoldItems = () => {
     moveStockItems();
   }, []);
 
+  // useEffect(() => {
+  //   const fetchCustomersAndSoldItems = async () => {
+  //     try {
+  //       // Fetch customers data
+  //       const customersRef = ref(database, 'customers');
+  //       const customersSnapshot = await get(customersRef);
+  //       let customerList = [];
+
+  //       if (customersSnapshot.exists()) {
+  //         const customersData = customersSnapshot.val();
+  //         customerList = Object.keys(customersData).map((key) => ({
+  //           id: key,
+  //           name: customersData[key].name, // English name
+  //           nameArabic: customersData[key].nameArabic, // Arabic name
+  //         }));
+  //       }
+
+  //       setCustomers(customerList);
+
+  //       // Fetch Sold Items
+  //       const soldItemsRef = ref(database, 'SoldItems');
+  //       const soldItemsSnapshot = await get(soldItemsRef);
+  //       if (soldItemsSnapshot.exists()) {
+  //         const soldData = soldItemsSnapshot.val();
+  //         const soldItemList = Object.keys(soldData).map((key) => ({
+  //           id: key,
+  //           ...soldData[key],
+  //           customerName:
+  //             customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+  //             soldData[key].customerName, // Convert Arabic to English if found
+  //         }));
+
+  //         setSoldItems(soldItemList);
+  //         setFilteredItems(soldItemList);
+  //       } else {
+  //         setSoldItems([]);
+  //         setFilteredItems([]);
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching data:', error);
+  //       setErrorMessage('Failed to fetch sold items.');
+  //       setTimeout(() => setErrorMessage(null), 3000);
+  //     }
+  //   };
+
+  //   fetchCustomersAndSoldItems();
+  // }, []);
+
   useEffect(() => {
     const fetchCustomersAndSoldItems = async () => {
       try {
@@ -119,7 +175,7 @@ const SoldItems = () => {
         const customersRef = ref(database, 'customers');
         const customersSnapshot = await get(customersRef);
         let customerList = [];
-
+  
         if (customersSnapshot.exists()) {
           const customersData = customersSnapshot.val();
           customerList = Object.keys(customersData).map((key) => ({
@@ -128,9 +184,9 @@ const SoldItems = () => {
             nameArabic: customersData[key].nameArabic, // Arabic name
           }));
         }
-
+  
         setCustomers(customerList);
-
+  
         // Fetch Sold Items
         const soldItemsRef = ref(database, 'SoldItems');
         const soldItemsSnapshot = await get(soldItemsRef);
@@ -143,9 +199,11 @@ const SoldItems = () => {
               customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
               soldData[key].customerName, // Convert Arabic to English if found
           }));
-
-          setSoldItems(soldItemList);
-          setFilteredItems(soldItemList);
+  
+          // Sort items by date in descending order (newest first)
+          const sortedItems = sortItemsByDate(soldItemList);
+          setSoldItems(sortedItems);
+          setFilteredItems(sortedItems);
         } else {
           setSoldItems([]);
           setFilteredItems([]);
@@ -156,13 +214,53 @@ const SoldItems = () => {
         setTimeout(() => setErrorMessage(null), 3000);
       }
     };
-
+  
     fetchCustomersAndSoldItems();
   }, []);
-  
+
+  // useEffect(() => {
+  //   let filtered = [...soldItems];
+
+  //   if (filterType === 'Customer' && searchTerm) {
+  //     filtered = filtered.filter((item) =>
+  //       item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
+  //     );
+  //   } else if (filterType === 'Date' && dateFilter) {
+  //     filtered = filtered.filter(
+  //       (item) =>
+  //         new Date(item.dateScanned).toLocaleDateString() ===
+  //         new Date(dateFilter).toLocaleDateString()
+  //     );
+  //   } else if (filterType === 'Month' && monthFilter) {
+  //     filtered = filtered.filter(
+  //       (item) =>
+  //         new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
+  //     );
+  //   } else if (filterType === 'By Unpaid') {
+  //     filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
+  //   } else if (filterType === 'By Stock') {
+  //     filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
+  //   } else if (filterType === 'By Paid') {
+  //     filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
+  //   } else if (filterType === 'By Product' && searchTerm) {
+  //     filtered = filtered.filter((item) =>
+  //       item.name?.toLowerCase().includes(searchTerm.toLowerCase())
+  //     );
+  //   }
+
+  //   // Apply check filter
+  //   if (checkFilter === 'checked') {
+  //     filtered = filtered.filter((item) => checkedItems.includes(item.id));
+  //   } else if (checkFilter === 'unchecked') {
+  //     filtered = filtered.filter((item) => !checkedItems.includes(item.id));
+  //   }
+
+  //   setFilteredItems(filtered);
+  // }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
+
   useEffect(() => {
     let filtered = [...soldItems];
-
+  
     if (filterType === 'Customer' && searchTerm) {
       filtered = filtered.filter((item) =>
         item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -189,15 +287,17 @@ const SoldItems = () => {
         item.name?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-
+  
     // Apply check filter
     if (checkFilter === 'checked') {
       filtered = filtered.filter((item) => checkedItems.includes(item.id));
     } else if (checkFilter === 'unchecked') {
       filtered = filtered.filter((item) => !checkedItems.includes(item.id));
     }
-
-    setFilteredItems(filtered);
+  
+    // Maintain sorting by date
+    const sortedFiltered = sortItemsByDate(filtered);
+    setFilteredItems(sortedFiltered);
   }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
 
   const handleEdit = (item) => {
@@ -253,6 +353,41 @@ const SoldItems = () => {
   //   }
   // };
 
+  // const saveEditedItem = async () => {
+  //   if (editingItem) {
+  //     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
+  //     try {
+  //       await update(itemRef, {
+  //         remark: newRemark,
+  //         totalCost: newTotalCost,
+  //         paymentStatus: newPaymentStatus,
+  //         customerName: newCustomer,
+  //         name: newProductType,
+  //         quantity: newQuantity,
+  //         dateScanned: newDate, // Add this line
+  //       });
+  //       const updatedItems = soldItems.map((item) =>
+  //         item.id === editingItem.id
+  //           ? {
+  //               ...item,
+  //               remark: newRemark,
+  //               totalCost: newTotalCost,
+  //               paymentStatus: newPaymentStatus,
+  //               customerName: newCustomer,
+  //               name: newProductType,
+  //               quantity: newQuantity,
+  //               dateScanned: newDate, // Add this line
+  //             }
+  //           : item
+  //       );
+  //       setSoldItems(updatedItems);
+  //       setFilteredItems(updatedItems);
+  //       setEditingItem(null);
+  //     } catch (error) {
+  //       console.error('Error updating the item:', error);
+  //     }
+  //   }
+  // };
   const saveEditedItem = async () => {
     if (editingItem) {
       const itemRef = ref(database, `SoldItems/${editingItem.id}`);
@@ -264,7 +399,7 @@ const SoldItems = () => {
           customerName: newCustomer,
           name: newProductType,
           quantity: newQuantity,
-          dateScanned: newDate, // Add this line
+          dateScanned: newDate,
         });
         const updatedItems = soldItems.map((item) =>
           item.id === editingItem.id
@@ -276,19 +411,20 @@ const SoldItems = () => {
                 customerName: newCustomer,
                 name: newProductType,
                 quantity: newQuantity,
-                dateScanned: newDate, // Add this line
+                dateScanned: newDate,
               }
             : item
         );
-        setSoldItems(updatedItems);
-        setFilteredItems(updatedItems);
+        // Sort items after update
+        const sortedItems = sortItemsByDate(updatedItems);
+        setSoldItems(sortedItems);
+        setFilteredItems(sortedItems);
         setEditingItem(null);
       } catch (error) {
         console.error('Error updating the item:', error);
       }
     }
   };
-
   const handleDelete = async (itemId) => {
     try {
       // Find the item being deleted
@@ -585,7 +721,6 @@ const SoldItems = () => {
             <tbody>
             {filteredItems.map((item) => (
               <tr key={item.id} className={item.manuallyAdded ? "manually-added" : ""}>
-                {/* <td>{formatDateTime(item.dateScanned)}</td> */}
                 <td>
     {editingItem && editingItem.id === item.id ? (
       <input

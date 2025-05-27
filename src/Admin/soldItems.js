@@ -3,6 +3,7 @@ import { database } from '../Auth/firebase';
 import { ref, set, get, update, remove, onValue, push, child } from 'firebase/database';
 import { UserContext } from '../Auth/userContext'; // Import the context
 import '../CSS/soldItems.css';
+import Barcode from 'react-barcode';
 
 const SoldItems = () => {
   const { user } = useContext(UserContext); // Access the logged-in user
@@ -34,6 +35,31 @@ const SoldItems = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [checkFilter, setCheckFilter] = useState('all'); // 'all', 'checked', 'unchecked'
+
+  const [showMissingItemsModal, setShowMissingItemsModal] = useState(false);
+const [products, setProducts] = useState([]);
+const [selectedProduct, setSelectedProduct] = useState(null);
+const [scannedBarcode, setScannedBarcode] = useState('');
+
+const fetchProducts = async () => {
+  try {
+    const productsRef = ref(database, 'products');
+    const snapshot = await get(productsRef);
+    if (snapshot.exists()) {
+      const productsData = snapshot.val();
+      const productList = Object.keys(productsData).map((key) => ({
+        id: key,
+        barcode: key,
+        ...productsData[key],
+      }));
+      setProducts(productList);
+    }
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    setErrorMessage('Failed to fetch products.');
+    setTimeout(() => setErrorMessage(null), 3000);
+  }
+};
 
   const formatDateTime = (dateString) => {
     const date = new Date(dateString);
@@ -120,54 +146,6 @@ const SoldItems = () => {
     moveStockItems();
   }, []);
 
-  // useEffect(() => {
-  //   const fetchCustomersAndSoldItems = async () => {
-  //     try {
-  //       // Fetch customers data
-  //       const customersRef = ref(database, 'customers');
-  //       const customersSnapshot = await get(customersRef);
-  //       let customerList = [];
-
-  //       if (customersSnapshot.exists()) {
-  //         const customersData = customersSnapshot.val();
-  //         customerList = Object.keys(customersData).map((key) => ({
-  //           id: key,
-  //           name: customersData[key].name, // English name
-  //           nameArabic: customersData[key].nameArabic, // Arabic name
-  //         }));
-  //       }
-
-  //       setCustomers(customerList);
-
-  //       // Fetch Sold Items
-  //       const soldItemsRef = ref(database, 'SoldItems');
-  //       const soldItemsSnapshot = await get(soldItemsRef);
-  //       if (soldItemsSnapshot.exists()) {
-  //         const soldData = soldItemsSnapshot.val();
-  //         const soldItemList = Object.keys(soldData).map((key) => ({
-  //           id: key,
-  //           ...soldData[key],
-  //           customerName:
-  //             customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-  //             soldData[key].customerName, // Convert Arabic to English if found
-  //         }));
-
-  //         setSoldItems(soldItemList);
-  //         setFilteredItems(soldItemList);
-  //       } else {
-  //         setSoldItems([]);
-  //         setFilteredItems([]);
-  //       }
-  //     } catch (error) {
-  //       console.error('Error fetching data:', error);
-  //       setErrorMessage('Failed to fetch sold items.');
-  //       setTimeout(() => setErrorMessage(null), 3000);
-  //     }
-  //   };
-
-  //   fetchCustomersAndSoldItems();
-  // }, []);
-
   useEffect(() => {
     const fetchCustomersAndSoldItems = async () => {
       try {
@@ -217,46 +195,6 @@ const SoldItems = () => {
   
     fetchCustomersAndSoldItems();
   }, []);
-
-  // useEffect(() => {
-  //   let filtered = [...soldItems];
-
-  //   if (filterType === 'Customer' && searchTerm) {
-  //     filtered = filtered.filter((item) =>
-  //       item.customerName?.toLowerCase().includes(searchTerm.toLowerCase())
-  //     );
-  //   } else if (filterType === 'Date' && dateFilter) {
-  //     filtered = filtered.filter(
-  //       (item) =>
-  //         new Date(item.dateScanned).toLocaleDateString() ===
-  //         new Date(dateFilter).toLocaleDateString()
-  //     );
-  //   } else if (filterType === 'Month' && monthFilter) {
-  //     filtered = filtered.filter(
-  //       (item) =>
-  //         new Date(item.dateScanned).getMonth() + 1 === parseInt(monthFilter, 10)
-  //     );
-  //   } else if (filterType === 'By Unpaid') {
-  //     filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
-  //   } else if (filterType === 'By Stock') {
-  //     filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
-  //   } else if (filterType === 'By Paid') {
-  //     filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
-  //   } else if (filterType === 'By Product' && searchTerm) {
-  //     filtered = filtered.filter((item) =>
-  //       item.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  //     );
-  //   }
-
-  //   // Apply check filter
-  //   if (checkFilter === 'checked') {
-  //     filtered = filtered.filter((item) => checkedItems.includes(item.id));
-  //   } else if (checkFilter === 'unchecked') {
-  //     filtered = filtered.filter((item) => !checkedItems.includes(item.id));
-  //   }
-
-  //   setFilteredItems(filtered);
-  // }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
 
   useEffect(() => {
     let filtered = [...soldItems];
@@ -319,75 +257,6 @@ const SoldItems = () => {
     setNewDate(item.dateScanned || new Date().toISOString()); // Add this line
   };
 
-  // const saveEditedItem = async () => {
-  //   if (editingItem) {
-  //     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
-  //     try {
-  //       await update(itemRef, {
-  //         remark: newRemark,
-  //         totalCost: newTotalCost,
-  //         paymentStatus: newPaymentStatus,
-  //         customerName: newCustomer,
-  //         name: newProductType,
-  //         quantity: newQuantity,
-  //       });
-  //       const updatedItems = soldItems.map((item) =>
-  //         item.id === editingItem.id
-  //           ? {
-  //               ...item,
-  //               remark: newRemark,
-  //               totalCost: newTotalCost,
-  //               paymentStatus: newPaymentStatus,
-  //               customerName: newCustomer,
-  //               name: newProductType,
-  //               quantity: newQuantity,
-  //             }
-  //           : item
-  //       );
-  //       setSoldItems(updatedItems);
-  //       setFilteredItems(updatedItems);
-  //       setEditingItem(null);
-  //     } catch (error) {
-  //       console.error('Error updating the item:', error);
-  //     }
-  //   }
-  // };
-
-  // const saveEditedItem = async () => {
-  //   if (editingItem) {
-  //     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
-  //     try {
-  //       await update(itemRef, {
-  //         remark: newRemark,
-  //         totalCost: newTotalCost,
-  //         paymentStatus: newPaymentStatus,
-  //         customerName: newCustomer,
-  //         name: newProductType,
-  //         quantity: newQuantity,
-  //         dateScanned: newDate, // Add this line
-  //       });
-  //       const updatedItems = soldItems.map((item) =>
-  //         item.id === editingItem.id
-  //           ? {
-  //               ...item,
-  //               remark: newRemark,
-  //               totalCost: newTotalCost,
-  //               paymentStatus: newPaymentStatus,
-  //               customerName: newCustomer,
-  //               name: newProductType,
-  //               quantity: newQuantity,
-  //               dateScanned: newDate, // Add this line
-  //             }
-  //           : item
-  //       );
-  //       setSoldItems(updatedItems);
-  //       setFilteredItems(updatedItems);
-  //       setEditingItem(null);
-  //     } catch (error) {
-  //       console.error('Error updating the item:', error);
-  //     }
-  //   }
-  // };
   const saveEditedItem = async () => {
     if (editingItem) {
       const itemRef = ref(database, `SoldItems/${editingItem.id}`);
@@ -639,6 +508,7 @@ const SoldItems = () => {
               Clear All Checks
             </button>
           </div>
+          
 
           {filterType === 'Customer' && (
             <div>
@@ -696,6 +566,66 @@ const SoldItems = () => {
           <button onClick={exportToCSV}>Export to CSV</button>
         </div>
       </div>
+
+      {showMissingItemsModal && (
+  <div className="confirmation-popup-overlay">
+    <div className="confirmation-popup" style={{ width: '80%', maxWidth: '800px' }}>
+      <h3>Add Missing Item</h3>
+      
+      <div className="product-selection">
+        <select
+          value={selectedProduct?.id || ''}
+          onChange={(e) => {
+            const productId = e.target.value;
+            const product = products.find(p => p.id === productId);
+            setSelectedProduct(product);
+          }}
+          autoFocus
+        >
+          <option value="">Select a Product</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name} - {product.barcode}
+            </option>
+          ))}
+        </select>
+        
+        {selectedProduct && (
+          <div className="barcode-display">
+            <h4>{selectedProduct.name}</h4>
+            <div className="barcode-container">
+              <Barcode 
+                value={selectedProduct.barcode} 
+                format="CODE128"
+                width={2}
+                height={100}
+                displayValue={false}
+              />
+            </div>
+            <p className="barcode-number">{selectedProduct.barcode}</p>
+            
+            <div className="modal-actions">
+              <button onClick={() => {
+                setShowMissingItemsModal(false);
+                setSelectedProduct(null);
+              }}>
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+<button onClick={() => {
+  fetchProducts();
+  setShowMissingItemsModal(true);
+  setSelectedProduct(null); // Reset selection when opening modal
+}}>
+  Add Missing Items
+</button>
 
       {/* Sold Items Table */}
       <div className="sold-items-list">

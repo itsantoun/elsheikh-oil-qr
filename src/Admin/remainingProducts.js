@@ -25,6 +25,8 @@ const RemainingProducts = () => {
   
   const scannerRef = useRef(null);
 
+  const [isLocked, setIsLocked] = useState(false);
+
   // Get current date
   const today = new Date();
   
@@ -182,36 +184,94 @@ const RemainingProducts = () => {
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
   };
 
-  const handleConfirmQuantity = async (useExisting = false) => {
-    let finalQuantity;
+  // const handleConfirmQuantity = async (useExisting = false) => {
+  //   let finalQuantity;
     
-    if (useExisting) {
-      // Use the calculated remaining quantity from the product
-      finalQuantity = scannedProduct.remainingQuantity;
-    } else {
-      // Use the input quantity that was set before calling this function
-      finalQuantity = remainingQuantity;
+  //   if (useExisting) {
+  //     // Use the calculated remaining quantity from the product
+  //     finalQuantity = scannedProduct.remainingQuantity;
+  //   } else {
+  //     // Use the input quantity that was set before calling this function
+  //     finalQuantity = remainingQuantity;
+  //   }
+  
+  //   const dateKey = getCurrentDateKey();
+  //   const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
+  //   const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+  //   const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
+  //   const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
+  
+  //   try {
+  //     // Get product's initial quantity
+  //     const productSnapshot = await get(productMainRef);
+  //     if (!productSnapshot.exists()) {
+  //       alert('Product not found.');
+  //       return;
+  //     }
+  
+  //     const product = productSnapshot.val();
+  //     const initialQuantity = product.quantity;
+  
+  //     const newSoldQuantity = initialQuantity - finalQuantity;
+  
+  //     // Update sold item
+  //     await set(soldItemsRef, {
+  //       barcode: scannedProduct.barcode,
+  //       name: scannedProduct.name,
+  //       quantity: newSoldQuantity,
+  //       date: dateKey
+  //     });
+  
+  //     // Update remaining stock
+  //     await set(productRef, {
+  //       barcode: scannedProduct.barcode,
+  //       name: scannedProduct.name,
+  //       recordedQuantity: finalQuantity,
+  //       status: useExisting ? 'Confirmed' : 'Not Confirmed',
+  //       recordedDate: dateKey
+  //     });
+  
+  //     console.log('Data saved successfully');
+  //     setIsPopupOpen(false);
+  //     setInputQuantity('');
+  //     fetchTableData(); // Refresh table data after saving
+  //   } catch (error) {
+  //     console.error('Error saving data:', error);
+  //   }
+  // };
+
+  const handleConfirmQuantity = async (useExisting = false) => {
+  let finalQuantity;
+  
+  if (useExisting) {
+    // Use the calculated remaining quantity from the product
+    finalQuantity = scannedProduct.remainingQuantity;
+  } else {
+    // Use the input quantity that was set before calling this function
+    finalQuantity = remainingQuantity;
+  }
+
+  const dateKey = getCurrentDateKey();
+  const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
+  const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
+  const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
+
+  try {
+    // Get product's initial quantity
+    const productSnapshot = await get(productMainRef);
+    if (!productSnapshot.exists()) {
+      alert('Product not found.');
+      return;
     }
-  
-    const dateKey = getCurrentDateKey();
-    const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
-    const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
-    const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
-    const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
-  
-    try {
-      // Get product's initial quantity
-      const productSnapshot = await get(productMainRef);
-      if (!productSnapshot.exists()) {
-        alert('Product not found.');
-        return;
-      }
-  
-      const product = productSnapshot.val();
-      const initialQuantity = product.quantity;
-  
+
+    const product = productSnapshot.val();
+    const initialQuantity = product.quantity;
+
+    // Only update sold items if we're NOT using existing quantity
+    if (!useExisting) {
+      const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
       const newSoldQuantity = initialQuantity - finalQuantity;
-  
+      
       // Update sold item
       await set(soldItemsRef, {
         barcode: scannedProduct.barcode,
@@ -219,24 +279,25 @@ const RemainingProducts = () => {
         quantity: newSoldQuantity,
         date: dateKey
       });
-  
-      // Update remaining stock
-      await set(productRef, {
-        barcode: scannedProduct.barcode,
-        name: scannedProduct.name,
-        recordedQuantity: finalQuantity,
-        status: useExisting ? 'Confirmed' : 'Not Confirmed',
-        recordedDate: dateKey
-      });
-  
-      console.log('Data saved successfully');
-      setIsPopupOpen(false);
-      setInputQuantity('');
-      fetchTableData(); // Refresh table data after saving
-    } catch (error) {
-      console.error('Error saving data:', error);
     }
-  };
+
+    // Update remaining stock
+    await set(productRef, {
+      barcode: scannedProduct.barcode,
+      name: scannedProduct.name,
+      recordedQuantity: finalQuantity,
+      status: useExisting ? 'Confirmed' : 'Not Confirmed',
+      recordedDate: dateKey
+    });
+
+    console.log('Data saved successfully');
+    setIsPopupOpen(false);
+    setInputQuantity('');
+    fetchTableData(); // Refresh table data after saving
+  } catch (error) {
+    console.error('Error saving data:', error);
+  }
+};
 
   useEffect(() => {
     if (showScanner) {
@@ -948,15 +1009,6 @@ const RemainingProducts = () => {
         onClick={() => {
           setIsPopupOpen(false);
           setInputQuantity('');
-        }}
-        style={{ 
-          position: 'absolute',
-          top: '10px',
-          right: '10px',
-          fontSize: '1.5rem',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer'
         }}
       >
         ×

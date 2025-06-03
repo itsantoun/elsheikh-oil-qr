@@ -153,50 +153,108 @@ const FetchProducts = () => {
 
   const rowRef = useRef(null);
 
+  // const handleEditProduct = (product) => {
+  //   setEditingProduct({ ...product });
+  //   setTimeout(() => {
+  //     rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  //   }, 100);
+  // };
+
   const handleEditProduct = (product) => {
-    setEditingProduct({ ...product });
-    setTimeout(() => {
-      rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
-  };
+  setEditingProduct({ ...product, originalId: product.id });
+  setTimeout(() => {
+    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 100);
+};
 
   // Save Changes to Product
-  const handleSaveChanges = async () => {
-    const productRef = ref(database, `products/${editingProduct.id}`);
-    try {
-      const parsedItemCost = parseFloat(editingProduct.itemCost);
-      const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
+  // const handleSaveChanges = async () => {
+  //   const productRef = ref(database, `products/${editingProduct.id}`);
+  //   try {
+  //     const parsedItemCost = parseFloat(editingProduct.itemCost);
+  //     const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
 
-      await set(productRef, {
-        name: editingProduct.name.trim() || 'Unnamed Product',
-        productType: editingProduct.productType.trim() || 'Unknown Type',
-        itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
-        purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
-        quantity: editingProduct.quantity || 0, // Save quantity
-      });
+  //     await set(productRef, {
+  //       name: editingProduct.name.trim() || 'Unnamed Product',
+  //       productType: editingProduct.productType.trim() || 'Unknown Type',
+  //       itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
+  //       purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
+  //       quantity: editingProduct.quantity || 0, // Save quantity
+  //     });
 
-      const updatedProducts = products.map((product) =>
-        product.id === editingProduct.id
-          ? { 
-              ...editingProduct, 
-              itemCost: parsedItemCost,
-              purchasingPrice: parsedPurchasingPrice
-            }
-          : product
-      );
+  //     const updatedProducts = products.map((product) =>
+  //       product.id === editingProduct.id
+  //         ? { 
+  //             ...editingProduct, 
+  //             itemCost: parsedItemCost,
+  //             purchasingPrice: parsedPurchasingPrice
+  //           }
+  //         : product
+  //     );
       
-      setProducts(updatedProducts);
+  //     setProducts(updatedProducts);
 
-      setSuccessMessage('Product updated successfully!');
-      setEditingProduct(null);
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (error) {
-      console.error('Error updating product:', error);
-      setErrorMessage('Error updating product. Please try again.');
-      setTimeout(() => setErrorMessage(null), 3000);
+  //     setSuccessMessage('Product updated successfully!');
+  //     setEditingProduct(null);
+  //     setTimeout(() => setSuccessMessage(null), 3000);
+  //   } catch (error) {
+  //     console.error('Error updating product:', error);
+  //     setErrorMessage('Error updating product. Please try again.');
+  //     setTimeout(() => setErrorMessage(null), 3000);
+  //   }
+  // };
+
+  const handleSaveChanges = async () => {
+  const oldId = editingProduct.originalId || editingProduct.id;
+  const newId = sanitizeId(editingProduct.id);
+  
+  if (!newId) {
+    setErrorMessage("Barcode (ID) cannot be empty.");
+    setTimeout(() => setErrorMessage(null), 3000);
+    return;
+  }
+
+  const newProductRef = ref(database, `products/${newId}`);
+  const oldProductRef = ref(database, `products/${oldId}`);
+
+  try {
+    const parsedItemCost = parseFloat(editingProduct.itemCost);
+    const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
+
+    // If the ID changed, remove the old one
+    if (oldId !== newId) {
+      await remove(oldProductRef);
     }
-  };
 
+    await set(newProductRef, {
+      name: editingProduct.name.trim() || 'Unnamed Product',
+      productType: editingProduct.productType.trim() || 'Unknown Type',
+      itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
+      purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
+      quantity: editingProduct.quantity || 0,
+    });
+
+    const updatedProducts = products.map((product) =>
+      product.id === oldId
+        ? {
+            ...editingProduct,
+            id: newId,
+            itemCost: parsedItemCost,
+            purchasingPrice: parsedPurchasingPrice
+          }
+        : product
+    );
+
+    setProducts(updatedProducts);
+    setEditingProduct(null);
+    setSuccessMessage('Product updated successfully!');
+    setTimeout(() => setSuccessMessage(null), 3000);
+  } catch (error) {
+    console.error('Error updating product:', error);
+    setErrorMessage('Error updating product. Please try again.');
+    setTimeout(() => setErrorMessage(null), 3000);
+  }
+};
   
   const handleExportToExcel = () => {
     if (products.length === 0) {

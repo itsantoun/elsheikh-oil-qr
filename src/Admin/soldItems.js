@@ -83,34 +83,96 @@ const fetchProducts = async () => {
     });
   };
 
+  // useEffect(() => {
+  //   const soldItemsRef = ref(database, 'SoldItems');
+
+  //   const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
+  //     if (snapshot.exists()) {
+  //       const data = snapshot.val();
+  //       const updates = [];
+
+  //       for (const key in data) {
+  //         if (data[key].paymentStatus === 'Stock') {
+  //           const stockItem = data[key];
+  //           const transactionsRef = ref(database, `transactions/${key}`);
+
+  //           updates.push(
+  //             set(transactionsRef, {
+  //               ...stockItem,
+  //               movedToTransactionsAt: new Date().toISOString(),
+  //             }).then(() => remove(ref(database, `SoldItems/${key}`)))
+  //           );
+  //         }
+  //       }
+
+  //       await Promise.all(updates);
+  //     }
+  //   });
+
+  //   return () => unsubscribe(); // Cleanup on unmount
+  // }, []);
+
   useEffect(() => {
-    const soldItemsRef = ref(database, 'SoldItems');
-
-    const unsubscribe = onValue(soldItemsRef, async (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const updates = [];
-
-        for (const key in data) {
-          if (data[key].paymentStatus === 'Stock') {
-            const stockItem = data[key];
-            const transactionsRef = ref(database, `transactions/${key}`);
-
-            updates.push(
-              set(transactionsRef, {
-                ...stockItem,
-                movedToTransactionsAt: new Date().toISOString(),
-              }).then(() => remove(ref(database, `SoldItems/${key}`)))
-            );
-          }
-        }
-
-        await Promise.all(updates);
-      }
+  // Reference to customers data
+  const customersRef = ref(database, 'customers');
+  
+  // Reference to sold items data
+  const soldItemsRef = ref(database, 'SoldItems');
+  
+  // Function to process and combine data
+  const processData = (customersSnapshot, soldItemsSnapshot) => {
+    let customerList = [];
+    
+    // Process customers data
+    if (customersSnapshot.exists()) {
+      const customersData = customersSnapshot.val();
+      customerList = Object.keys(customersData).map((key) => ({
+        id: key,
+        name: customersData[key].name,
+        nameArabic: customersData[key].nameArabic,
+      }));
+    }
+    
+    setCustomers(customerList);
+    
+    // Process sold items data
+    if (soldItemsSnapshot.exists()) {
+      const soldData = soldItemsSnapshot.val();
+      const soldItemList = Object.keys(soldData).map((key) => ({
+        id: key,
+        ...soldData[key],
+        customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+                    soldData[key].customerName,
+      }));
+      
+      const sortedItems = sortItemsByDate(soldItemList);
+      setSoldItems(sortedItems);
+      setFilteredItems(sortedItems);
+    } else {
+      setSoldItems([]);
+      setFilteredItems([]);
+    }
+  };
+  
+  // Set up real-time listeners
+  const unsubscribeCustomers = onValue(customersRef, (customersSnapshot) => {
+    get(soldItemsRef).then((soldItemsSnapshot) => {
+      processData(customersSnapshot, soldItemsSnapshot);
     });
-
-    return () => unsubscribe(); // Cleanup on unmount
-  }, []);
+  });
+  
+  const unsubscribeSoldItems = onValue(soldItemsRef, (soldItemsSnapshot) => {
+    get(customersRef).then((customersSnapshot) => {
+      processData(customersSnapshot, soldItemsSnapshot);
+    });
+  });
+  
+  // Cleanup function
+  return () => {
+    unsubscribeCustomers();
+    unsubscribeSoldItems();
+  };
+}, []);
 
   // Move stock items to transactions immediately
   useEffect(() => {

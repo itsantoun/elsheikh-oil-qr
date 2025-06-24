@@ -167,43 +167,6 @@ const FetchProducts = () => {
   }, 100);
 };
 
-  // Save Changes to Product
-  // const handleSaveChanges = async () => {
-  //   const productRef = ref(database, `products/${editingProduct.id}`);
-  //   try {
-  //     const parsedItemCost = parseFloat(editingProduct.itemCost);
-  //     const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
-
-  //     await set(productRef, {
-  //       name: editingProduct.name.trim() || 'Unnamed Product',
-  //       productType: editingProduct.productType.trim() || 'Unknown Type',
-  //       itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
-  //       purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
-  //       quantity: editingProduct.quantity || 0, // Save quantity
-  //     });
-
-  //     const updatedProducts = products.map((product) =>
-  //       product.id === editingProduct.id
-  //         ? { 
-  //             ...editingProduct, 
-  //             itemCost: parsedItemCost,
-  //             purchasingPrice: parsedPurchasingPrice
-  //           }
-  //         : product
-  //     );
-      
-  //     setProducts(updatedProducts);
-
-  //     setSuccessMessage('Product updated successfully!');
-  //     setEditingProduct(null);
-  //     setTimeout(() => setSuccessMessage(null), 3000);
-  //   } catch (error) {
-  //     console.error('Error updating product:', error);
-  //     setErrorMessage('Error updating product. Please try again.');
-  //     setTimeout(() => setErrorMessage(null), 3000);
-  //   }
-  // };
-
   const handleSaveChanges = async () => {
   const oldId = editingProduct.originalId || editingProduct.id;
   const newId = sanitizeId(editingProduct.id);

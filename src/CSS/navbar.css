@@ -1,28 +1,54 @@
-/* navbar.css */
+:root {
+  --primary-dark: #0a3d62;
+  --primary-light: #1e88e5;
+  --secondary-color: #e3b505; /* Gold for oil */
+  --accent-color: #c5d86d; /* Light green accent */
+  --dark-color: #1a1a1a;
+  --light-color: #f8f9fa;
+  --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --transition: all 0.3s ease;
+}
 
 .navbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.8rem 2rem;
-  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-light) 100%);
   color: white;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.navbar-brand {
+  display: flex;
+  flex-direction: column;
 }
 
 .navbar-title {
-  font-size: 1.5rem;
-  font-weight: 600;
   margin: 0;
-  background: linear-gradient(to right, #ffffff, #b3e0ff);
+  font-size: 1.8rem;
+  font-weight: 700;
+  background: linear-gradient(to right, white, var(--accent-color));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  animation: titleGlow 2s infinite alternate;
+}
+
+@keyframes titleGlow {
+  from {
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+  }
+  to {
+    text-shadow: 0 0 15px rgba(197, 216, 109, 0.6);
+  }
+}
+
+.brand-tagline {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  font-style: italic;
 }
 
 .navbar-buttons {
@@ -31,66 +57,97 @@
 }
 
 .navbar-button {
-  padding: 0.6rem 1.2rem;
-  border: none;
-  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
   background: rgba(255, 255, 255, 0.1);
   color: white;
-  font-weight: 500;
+  border: none;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(5px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.navbar-button::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: var(--transition);
 }
 
 .navbar-button:hover {
   background: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.navbar-button:hover::before {
+  left: 100%;
 }
 
 .navbar-button:active {
-  transform: translateY(0);
+  transform: translateY(-1px);
 }
 
-/* Water and oil themed active state */
-.navbar-button:focus,
-.navbar-button.active {
-  background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
-  border-color: rgba(255, 255, 255, 0.3);
+.button-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.3rem;
+  transition: var(--transition);
 }
 
-/* Responsive design */
-@media (max-width: 1024px) {
+.button-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: var(--transition);
+}
+
+.navbar-button:hover .button-icon {
+  transform: scale(1.2) rotate(5deg);
+  color: var(--accent-color);
+}
+
+.navbar-button:hover .button-text {
+  letter-spacing: 0.5px;
+  color: var(--accent-color);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
   .navbar {
-      flex-direction: column;
-      padding: 1rem;
-  }
-  
-  .navbar-title {
-      margin-bottom: 1rem;
+    flex-direction: column;
+    padding: 1rem;
   }
   
   .navbar-buttons {
-      flex-wrap: wrap;
-      justify-content: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 1rem;
   }
   
   .navbar-button {
-      padding: 0.5rem 1rem;
-      font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    min-width: 80px;
   }
-}
-
-/* Animation for water/oil theme */
-@keyframes shimmer {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-.navbar {
-  background-size: 200% 200%;
-  animation: shimmer 15s ease infinite;
+  
+  .button-icon {
+    font-size: 1.2rem;
+  }
+  
+  .button-text {
+    font-size: 0.8rem;
+  }
 }

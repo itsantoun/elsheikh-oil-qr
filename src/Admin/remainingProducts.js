@@ -1,303 +1,89 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
-import { ref, get, set, child } from 'firebase/database';
+// import { ref, get, child, push, set } from 'firebase/database';
+import { ref, get, child, push, set, update, remove } from 'firebase/database';
 import '../CSS/remainingProducts.css';
-import * as XLSX from 'xlsx';
 
 const RemainingProducts = () => {
   const [scanStatus, setScanStatus] = useState('Press "Scan Barcode" to start scanning.');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [remainingQuantity, setRemainingQuantity] = useState(0);
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState('');
   const [showScanner, setShowScanner] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [inputQuantity, setInputQuantity] = useState('');
-
   const [statusFilter, setStatusFilter] = useState('All');
+  const [soldCount, setSoldCount] = useState(0);
 
-  const [excludedProducts, setExcludedProducts] = useState([]);
+  // Date range filters - now using date strings (YYYY-MM-DD format)
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
-  const [showOnlyDropdownItems, setShowOnlyDropdownItems] = useState(false);
+  const [uncertainQuantity, setUncertainQuantity] = useState('');
   
+  // New state to track scanned products for current date range
+  const [scannedProductsForCurrentRange, setScannedProductsForCurrentRange] = useState(new Set());
+
   const scannerRef = useRef(null);
 
-  const [isLocked, setIsLocked] = useState(false);
-
-  // Get current date
-  const today = new Date();
-  
-  // New date range states
-  const [startDate, setStartDate] = useState({
-    day: 1,
-    month: today.getMonth() + 1,
-    year: today.getFullYear()
-  });
-  
-  const [endDate, setEndDate] = useState({
-    day: today.getDate(),
-    month: today.getMonth() + 1,
-    year: today.getFullYear()
-  });
-
-  const [tableData, setTableData] = useState([]);
-  const [editingRow, setEditingRow] = useState(null);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-
-  // Helper function to get day count in a month
-  const getDaysInMonth = (month, year) => {
-    return new Date(year, month, 0).getDate();
-  };
-
-  // Generate days for select boxes
-  const generateDayOptions = (month, year) => {
-    const daysInMonth = getDaysInMonth(month, year);
-    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  };
-
-  const formatDateForDB = (dateObj) => {
-    return `${dateObj.year}-${dateObj.month.toString().padStart(2, '0')}-${dateObj.day.toString().padStart(2, '0')}`;
-  };
-
-  const fetchTableData = async () => {
-    // Format dates for database query
-    const formattedStartDate = formatDateForDB(startDate);
-    const formattedEndDate = formatDateForDB(endDate);
-    
-    // For compatibility with old data structure, also get month-based data
-    const startMonthKey = `${startDate.year}-${startDate.month}`;
-    const endMonthKey = `${endDate.year}-${endDate.month}`;
-    
-    try {
-      // Get all potentially relevant data
-      let allData = {};
-      
-      // Check for data in current format (will replace with date-based structure)
-      const dbRef = ref(database, `remainingStock/${startMonthKey}`);
-      const snapshot = await get(dbRef);
-      
-      if (snapshot.exists()) {
-        allData = { ...allData, ...snapshot.val() };
-      }
-      
-      // If end date is in a different month, also fetch that data
-      if (startMonthKey !== endMonthKey) {
-        const endMonthRef = ref(database, `remainingStock/${endMonthKey}`);
-        const endMonthSnapshot = await get(endMonthRef);
-        
-        if (endMonthSnapshot.exists()) {
-          allData = { ...allData, ...endMonthSnapshot.val() };
-        }
-      }
-      
-      if (Object.keys(allData).length === 0) {
-        alert('No data available for the selected date range.');
-        setTableData([]);
-        return;
-      }
-
-      const formattedData = await Promise.all(Object.values(allData).map(async (product) => {
-        const productRef = ref(database, `products/${product.barcode}`);
-        const productSnapshot = await get(productRef);
-        const initialQuantity = productSnapshot.exists() ? productSnapshot.val().quantity : 0;
-
-        // Get sales data
-        const soldItemsSnapshot = await get(ref(database, 'SoldItems'));
-        let totalSoldQuantity = 0;
-
-        if (soldItemsSnapshot.exists()) {
-          const soldItemsData = soldItemsSnapshot.val();
-          
-          // Calculate sold quantity within date range
-          Object.values(soldItemsData).forEach((item) => {
-            // Check if the item has a date and it falls within our range
-            if (item.barcode === product.barcode && item.date) {
-              const itemDate = new Date(item.date);
-              const startDateObj = new Date(startDate.year, startDate.month - 1, startDate.day);
-              const endDateObj = new Date(endDate.year, endDate.month - 1, endDate.day);
-              
-              if (itemDate >= startDateObj && itemDate <= endDateObj) {
-                totalSoldQuantity += item.quantity || 0;
-              }
-            } else if (item.barcode === product.barcode && !item.date) {
-              // Handle legacy data without dates
-              totalSoldQuantity += item.quantity || 0;
-            }
-          });
-        }
-
-        const remainingQuantity = initialQuantity - totalSoldQuantity;
-
-        return {
-          Barcode: product.barcode,
-          Name: product.name,
-          Initial_Quantity: initialQuantity,
-          Sold_Quantity: totalSoldQuantity,
-          Remaining_Quantity: remainingQuantity,
-          Recorded_Quantity: product.recordedQuantity,
-          Status: product.status || 'Not Confirmed',
-        };
-      }));
-
-      const sortedData = formattedData.sort((a, b) => a.Name.localeCompare(b.Name));
-      setTableData(sortedData);
-    } catch (error) {
-      console.error('Error fetching table data:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchTableData();
-  }, [startDate, endDate]);
-
-  const exportToExcel = async () => {
-    const filteredData = getFilteredData();
-    
-    if (filteredData.length === 0) {
-      alert('No data available to export.');
-      return;
-    }
-  
-    try {
-      const worksheet = XLSX.utils.json_to_sheet(filteredData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Remaining Stock');
-  
-      // Format the filename with date range and status filter
-      let fileName = `Remaining_Stock_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}`;
-      if (statusFilter !== 'All') {
-        fileName += `_${statusFilter.replace(' ', '_')}`;
-      }
-      fileName += '.xlsx';
-      
-      XLSX.writeFile(workbook, fileName);
-    } catch (error) {
-      console.error('Error exporting data:', error);
-    }
-  };
-
+  // Function to get current date key for tracking scanned items
   const getCurrentDateKey = () => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    if (fromDate && toDate) {
+      return `${fromDate}_to_${toDate}`;
+    } else if (fromDate) {
+      return `from_${fromDate}`;
+    } else if (toDate) {
+      return `to_${toDate}`;
+    } else {
+      return 'all_time';
+    }
   };
 
-  // const handleConfirmQuantity = async (useExisting = false) => {
-  //   let finalQuantity;
+  // Function to check if product is already scanned for current date range
+  const checkIfProductAlreadyScanned = async (barcode) => {
+    const dateKey = getCurrentDateKey();
+    const dbRef = ref(database, `remainingStocks/${dateKey}`);
     
-  //   if (useExisting) {
-  //     // Use the calculated remaining quantity from the product
-  //     finalQuantity = scannedProduct.remainingQuantity;
-  //   } else {
-  //     // Use the input quantity that was set before calling this function
-  //     finalQuantity = remainingQuantity;
-  //   }
-  
-  //   const dateKey = getCurrentDateKey();
-  //   const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
-  //   const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
-  //   const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
-  //   const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
-  
-  //   try {
-  //     // Get product's initial quantity
-  //     const productSnapshot = await get(productMainRef);
-  //     if (!productSnapshot.exists()) {
-  //       alert('Product not found.');
-  //       return;
-  //     }
-  
-  //     const product = productSnapshot.val();
-  //     const initialQuantity = product.quantity;
-  
-  //     const newSoldQuantity = initialQuantity - finalQuantity;
-  
-  //     // Update sold item
-  //     await set(soldItemsRef, {
-  //       barcode: scannedProduct.barcode,
-  //       name: scannedProduct.name,
-  //       quantity: newSoldQuantity,
-  //       date: dateKey
-  //     });
-  
-  //     // Update remaining stock
-  //     await set(productRef, {
-  //       barcode: scannedProduct.barcode,
-  //       name: scannedProduct.name,
-  //       recordedQuantity: finalQuantity,
-  //       status: useExisting ? 'Confirmed' : 'Not Confirmed',
-  //       recordedDate: dateKey
-  //     });
-  
-  //     console.log('Data saved successfully');
-  //     setIsPopupOpen(false);
-  //     setInputQuantity('');
-  //     fetchTableData(); // Refresh table data after saving
-  //   } catch (error) {
-  //     console.error('Error saving data:', error);
-  //   }
-  // };
-
-  const handleConfirmQuantity = async (useExisting = false) => {
-  let finalQuantity;
-  
-  if (useExisting) {
-    // Use the calculated remaining quantity from the product
-    finalQuantity = scannedProduct.remainingQuantity;
-  } else {
-    // Use the input quantity that was set before calling this function
-    finalQuantity = remainingQuantity;
-  }
-
-  const dateKey = getCurrentDateKey();
-  const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
-  const productRef = ref(database, `remainingStock/${monthKey}/${scannedProduct.barcode}`);
-  const productMainRef = ref(database, `products/${scannedProduct.barcode}`);
-
-  try {
-    // Get product's initial quantity
-    const productSnapshot = await get(productMainRef);
-    if (!productSnapshot.exists()) {
-      alert('Product not found.');
-      return;
+    try {
+      const snapshot = await get(dbRef);
+      if (snapshot.exists()) {
+        const stockData = snapshot.val();
+        const isAlreadyScanned = Object.values(stockData).some(item => item.barcode === barcode);
+        return isAlreadyScanned;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking if product already scanned:', error);
+      return false;
     }
+  };
 
-    const product = productSnapshot.val();
-    const initialQuantity = product.quantity;
-
-    // Only update sold items if we're NOT using existing quantity
-    if (!useExisting) {
-      const soldItemsRef = ref(database, `SoldItems/${dateKey}_${scannedProduct.barcode}`);
-      const newSoldQuantity = initialQuantity - finalQuantity;
-      
-      // Update sold item
-      await set(soldItemsRef, {
-        barcode: scannedProduct.barcode,
-        name: scannedProduct.name,
-        quantity: newSoldQuantity,
-        date: dateKey
-      });
+  // Function to load scanned products for current date range
+  const loadScannedProductsForCurrentRange = async () => {
+    const dateKey = getCurrentDateKey();
+    const dbRef = ref(database, `remainingStocks/${dateKey}`);
+    
+    try {
+      const snapshot = await get(dbRef);
+      if (snapshot.exists()) {
+        const stockData = snapshot.val();
+        const scannedBarcodes = Object.values(stockData).map(item => item.barcode);
+        setScannedProductsForCurrentRange(new Set(scannedBarcodes));
+      } else {
+        setScannedProductsForCurrentRange(new Set());
+      }
+    } catch (error) {
+      console.error('Error loading scanned products:', error);
+      setScannedProductsForCurrentRange(new Set());
     }
+  };
 
-    // Update remaining stock
-    await set(productRef, {
-      barcode: scannedProduct.barcode,
-      name: scannedProduct.name,
-      recordedQuantity: finalQuantity,
-      status: useExisting ? 'Confirmed' : 'Not Confirmed',
-      recordedDate: dateKey
-    });
-
-    console.log('Data saved successfully');
-    setIsPopupOpen(false);
-    setInputQuantity('');
-    fetchTableData(); // Refresh table data after saving
-  } catch (error) {
-    console.error('Error saving data:', error);
-  }
-};
+  // Load scanned products whenever date range changes
+  useEffect(() => {
+    loadScannedProductsForCurrentRange();
+  }, [fromDate, toDate]);
 
   useEffect(() => {
     if (showScanner) {
@@ -311,7 +97,6 @@ const RemainingProducts = () => {
             fetchProductDetails(result.text);
           } else if (error) {
             setScanStatus('Align the barcode and hold steady.');
-            console.warn('Barcode detection error:', error);
           }
         }, {
           tryHarder: true,
@@ -341,63 +126,19 @@ const RemainingProducts = () => {
         const productsSnapshot = await get(child(dbRef, 'products'));
         if (productsSnapshot.exists()) {
           const productsData = productsSnapshot.val();
-          let productsList = Object.keys(productsData).map((barcode) => ({
+          const productsList = Object.keys(productsData).map((barcode) => ({
             barcode,
             ...productsData[barcode],
           }));
-  
-          // Filter out excluded products for the current month
-          productsList = productsList.filter(product => 
-            !excludedProducts.includes(product.barcode)
-          );
-  
           const sortedProducts = productsList.sort((a, b) => a.name.localeCompare(b.name));
           setProducts(sortedProducts);
         }
       } catch (error) {
-        console.error('Error fetching products:', error);
       }
     };
   
     fetchProducts();
-  }, [excludedProducts]);
-
-  useEffect(() => {
-    if (tableData.length > 0) {
-      const currentMonthKey = `${today.getFullYear()}-${today.getMonth() + 1}`;
-      const startMonthKey = `${startDate.year}-${startDate.month}`;
-      
-      // Only update excluded products if we're looking at current month data
-      if (startMonthKey === currentMonthKey) {
-        const excluded = tableData
-          .filter(row => row.Status === 'Confirmed' || row.Status === 'Not Confirmed')
-          .map(row => row.Barcode);
-        
-        setExcludedProducts(excluded);
-      }
-    }
-  }, [tableData, startDate.month, startDate.year]);
-
-  useEffect(() => {
-    const checkForNewMonth = () => {
-      const now = new Date();
-      const currentMonth = now.getMonth() + 1;
-      const currentYear = now.getFullYear();
-      
-      // If it's a new month, reset the excluded products
-      if (currentMonth !== startDate.month || currentYear !== startDate.year) {
-        setExcludedProducts([]);
-      }
-    };
-  
-    // Check every hour (you can adjust this interval)
-    const interval = setInterval(checkForNewMonth, 60 * 60 * 1000);
-    
-    // Also check immediately when component mounts
-    checkForNewMonth();
-    
-    return () => clearInterval(interval);
-  }, [startDate.month, startDate.year]);
+  }, []);
 
   const applyZoom = async () => {
     try {
@@ -412,10 +153,10 @@ const RemainingProducts = () => {
         };
         await track.applyConstraints(constraints);
       } else {
-        console.warn('Zoom capability is not supported by this device.');
+        // console.warn('Zoom capability is not supported by this device.');
       }
     } catch (error) {
-      console.error('Failed to apply zoom:', error);
+      // console.error('Failed to apply zoom:', error);
     }
   };
 
@@ -440,36 +181,500 @@ const RemainingProducts = () => {
     }
   };
 
+  const [stockRecords, setStockRecords] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    status: '',
+    uncertainQuantity: '',
+    soldCount: '',
+    calculatedRemaining: ''
+  });
+
+  // Function to fetch all stock records
+  const fetchStockRecords = async () => {
+    const dbRef = ref(database, 'remainingStocks');
+    try {
+      const snapshot = await get(dbRef);
+      if (snapshot.exists()) {
+        const records = [];
+        
+        // Iterate through each date range
+        snapshot.forEach((dateRangeSnapshot) => {
+          const dateRangeKey = dateRangeSnapshot.key;
+          const dateRangeData = dateRangeSnapshot.val();
+          
+          // Iterate through each record in the date range
+          Object.keys(dateRangeData).forEach((recordId) => {
+            const record = dateRangeData[recordId];
+            records.push({
+              id: `${dateRangeKey}/${recordId}`,
+              ...record,
+              dateRange: dateRangeKey,
+              timestamp: record.timestamp ? new Date(record.timestamp).toLocaleString() : 'N/A'
+            });
+          });
+        });
+        
+        // Sort by timestamp (newest first)
+        const sortedRecords = records.sort((a, b) => 
+          new Date(b.timestamp) - new Date(a.timestamp)
+        );
+        
+        setStockRecords(sortedRecords);
+      } else {
+        setStockRecords([]);
+      }
+    } catch (error) {
+      console.error('Error fetching stock records:', error);
+      setStockRecords([]);
+    }
+  };
+
+  // Load stock records on component mount and when saved
+  useEffect(() => {
+    fetchStockRecords();
+  }, [isPopupOpen]); // Refresh when popup closes (after saving)
+
+  // Filter records based on status filter
+  const filteredRecords = stockRecords.filter(record => {
+    if (statusFilter === 'All') return true;
+    if (statusFilter === 'Confirmed') return record.status === 'CONFIRMED';
+    if (statusFilter === 'Not Confirmed') return record.status === 'NOT_CONFIRMED';
+    return true;
+  });
+
+  // Handle edit button click
+  // const handleEditClick = (record) => {
+  //   setEditingId(record.id);
+  //   setEditFormData({
+  //     status: record.status,
+  //     uncertainQuantity: record.uncertainQuantity || '',
+  //     soldCount: record.soldCount,
+  //     calculatedRemaining: record.calculatedRemaining
+  //   });
+  // };
+
+  const handleEditClick = (record) => {
+  setEditingId(record.id);
+  setEditFormData({
+    status: record.status,
+    uncertainQuantity: record.uncertainQuantity || '',
+    soldCount: record.soldCount,
+    calculatedRemaining: record.calculatedRemaining,
+    originalQuantity: record.initialQuantity // Store the original quantity
+  });
+};
+
+  // Handle form input changes
+  const handleEditFormChange = (e) => {
+    const { name, value } = e.target;
+    setEditFormData({
+      ...editFormData,
+      [name]: value
+    });
+  };
+
+  // Handle cancel edit
+  const handleCancelClick = () => {
+    setEditingId(null);
+  };
+
+  // Handle save edit
+  // const handleSaveClick = async () => {
+  //   try {
+  //     const recordRef = ref(database, `remainingStocks/${editingId}`);
+      
+  //     // Prepare the update data
+  //     const updateData = {
+  //       status: editFormData.status,
+  //       soldCount: parseInt(editFormData.soldCount) || 0,
+  //       calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
+  //     };
+      
+  //     // Only include uncertainQuantity if status is NOT_CONFIRMED
+  //     if (editFormData.status === 'NOT_CONFIRMED') {
+  //       updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
+  //     } else {
+  //       updateData.uncertainQuantity = null;
+  //     }
+      
+  //     await update(recordRef, updateData);
+  //     setEditingId(null);
+  //     fetchStockRecords(); // Refresh the data
+  //   } catch (error) {
+  //     console.error('Error updating record:', error);
+  //     alert('Failed to update record');
+  //   }
+  // };
+
+
+//   const handleSaveClick = async () => {
+//   try {
+//     const recordRef = ref(database, `remainingStocks/${editingId}`);
+    
+//     // Prepare the update data
+//     const updateData = {
+//       status: editFormData.status,
+//       soldCount: parseInt(editFormData.soldCount) || 0,
+//       calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
+//     };
+    
+//     // Only include uncertainQuantity if status is NOT_CONFIRMED
+//     if (editFormData.status === 'NOT_CONFIRMED') {
+//       updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
+//     } else {
+//       updateData.uncertainQuantity = null;
+      
+//       // If status is CONFIRMED, update the product quantity
+//       const record = stockRecords.find(r => r.id === editingId);
+//       if (record) {
+//         const productRef = ref(database, `products/${record.barcode}`);
+//         await update(productRef, {
+//           quantity: updateData.calculatedRemaining
+//         });
+//       }
+//     }
+    
+//     await update(recordRef, updateData);
+//     setEditingId(null);
+//     fetchStockRecords(); // Refresh the data
+//   } catch (error) {
+//     console.error('Error updating record:', error);
+//     alert('Failed to update record');
+//   }
+// };
+
+// const handleSaveClick = async () => {
+//   try {
+//     const recordRef = ref(database, `remainingStocks/${editingId}`);
+//     const record = stockRecords.find(r => r.id === editingId);
+    
+//     if (!record) {
+//       throw new Error('Record not found');
+//     }
+
+//     // Prepare the update data
+//     const updateData = {
+//       status: editFormData.status,
+//       soldCount: parseInt(editFormData.soldCount) || 0,
+//       calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
+//     };
+
+//     // Handle product quantity updates
+//     const productRef = ref(database, `products/${record.barcode}`);
+    
+//     if (editFormData.status === 'CONFIRMED') {
+//       // If changing to CONFIRMED, update product quantity
+//       await update(productRef, {
+//         quantity: updateData.calculatedRemaining
+//       });
+      
+//       // Clear uncertain quantity if it exists
+//       updateData.uncertainQuantity = null;
+//     } else if (editFormData.status === 'NOT_CONFIRMED') {
+//       // If changing from CONFIRMED to NOT_CONFIRMED, restore original quantity
+//       if (record.status === 'CONFIRMED') {
+//         await update(productRef, {
+//           quantity: editFormData.originalQuantity
+//         });
+//       }
+      
+//       // Set uncertain quantity if provided
+//       updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
+//     }
+
+//     await update(recordRef, updateData);
+//     setEditingId(null);
+//     fetchStockRecords(); // Refresh the data
+//   } catch (error) {
+//     console.error('Error updating record:', error);
+//     alert('Failed to update record');
+//   }
+// };
+
+const handleSaveClick = async () => {
+  try {
+    const recordRef = ref(database, `remainingStocks/${editingId}`);
+    const record = stockRecords.find(r => r.id === editingId);
+    
+    if (!record) {
+      throw new Error('Record not found');
+    }
+
+    // Prepare the update data
+    const updateData = {
+      status: editFormData.status,
+      soldCount: parseInt(editFormData.soldCount) || 0,
+      calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
+    };
+
+    // Handle product quantity updates
+    const productRef = ref(database, `products/${record.barcode}`);
+
+    if (editFormData.status === 'CONFIRMED') {
+      // If changing to CONFIRMED, update product quantity
+      let newQuantity;
+
+      if (record.status === 'NOT_CONFIRMED') {
+        // If changing from NOT_CONFIRMED → CONFIRMED, use uncertainQuantity
+        newQuantity = parseInt(editFormData.uncertainQuantity) || 0;
+      } else {
+        // If already CONFIRMED or new, use calculatedRemaining
+        newQuantity = updateData.calculatedRemaining;
+      }
+
+      await update(productRef, {
+        quantity: newQuantity
+      });
+
+      // Ensure calculatedRemaining matches the new quantity
+      updateData.calculatedRemaining = newQuantity;
+      updateData.uncertainQuantity = null; // Clear uncertain quantity
+
+    } else if (editFormData.status === 'NOT_CONFIRMED') {
+      // If changing from CONFIRMED → NOT_CONFIRMED, restore original quantity
+      if (record.status === 'CONFIRMED') {
+        await update(productRef, {
+          quantity: editFormData.originalQuantity
+        });
+      }
+      
+      // Set uncertain quantity if provided
+      updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
+    }
+
+    await update(recordRef, updateData);
+    setEditingId(null);
+    fetchStockRecords(); // Refresh the data
+  } catch (error) {
+    console.error('Error updating record:', error);
+    alert('Failed to update record');
+  }
+};
+
+  // Handle delete record
+  const handleDeleteClick = async (recordId) => {
+    if (window.confirm('Are you sure you want to delete this record?')) {
+      try {
+        const recordRef = ref(database, `remainingStocks/${recordId}`);
+        await remove(recordRef);
+        fetchStockRecords(); // Refresh the data
+      } catch (error) {
+        console.error('Error deleting record:', error);
+        alert('Failed to delete record');
+      }
+    }
+  };
+
+//   const saveRemainingStock = async (status, uncertainQuantity = null) => {
+//   try {
+//     // Create a date key based on the selected date range
+//     let dateKey;
+//     if (fromDate && toDate) {
+//       dateKey = `${fromDate}_to_${toDate}`;
+//     } else if (fromDate) {
+//       dateKey = `from_${fromDate}`;
+//     } else if (toDate) {
+//       dateKey = `to_${toDate}`;
+//     } else {
+//       dateKey = 'all_time';
+//     }
+    
+//     // Structure: remainingStocks -> dateKey -> individual items
+//     const dbRef = ref(database, `remainingStocks/${dateKey}`);
+//     const newStockRef = push(dbRef);
+    
+//     // Get current timestamp
+//     const currentTimestamp = new Date().toISOString();
+    
+//     const stockData = {
+//       barcode: scannedProduct.barcode,
+//       name: scannedProduct.name,
+//       productType: scannedProduct.productType,
+//       itemCost: scannedProduct.itemCost,
+//       initialQuantity: scannedProduct.quantity,
+//       soldCount: soldCount,
+//       calculatedRemaining: scannedProduct.quantity - soldCount,
+//       status: status,
+//       timestamp: currentTimestamp,
+//       dateScanned: currentTimestamp, // When this stock check was performed
+      
+//       // Store the date range info for reference
+//       dateRangeInfo: {
+//         fromDate: fromDate || null,
+//         toDate: toDate || null,
+//         dateKey: dateKey
+//       },
+      
+//       // If uncertain quantity is provided
+//       ...(status === 'NOT_CONFIRMED' && { uncertainQuantity: parseInt(uncertainQuantity) }),
+//     };
+
+//     await set(newStockRef, stockData);
+    
+//     // Update the scanned products set for current range
+//     setScannedProductsForCurrentRange(prev => new Set([...prev, scannedProduct.barcode]));
+    
+//     // Optional: Log what was saved for debugging
+//     console.log('Saved remaining stock under date key:', {
+//       dateKey: dateKey,
+//       productName: scannedProduct.name,
+//       soldInRange: soldCount
+//     });
+    
+//     return true;
+//   } catch (error) {
+//     console.error('Error saving remaining stock:', error);
+//     return false;
+//   }
+// };
+
+
+const saveRemainingStock = async (status, uncertainQuantity = null) => {
+  try {
+    // Create a date key based on the selected date range
+    let dateKey;
+    if (fromDate && toDate) {
+      dateKey = `${fromDate}_to_${toDate}`;
+    } else if (fromDate) {
+      dateKey = `from_${fromDate}`;
+    } else if (toDate) {
+      dateKey = `to_${toDate}`;
+    } else {
+      dateKey = 'all_time';
+    }
+    
+    // Calculate remaining quantity
+    const remainingQuantity = status === 'CONFIRMED' 
+      ? scannedProduct.quantity - soldCount 
+      : uncertainQuantity;
+
+    // Structure: remainingStocks -> dateKey -> individual items
+    const dbRef = ref(database, `remainingStocks/${dateKey}`);
+    const newStockRef = push(dbRef);
+    
+    // Get current timestamp
+    const currentTimestamp = new Date().toISOString();
+    
+    const stockData = {
+      barcode: scannedProduct.barcode,
+      name: scannedProduct.name,
+      productType: scannedProduct.productType,
+      itemCost: scannedProduct.itemCost,
+      initialQuantity: scannedProduct.quantity,
+      soldCount: soldCount,
+      calculatedRemaining: remainingQuantity,
+      status: status,
+      timestamp: currentTimestamp,
+      dateScanned: currentTimestamp,
+      dateRangeInfo: {
+        fromDate: fromDate || null,
+        toDate: toDate || null,
+        dateKey: dateKey
+      },
+      ...(status === 'NOT_CONFIRMED' && { uncertainQuantity: parseInt(uncertainQuantity) }),
+    };
+
+    await set(newStockRef, stockData);
+    
+    // Update the product quantity in the products table if status is CONFIRMED
+    if (status === 'CONFIRMED') {
+      const productRef = ref(database, `products/${scannedProduct.barcode}`);
+      await update(productRef, {
+        quantity: remainingQuantity
+      });
+    }
+    
+    // Update the scanned products set for current range
+    setScannedProductsForCurrentRange(prev => new Set([...prev, scannedProduct.barcode]));
+    
+    return true;
+  } catch (error) {
+    console.error('Error saving remaining stock:', error);
+    return false;
+  }
+};
+
+  const fetchSoldCount = async (productName, productBarcode) => {
+    const dbRef = ref(database);
+    try {
+      const soldItemsSnapshot = await get(child(dbRef, 'SoldItems'));
+      if (soldItemsSnapshot.exists()) {
+        const soldData = soldItemsSnapshot.val();
+        let count = 0;
+
+        // Create date range if filters are set
+        let fromDateObj = null;
+        let toDateObj = null;
+
+        if (fromDate) {
+          fromDateObj = new Date(fromDate);
+          fromDateObj.setHours(0, 0, 0, 0); // Start of day
+        }
+
+        if (toDate) {
+          toDateObj = new Date(toDate);
+          toDateObj.setHours(23, 59, 59, 999); // End of day
+        }
+
+        Object.values(soldData).forEach((item) => {
+          // Match by product name or barcode
+          const matchesProduct = 
+            (item.name && item.name.toLowerCase() === productName.toLowerCase()) ||
+            (item.barcode && item.barcode === productBarcode);
+
+          if (matchesProduct) {
+            // Check date range if filters are applied
+            if (fromDateObj || toDateObj) {
+              const itemDate = new Date(item.dateScanned);
+              
+              if (fromDateObj && itemDate < fromDateObj) return;
+              if (toDateObj && itemDate > toDateObj) return;
+            }
+            
+            count += parseInt(item.quantity) || 1;
+          }
+        });
+
+        setSoldCount(count);
+      } else {
+        setSoldCount(0);
+      }
+    } catch (error) {
+      console.error('Error fetching sold count:', error);
+      setSoldCount(0);
+    }
+  };
+
   const fetchProductDetails = async (barcode) => {
+    // First check if product is already scanned for current date range
+    const isAlreadyScanned = await checkIfProductAlreadyScanned(barcode);
+    
+    if (isAlreadyScanned) {
+      setScanStatus('Item already scanned for this date range!');
+      setTimeout(() => {
+        setScanStatus('Align the barcode within the frame.');
+      }, 3000);
+      return;
+    }
+
     const dbRef = ref(database);
     try {
       const productSnapshot = await get(child(dbRef, `products/${barcode}`));
       if (productSnapshot.exists()) {
         const product = productSnapshot.val();
-
-        const soldItemsSnapshot = await get(child(dbRef, 'SoldItems'));
-        let totalSoldQuantity = 0;
-
-        if (soldItemsSnapshot.exists()) {
-          const soldItemsData = soldItemsSnapshot.val();
-          Object.values(soldItemsData).forEach((item) => {
-            if (item.barcode === barcode) {
-              totalSoldQuantity += item.quantity || 0;
-            }
-          });
-        }
-
-        const remaining = product.quantity - totalSoldQuantity;
-
-        setScannedProduct({
+        const productData = {
           barcode,
           name: product.name,
           itemCost: product.itemCost,
           productType: product.productType,
           quantity: product.quantity,
-          remainingQuantity: remaining,
-        });
-        setRemainingQuantity(remaining);
+        };
+        setScannedProduct(productData);
+        
+        // Fetch sold count for this product
+        await fetchSoldCount(product.name, barcode);
+        
         setIsPopupOpen(true);
       } else {
         setScanStatus('Product not found in the database.');
@@ -487,175 +692,27 @@ const RemainingProducts = () => {
       await fetchProductDetails(selectedBarcode);
     }
   };
-  const handleEdit = (filteredIndex) => {
-    const filteredData = getFilteredData();
-    const actualRow = filteredData[filteredIndex];
-    
-    // Find the actual index in the original tableData array
-    const actualIndex = tableData.findIndex(row => row.Barcode === actualRow.Barcode);
-    
-    if (actualIndex !== -1) {
-      setEditingRow(actualIndex);
-    }
+
+  const clearDateFilters = () => {
+    setFromDate('');
+    setToDate('');
   };
 
-
-  const handleSave = async (filteredIndex) => {
-    try {
-      const filteredData = getFilteredData();
-      const actualRow = filteredData[filteredIndex];
-      
-      // Find the actual index in the original tableData array
-      const actualIndex = tableData.findIndex(row => row.Barcode === actualRow.Barcode);
-      
-      if (actualIndex === -1) return; // Safety check
-      
-      const row = tableData[actualIndex];
-      const monthKey = `${endDate.year}-${endDate.month}`;
-      
-      // Reset editingRow before making database calls
-      setEditingRow(null);
-      
-      // Prepare the data to save
-      const updateData = {
-        barcode: row.Barcode,
-        name: row.Name,
-        recordedQuantity: Number(row.Recorded_Quantity) || 0,
-        status: row.Status || 'Not Confirmed',
-        recordedDate: getCurrentDateKey()
-      };
-    
-      console.log('Saving data:', updateData);
-    
-      // Update the database
-      await set(ref(database, `remainingStock/${monthKey}/${row.Barcode}`), updateData);
-      
-      // Refresh the table data
-      await fetchTableData();
-    } catch (error) {
-      console.error('Error saving data:', error);
-      alert('Failed to save changes. Please try again.');
-      setEditingRow(null);
-    }
-  };
-
-  
-
-  const getFilteredData = () => {
-    let filteredData = sortedTableData();
-    
-    if (statusFilter !== 'All') {
-      filteredData = filteredData.filter(row => row.Status === statusFilter);
-    }
-
-    // Add filter for dropdown items
-    if (showOnlyDropdownItems) {
-      filteredData = filteredData.filter(row => !excludedProducts.includes(row.Barcode));
-    }
-    
-    return filteredData;
-  };
-
-  // Add a new export function for dropdown items
-  const exportDropdownItemsToExcel = async () => {
-    // Get all products that are still in dropdown (not excluded)
-    const dropdownItems = products.filter(product => 
-      !excludedProducts.includes(product.barcode)
-    ).map(product => ({
-      Barcode: product.barcode,
-      Name: product.name,
-      Status: 'Pending' // These are by definition not confirmed/not confirmed
-    }));
-
-    if (dropdownItems.length === 0) {
-      alert('No pending products available to export.');
-      return;
-    }
-
-    try {
-      const worksheet = XLSX.utils.json_to_sheet(dropdownItems);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Pending Products');
-
-      const fileName = `Pending_Products_${formatDateForDB(startDate)}_to_${formatDateForDB(endDate)}.xlsx`;
-      XLSX.writeFile(workbook, fileName);
-    } catch (error) {
-      console.error('Error exporting pending products:', error);
-    }
-  };
-
-  const handleChange = (filteredIndex, field, value) => {
-    const filteredData = getFilteredData();
-    const actualRow = filteredData[filteredIndex];
-    
-    // Find the actual index in the original tableData array
-    const actualIndex = tableData.findIndex(row => row.Barcode === actualRow.Barcode);
-    
-    if (actualIndex === -1) return; // Safety check
-    
-    setTableData(prevData => {
-      const newData = [...prevData];
-      const updatedRow = { ...newData[actualIndex] };
-      
-      // Update the specific field
-      updatedRow[field] = value;
-      
-      // Auto-update logic for quantities only
-      if (field === 'Sold_Quantity') {
-        updatedRow.Remaining_Quantity = updatedRow.Initial_Quantity - parseInt(value);
-      }
-      
-      newData[actualIndex] = updatedRow;
-      return newData;
+  // Helper function to format date for display
+  const formatDateForDisplay = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
     });
   };
 
-
-  const handleStartDateChange = (field, value) => {
-    const newDate = { ...startDate, [field]: parseInt(value) };
-    
-    // Ensure day is valid for the month/year
-    const maxDays = getDaysInMonth(newDate.month, newDate.year);
-    if (newDate.day > maxDays) {
-      newDate.day = maxDays;
-    }
-    
-    setStartDate(newDate);
-  };
-
-  const handleEndDateChange = (field, value) => {
-    const newDate = { ...endDate, [field]: parseInt(value) };
-    
-    // Ensure day is valid for the month/year
-    const maxDays = getDaysInMonth(newDate.month, newDate.year);
-    if (newDate.day > maxDays) {
-      newDate.day = maxDays;
-    }
-    
-    setEndDate(newDate);
-  };
-
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-  
-  const sortedTableData = () => {
-    if (!sortConfig.key) return tableData;
-  
-    return [...tableData].sort((a, b) => {
-      if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-  };
+  // Filter products to exclude already scanned ones for current date range
+  const availableProducts = products.filter(product => 
+    !scannedProductsForCurrentRange.has(product.barcode)
+  );
 
   return (
     <div className="container" style={{ 
@@ -666,114 +723,78 @@ const RemainingProducts = () => {
       flexDirection: 'column',
       gap: '20px'
     }}>
-      {/* Date Range Section */}
+      {/* Date Range Filters */}
       <div style={{ 
         display: 'flex', 
-        flexWrap: 'wrap', 
+        flexWrap: 'wrap',
         gap: '20px',
-        justifyContent: 'space-between',
         alignItems: 'center',
         padding: '15px',
         backgroundColor: '#f5f5f5',
         borderRadius: '8px'
       }}>
-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <div className="date-selector">
-            <h3 style={{ margin: '0 0 8px 0' }}>FROM:</h3>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <select 
-                value={startDate.day} 
-                onChange={(e) => handleStartDateChange('day', e.target.value)}
-                style={{ fontSize: '1rem', padding: '8px', minWidth: '80px' }}
-              >
-                {generateDayOptions(startDate.month, startDate.year).map(day => (
-                  <option key={`start-day-${day}`} value={day}>{day}</option>
-                ))}
-              </select>
-              
-              <select 
-                value={startDate.month} 
-                onChange={(e) => handleStartDateChange('month', e.target.value)}
-                style={{ fontSize: '1rem', padding: '8px', minWidth: '120px' }}
-              >
-                {Array.from({ length: 12 }, (_, i) => (
-                  <option key={`start-month-${i + 1}`} value={i + 1}>
-                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-              
-              <select 
-                value={startDate.year} 
-                onChange={(e) => handleStartDateChange('year', e.target.value)}
-                style={{ fontSize: '1rem', padding: '8px', minWidth: '100px' }}
-              >
-                {Array.from({ length: 10 }, (_, i) => {
-                  const year = today.getFullYear() - i;
-                  return (
-                    <option key={`start-year-${year}`} value={year}>{year}</option>
-                  );
-                })}
-              </select>
-            </div>
+        <h3 style={{ margin: 0, width: '100%' }}>Date Range for Sold Items Count</h3>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <label style={{ fontSize: '1rem', fontWeight: 'bold', minWidth: '50px' }}>From:</label>
+            <input 
+              type="date" 
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              style={{ 
+                fontSize: '1rem', 
+                padding: '8px 12px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                backgroundColor: 'white'
+              }}
+            />
           </div>
 
-          <div className="date-selector">
-            <h3 style={{ margin: '0 0 8px 0' }}>TO:</h3>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <select 
-                value={endDate.day} 
-                onChange={(e) => handleEndDateChange('day', e.target.value)}
-                style={{ fontSize: '1rem', padding: '8px', minWidth: '80px' }}
-              >
-                {generateDayOptions(endDate.month, endDate.year).map(day => (
-                  <option key={`end-day-${day}`} value={day}>{day}</option>
-                ))}
-              </select>
-              
-              <select 
-                value={endDate.month} 
-                onChange={(e) => handleEndDateChange('month', e.target.value)}
-                style={{ fontSize: '1rem', padding: '8px', minWidth: '120px' }}
-              >
-                {Array.from({ length: 12 }, (_, i) => (
-                  <option key={`end-month-${i + 1}`} value={i + 1}>
-                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-              
-              <select 
-                value={endDate.year} 
-                onChange={(e) => handleEndDateChange('year', e.target.value)}
-                style={{ fontSize: '1rem', padding: '8px', minWidth: '100px' }}
-              >
-                {Array.from({ length: 10 }, (_, i) => {
-                  const year = today.getFullYear() - i;
-                  return (
-                    <option key={`end-year-${year}`} value={year}>{year}</option>
-                  );
-                })}
-              </select>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <label style={{ fontSize: '1rem', fontWeight: 'bold', minWidth: '30px' }}>To:</label>
+            <input 
+              type="date" 
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              style={{ 
+                fontSize: '1rem', 
+                padding: '8px 12px',
+                borderRadius: '4px',
+                border: '1px solid #ddd',
+                backgroundColor: 'white'
+              }}
+            />
           </div>
+
+          <button
+            onClick={clearDateFilters}
+            style={{ 
+              fontSize: '0.9rem', 
+              padding: '8px 15px', 
+              backgroundColor: '#ff9800',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Clear Dates
+          </button>
         </div>
 
-        <button 
-          className="action-button" 
-          onClick={exportToExcel}
-          style={{ 
-            fontSize: '1rem', 
-            padding: '10px 15px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Export as Excel
-        </button>
+        {/* Display selected date range */}
+        {(fromDate || toDate) && (
+          <div style={{ 
+            width: '100%', 
+            fontSize: '0.9rem', 
+            color: '#666',
+            fontStyle: 'italic'
+          }}>
+            Selected range: {fromDate ? formatDateForDisplay(fromDate) : 'Beginning'} to {toDate ? formatDateForDisplay(toDate) : 'Today'}
+          </div>
+        )}
       </div>
 
       {/* Action Buttons */}
@@ -846,35 +867,6 @@ const RemainingProducts = () => {
             <option value="Not Confirmed">Not Confirmed</option>
           </select>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <input 
-            type="checkbox" 
-            checked={showOnlyDropdownItems}
-            onChange={() => setShowOnlyDropdownItems(!showOnlyDropdownItems)}
-            style={{ transform: 'scale(1.3)', marginRight: '8px' }}
-          />
-          <label style={{ fontSize: '1rem' }}>Show only pending products</label>
-        </div>
-
-        {showOnlyDropdownItems && (
-          <button 
-            className="action-button" 
-            onClick={exportDropdownItemsToExcel}
-            style={{ 
-              fontSize: '1rem', 
-              padding: '10px 15px',
-              backgroundColor: '#4CAF50',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              marginLeft: 'auto'
-            }}
-          >
-            Export Pending Products
-          </button>
-        )}
       </div>
 
       {/* Scanner Section */}
@@ -901,7 +893,8 @@ const RemainingProducts = () => {
             fontSize: '1.1rem', 
             fontWeight: 'bold', 
             margin: '15px 0',
-            textAlign: 'center'
+            textAlign: 'center',
+            color: scanStatus.includes('already scanned') ? '#f44336' : 'inherit'
           }}>
             {scanStatus}
           </p>
@@ -974,17 +967,26 @@ const RemainingProducts = () => {
             }}
           >
             <option value="">Select a product</option>
-            {products.map((product) => (
+            {availableProducts.map((product) => (
               <option key={product.barcode} value={product.barcode}>
                 {product.name} ({product.barcode})
               </option>
             ))}
           </select>
+          {availableProducts.length === 0 && (
+            <p style={{ 
+              marginTop: '10px', 
+              color: '#666', 
+              fontStyle: 'italic' 
+            }}>
+              All products have been scanned for this date range.
+            </p>
+          )}
         </div>
       )}
 
       {/* Popup Modal */}
-      {isPopupOpen && scannedProduct && (
+     {isPopupOpen && scannedProduct && (
   <div style={{ 
     position: 'fixed',
     top: 0,
@@ -1008,340 +1010,419 @@ const RemainingProducts = () => {
       <button
         onClick={() => {
           setIsPopupOpen(false);
-          setInputQuantity('');
+          setSoldCount(0);
+        }}
+        style={{
+          position: 'absolute',
+          top: '10px',
+          right: '15px',
+          fontSize: '1.5rem',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer'
         }}
       >
         ×
       </button>
-      <h3 style={{ fontSize: '1.5rem', margin: '0 0 20px 0' }}>Product Details</h3>
-      <div style={{ fontSize: '1.1rem', marginBottom: '20px' }}>
-        <p><strong>Barcode:</strong> {scannedProduct.barcode}</p>
-        <p><strong>Name:</strong> {scannedProduct.name}</p>
-        <p><strong>Item Cost:</strong> ${scannedProduct.itemCost}</p>
-        <p><strong>Product Type:</strong> {scannedProduct.productType}</p>
-        <p><strong>Initial Quantity:</strong> {scannedProduct.quantity}</p>
-        <p><strong>Calculated Remaining Quantity:</strong> {scannedProduct.remainingQuantity}</p>
-        {remainingQuantity !== scannedProduct.remainingQuantity && (
-          <p><strong>Current Recorded Quantity:</strong> {remainingQuantity}</p>
-        )}
-      </div>
+      <h3 style={{ fontSize: '1.5rem', margin: '0 0 10px 0' }}>
+        {scannedProduct.name}
+      </h3>
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <button 
-          onClick={() => {
-            setRemainingQuantity(scannedProduct.remainingQuantity);
-            handleConfirmQuantity(true);
-          }}
-          style={{ 
-            fontSize: '1rem',
-            padding: '12px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Confirm Calculated Quantity ({scannedProduct.remainingQuantity})
-        </button>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <input
-            type="number"
-            value={inputQuantity}
-            onChange={(e) => setInputQuantity(e.target.value)}
-            placeholder="Enter new quantity"
-            style={{ 
-              flex: 1,
-              fontSize: '1rem',
-              padding: '12px',
-              border: '1px solid #ddd',
-              borderRadius: '4px'
-            }}
-          />
-          <button 
-            onClick={() => {
-              if (inputQuantity === '') {
-                alert('Please enter a quantity');
-                return;
-              }
-              const newQuantity = parseInt(inputQuantity, 10);
-              if (isNaN(newQuantity)) {
-                alert('Please enter a valid number');
-                return;
-              }
-              setRemainingQuantity(newQuantity);
-              handleConfirmQuantity(false);
-            }}
-            style={{ 
-              fontSize: '1rem',
-              padding: '12px',
-              backgroundColor: '#2196F3',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Save New Quantity
-          </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <p style={{ fontWeight: 'bold', marginRight: '5px', minWidth: '100px' }}>Product Type:</p>
+          <p>{scannedProduct.productType}</p>
         </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <p style={{ fontWeight: 'bold', marginRight: '5px', minWidth: '100px' }}>Item Cost:</p>
+          <p>${scannedProduct.itemCost}</p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <p style={{ fontWeight: 'bold', marginRight: '5px', minWidth: '100px' }}>Initial Quantity:</p>
+          <p>{scannedProduct.quantity}</p>
+        </div>
+
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          marginTop: '15px',
+          padding: '10px',
+          backgroundColor: '#e3f2fd',
+          borderRadius: '4px'
+        }}>
+          <p style={{ fontWeight: 'bold', marginRight: '5px', minWidth: '100px' }}>Total Sold:</p>
+          <p style={{ 
+            fontSize: '1.5rem', 
+            fontWeight: 'bold', 
+            color: '#1976d2',
+            margin: 0 
+          }}>
+            {soldCount}
+          </p>
+        </div>
+
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          marginTop: '10px',
+          padding: '10px',
+          backgroundColor: '#e8f5e8',
+          borderRadius: '4px'
+        }}>
+          <p style={{ fontWeight: 'bold', marginRight: '5px', minWidth: '100px' }}>Remaining Quantity:</p>
+          <p style={{ 
+            fontSize: '1.5rem', 
+            fontWeight: 'bold', 
+            color: '#2e7d32',
+            margin: 0 
+          }}>
+            {scannedProduct.quantity - soldCount}
+          </p>
+        </div>
+
+        {/* New buttons section */}
+        <div style={{ 
+          marginTop: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}>
+        <button
+  onClick={async () => {
+    const saved = await saveRemainingStock('CONFIRMED');
+    if (saved) {
+      setIsPopupOpen(false);
+      setSoldCount(0);
+    } else {
+    }
+  }}
+  style={{
+    padding: '10px',
+    backgroundColor: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '1rem'
+  }}
+>
+  Confirm Existing Quantity
+</button>
+
+         <div style={{ 
+  display: 'flex',
+  gap: '10px',
+  alignItems: 'center'
+}}>
+  <input
+    type="number"
+    value={uncertainQuantity}
+    onChange={(e) => setUncertainQuantity(e.target.value)}
+    placeholder="Enter uncertain quantity"
+    style={{
+      flex: 1,
+      padding: '10px',
+      borderRadius: '4px',
+      border: '1px solid #ddd'
+    }}
+  />
+  <button
+    onClick={async () => {
+      if (!uncertainQuantity || isNaN(uncertainQuantity)) {
+        alert('Please enter a valid quantity');
+        return;
+      }
+      
+      const saved = await saveRemainingStock('NOT_CONFIRMED', uncertainQuantity);
+      if (saved) {
+        setIsPopupOpen(false);
+        setSoldCount(0);
+        setUncertainQuantity('');
+      } else {
+        alert('Failed to save uncertain quantity.');
+      }
+    }}
+    style={{
+      padding: '10px 15px',
+      backgroundColor: '#f44336',
+      color: 'white',
+      border: 'none',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontWeight: 'bold',
+      fontSize: '1rem'
+    }}
+  >
+    Save Uncertain Quantity
+  </button>
+</div>
+</div>
+
+
+        {/* Show date range info in popup if filters are active */}
+        {(fromDate || toDate) && (
+          <div style={{ 
+            marginTop: '10px',
+            padding: '8px',
+            backgroundColor: '#fff3e0',
+            borderRadius: '4px',
+            fontSize: '0.9rem',
+            color: '#e65100'
+          }}>
+          
+          </div>
+          
+        )}
       </div>
     </div>
   </div>
+  
 )}
 
-     {/* Table Section */}
-     <div style={{ 
-  width: '100%',
-  overflowX: 'auto',
-  marginTop: '20px',
-  height: '70vh', // Fixed height
-  overflowY: 'auto' // Vertical scroll
-}}>
-  <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>
-    Remaining Stock for {String(startDate.day).padStart(2, '0')}/{String(startDate.month).padStart(2, '0')}/{startDate.year} to {String(endDate.day).padStart(2, '0')}/{String(endDate.month).padStart(2, '0')}/{endDate.year}
-  </h2>
-  
   <div style={{ 
-    width: '100%',
-    overflow: 'auto',
-    border: '1px solid #ddd',
-    borderRadius: '8px'
+  marginTop: '30px',
+  overflowX: 'auto'
+}}>
+  <h3 style={{ 
+    marginBottom: '15px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid #ddd'
   }}>
+    Stock Records
+    {(fromDate || toDate) && (
+      <span style={{ 
+        fontSize: '0.8rem',
+        marginLeft: '10px',
+        color: '#666',
+        fontWeight: 'normal'
+      }}>
+        {fromDate && toDate ? `(From ${formatDateForDisplay(fromDate)} to ${formatDateForDisplay(toDate)})` : 
+         fromDate ? `(From ${formatDateForDisplay(fromDate)})` : 
+         `(Up to ${formatDateForDisplay(toDate)})`}
+      </span>
+    )}
+  </h3>
+  
+  {!fromDate && !toDate ? (
+    <div style={{ 
+      padding: '15px',
+      backgroundColor: '#fff3e0',
+      borderRadius: '4px',
+      borderLeft: '4px solid #ff9800',
+      marginBottom: '20px'
+    }}>
+      <p style={{ margin: 0 }}>
+        <strong>Note:</strong> Please select a date range to view filtered stock records.
+        Currently showing all records.
+      </p>
+    </div>
+  ) : null}
+
+  {filteredRecords.length === 0 ? (
+    <div style={{ 
+      padding: '15px',
+      backgroundColor: '#f5f5f5',
+      borderRadius: '4px',
+      textAlign: 'center'
+    }}>
+      {fromDate || toDate ? (
+        <p style={{ margin: 0 }}>
+          No stock records found for the selected date range: 
+          {fromDate ? ` from ${formatDateForDisplay(fromDate)}` : ''}
+          {toDate ? ` to ${formatDateForDisplay(toDate)}` : ''}
+        </p>
+      ) : (
+        <p style={{ margin: 0 }}>
+          No stock records found. Scan some products to see records.
+        </p>
+      )}
+    </div>
+  ) : (
     <table style={{ 
       width: '100%',
       borderCollapse: 'collapse',
-      fontSize: '0.95rem'
+      marginTop: '10px'
     }}>
       <thead>
-        <tr style={{ backgroundColor: '#f2f2f2', position: 'sticky', top: 0 }}>
-          <th 
-            onClick={() => handleSort('Barcode')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'left',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Barcode {sortConfig.key === 'Barcode' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th 
-            onClick={() => handleSort('Name')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'left',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer'
-            }}
-          >
-            Name {sortConfig.key === 'Name' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th 
-            onClick={() => handleSort('Initial_Quantity')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'right',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Initial Quantity {sortConfig.key === 'Initial_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th 
-            onClick={() => handleSort('Sold_Quantity')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'right',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Sold Quantity {sortConfig.key === 'Sold_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th 
-            onClick={() => handleSort('Remaining_Quantity')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'right',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Remaining Quantity {sortConfig.key === 'Remaining_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th 
-            onClick={() => handleSort('Recorded_Quantity')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'right',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Recorded Quantity {sortConfig.key === 'Recorded_Quantity' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th 
-            onClick={() => handleSort('Status')}
-            style={{ 
-              padding: '12px 8px',
-              textAlign: 'left',
-              borderBottom: '1px solid #ddd',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Status {sortConfig.key === 'Status' ? (sortConfig.direction === 'asc' ? ' ▲' : ' ▼') : ''}
-          </th>
-          <th style={{ 
-            padding: '12px 8px',
-            textAlign: 'center',
-            borderBottom: '1px solid #ddd',
-            whiteSpace: 'nowrap'
-          }}>
-            Actions
-          </th>
+        <tr style={{ 
+          backgroundColor: '#f5f5f5',
+          borderBottom: '1px solid #ddd'
+        }}>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Product</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Barcode</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Initial Qty</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Sold</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Remaining</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Status</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Uncertain Qty</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Date Scanned</th>
+          <th style={{ padding: '12px', textAlign: 'left' }}>Actions</th>
         </tr>
       </thead>
-    
-<tbody>
-  {getFilteredData().map((row, filteredIndex) => {
-    // Find the actual index in original tableData for editing state
-    const actualIndex = tableData.findIndex(originalRow => originalRow.Barcode === row.Barcode);
-    const isEditing = editingRow === actualIndex;
-    
-    return (
-      <tr 
-        key={`${row.Barcode}-${filteredIndex}`} 
-        style={{ 
-          borderBottom: '1px solid #ddd',
-          backgroundColor: isEditing ? '#f0f7ff' : 'transparent',
-          transition: 'background-color 0.2s'
-        }}
-      >
-        <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', textAlign: 'left' }}>{row.Barcode}</td>
-        <td style={{ padding: '10px 8px', textAlign: 'left' }}>{row.Name}</td>
-        <td style={{ padding: '10px 8px', textAlign: 'right' }}>{row.Initial_Quantity}</td>
-        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-          {isEditing ? (
-            <input
-              type="number"
-              min="0"
-              value={row.Sold_Quantity}
-              onChange={(e) => handleChange(filteredIndex, 'Sold_Quantity', parseInt(e.target.value) || 0)}
-              style={{ 
-                width: '80px',
-                padding: '5px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                textAlign: 'right'
-              }}
-            />
-          ) : (
-            row.Sold_Quantity
-          )}
-        </td>
-        <td style={{ padding: '10px 8px', textAlign: 'right' }}>{row.Remaining_Quantity}</td>
-        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-          {isEditing ? (
-            <input
-              type="number"
-              min="0"
-              value={row.Recorded_Quantity}
-              onChange={(e) => handleChange(filteredIndex, 'Recorded_Quantity', parseInt(e.target.value) || 0)}
-              style={{ 
-                width: '80px',
-                padding: '5px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                textAlign: 'right'
-              }}
-            />
-          ) : (
-            row.Recorded_Quantity
-          )}
-        </td>
-        <td style={{ padding: '10px 8px', textAlign: 'left' }}>
-          {isEditing ? (
-            <select
-              value={row.Status}
-              onChange={(e) => handleChange(filteredIndex, 'Status', e.target.value)}
-              style={{ 
-                padding: '5px',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                minWidth: '120px'
-              }}
-            >
-              <option value="Not Confirmed">Not Confirmed</option>
-              <option value="Confirmed">Confirmed</option>
-            </select>
-          ) : (
-            row.Status
-          )}
-        </td>
-        <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-          {isEditing ? (
-            <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
-              <button 
-                onClick={() => handleSave(filteredIndex)}
-                style={{ 
-                  padding: '5px 10px',
-                  backgroundColor: '#4CAF50',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Save
-              </button>
-              <button 
-                onClick={() => setEditingRow(null)}
-                style={{ 
-                  padding: '5px 10px',
-                  backgroundColor: '#f44336',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button 
-              onClick={() => handleEdit(filteredIndex)}
-              style={{ 
-                padding: '5px 10px',
-                backgroundColor: '#2196F3',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-            >
-              Edit
-            </button>
-          )}
-        </td>
-      </tr>
-    );
-  })}
-</tbody>
+      <tbody>
+        {filteredRecords
+          .filter(record => {
+            if (!fromDate && !toDate) return true;
+            
+            const recordDate = new Date(record.timestamp || record.dateScanned);
+            const from = fromDate ? new Date(fromDate) : null;
+            const to = toDate ? new Date(toDate) : null;
+            
+            if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
+            if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
+            return true;
+          })
+          .map((record) => (
+            <tr key={record.id} style={{ 
+              borderBottom: '1px solid #eee',
+              backgroundColor: editingId === record.id ? '#fffde7' : 'white'
+            }}>
+              <td style={{ padding: '12px' }}>{record.name}</td>
+              <td style={{ padding: '12px' }}>{record.barcode}</td>
+              <td style={{ padding: '12px' }}>{record.initialQuantity}</td>
+              
+              {editingId === record.id ? (
+                <>
+                  <td style={{ padding: '12px' }}>
+                    <input
+                      type="number"
+                      name="soldCount"
+                      value={editFormData.soldCount}
+                      onChange={handleEditFormChange}
+                      style={{ width: '60px', padding: '5px' }}
+                    />
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    <input
+                      type="number"
+                      name="calculatedRemaining"
+                      value={editFormData.calculatedRemaining}
+                      onChange={handleEditFormChange}
+                      style={{ width: '60px', padding: '5px' }}
+                    />
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    <select
+                      name="status"
+                      value={editFormData.status}
+                      onChange={handleEditFormChange}
+                      style={{ padding: '5px' }}
+                    >
+                      <option value="CONFIRMED">Confirmed</option>
+                      <option value="NOT_CONFIRMED">Not Confirmed</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    {editFormData.status === 'NOT_CONFIRMED' ? (
+                      <input
+                        type="number"
+                        name="uncertainQuantity"
+                        value={editFormData.uncertainQuantity}
+                        onChange={handleEditFormChange}
+                        style={{ width: '60px', padding: '5px' }}
+                      />
+                    ) : (
+                      'N/A'
+                    )}
+                  </td>
+                </>
+              ) : (
+                <>
+                  <td style={{ padding: '12px' }}>{record.soldCount}</td>
+                  <td style={{ padding: '12px' }}>{record.calculatedRemaining}</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      color: record.status === 'CONFIRMED' ? 'green' : 'red',
+                      fontWeight: 'bold'
+                    }}>
+                      {record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    {record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A'}
+                  </td>
+                </>
+              )}
+              
+              <td style={{ padding: '12px' }}>
+                {record.timestamp || 'N/A'}
+              </td>
+              
+              <td style={{ padding: '12px' }}>
+                {editingId === record.id ? (
+                  <>
+                    <button
+                      onClick={handleSaveClick}
+                      style={{
+                        marginRight: '5px',
+                        padding: '5px 10px',
+                        backgroundColor: '#4CAF50',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={handleCancelClick}
+                      style={{
+                        padding: '5px 10px',
+                        backgroundColor: '#f44336',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleEditClick(record)}
+                      style={{
+                        marginRight: '5px',
+                        padding: '5px 10px',
+                        backgroundColor: '#2196F3',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClick(record.id)}
+                      style={{
+                        padding: '5px 10px',
+                        backgroundColor: '#f44336',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+      </tbody>
     </table>
+  )}
+</div>
   </div>
 
-  </div>
-  </div>
+  
   );
 };
 

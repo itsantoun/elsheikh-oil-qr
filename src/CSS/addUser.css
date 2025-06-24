@@ -1,147 +1,167 @@
 /* addUser.css */
-
 .add-user-container {
-  max-width: 1000px;
-  margin: 1.5rem auto;
-  padding: 1.5rem;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  color: #333;
 }
 
 .add-user-title {
-  font-size: 1.8rem;
-  color: #0a3d62;
+  font-size: 2rem;
   margin-bottom: 1.5rem;
+  color: var(--primary-dark);
   text-align: center;
-  font-weight: 600;
+  background: linear-gradient(to right, var(--primary-dark), var(--primary-light));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: titleGlow 2s infinite alternate;
 }
 
 .add-user-form {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  margin-bottom: 2rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 2rem;
+  gap: 1.5rem;
 }
 
 .add-user-input {
   padding: 0.8rem 1rem;
-  border: 1px solid rgba(10, 61, 98, 0.2);
-  border-radius: 6px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
   font-size: 1rem;
-  transition: all 0.2s ease;
+  transition: var(--transition);
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .add-user-input:focus {
   outline: none;
-  border-color: #1e88e5;
-  box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.2);
+  border-color: var(--primary-light);
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.2);
 }
 
 .add-user-button {
-  padding: 0.8rem;
-  background: linear-gradient(135deg, #00b4db 0%, #0083b0 100%);
+  padding: 0.8rem 1.5rem;
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary-light));
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--transition);
+  align-self: flex-start;
 }
 
 .add-user-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 180, 219, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.add-user-button:active {
+  transform: translateY(0);
+}
+
+.add-user-list {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
 }
 
 .add-user-list h2 {
-  color: #0a3d62;
-  margin-bottom: 1rem;
-  font-size: 1.4rem;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: var(--primary-dark);
 }
 
 .add-user-table {
   width: 100%;
   border-collapse: collapse;
-  background: white;
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .add-user-table th {
-  background: linear-gradient(135deg, #0a3d62 0%, #1e88e5 100%);
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary-light));
   color: white;
-  padding: 0.8rem;
+  padding: 1rem;
   text-align: left;
-  font-weight: 500;
-  font-size: 0.9rem;
 }
 
 .add-user-table td {
-  padding: 0.6rem 0.8rem;
-  border-bottom: 1px solid rgba(10, 61, 98, 0.1);
-  font-size: 0.9rem;
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
 }
 
-.add-user-table tr:last-child td {
-  border-bottom: none;
+.add-user-table tr:hover td {
+  background-color: rgba(10, 61, 98, 0.05);
 }
 
 .add-user-delete-button {
-  padding: 0.4rem 0.8rem;
-  background: #e53935;
+  padding: 0.5rem 1rem;
+  background-color: #e74c3c;
   color: white;
   border: none;
-  border-radius: 4px;
-  font-size: 0.8rem;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--transition);
 }
 
 .add-user-delete-button:hover {
-  background: #c62828;
-}
-
-.add-user-success,
-.add-user-error {
-  padding: 0.8rem;
-  margin-bottom: 1rem;
-  border-radius: 6px;
-  text-align: center;
-  font-size: 0.9rem;
-  animation: fadeIn 0.3s ease;
+  background-color: #c0392b;
+  transform: translateY(-1px);
 }
 
 .add-user-success {
-  background: #4caf50;
+  background-color: #2ecc71;
   color: white;
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.3s ease-out;
 }
 
 .add-user-error {
-  background: #e53935;
+  background-color: #e74c3c;
   color: white;
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.3s ease-out;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Mobile Responsiveness */
+/* Responsive Design */
 @media (max-width: 768px) {
-  .add-user-container {
-      padding: 1rem;
-      margin: 1rem;
+  .add-user-form {
+    padding: 1.5rem;
   }
-
-  .add-user-title {
-      font-size: 1.5rem;
+  
+  .add-user-list {
+    padding: 1.5rem;
+    overflow-x: auto;
   }
-
+  
   .add-user-table {
-      display: block;
-      overflow-x: auto;
+    display: block;
+    white-space: nowrap;
+  }
+  
+  .add-user-button {
+    align-self: stretch;
+    text-align: center;
   }
 }

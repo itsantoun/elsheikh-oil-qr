@@ -366,31 +366,36 @@ const fetchProducts = async () => {
         return;
       }
   
-      // 1. Update the stock in the products database
-      if (itemToDelete.barcode) {
-        const productRef = ref(database, `products/${itemToDelete.barcode}`);
-        const snapshot = await get(productRef);
+      // // 1. Update the stock in the products database
+      // if (itemToDelete.barcode) {
+      //   const productRef = ref(database, `products/${itemToDelete.barcode}`);
+      //   const snapshot = await get(productRef);
         
-        if (snapshot.exists()) {
-          const productData = snapshot.val();
-          const currentQuantity = productData.quantity || 0;
-          const newQuantity = currentQuantity + Number(itemToDelete.quantity);
+      //   if (snapshot.exists()) {
+      //     const productData = snapshot.val();
+      //     const currentQuantity = productData.quantity || 0;
+      //   const newQuantity = Number(currentQuantity) + Number(itemToDelete.quantity);
           
-          await update(productRef, {
-            quantity: newQuantity
-          });
-        }
-      }
+      //     await update(productRef, {
+      //       quantity: newQuantity
+      //     });
+      //   }
+      // }
   
-      // 2. Update remaining stock (if applicable)
-      if (itemToDelete.name) {
-        await updateRemainingStock(itemToDelete.name, -Number(itemToDelete.quantity)); // Negative quantity to increase stock
-      }
+      // // 2. Update remaining stock (if applicable)
+      // if (itemToDelete.name) {
+      //   await updateRemainingStock(itemToDelete.name, -Number(itemToDelete.quantity)); // Negative quantity to increase stock
+      // }
   
-      // 3. Delete the sold item
-      const itemRef = ref(database, `SoldItems/${itemId}`);
-      await remove(itemRef);
+      // // 3. Delete the sold item
+      // const itemRef = ref(database, `SoldItems/${itemId}`);
+      // await remove(itemRef);
       
+       // Delete the sold item from database
+    const itemRef = ref(database, `SoldItems/${itemId}`);
+    await remove(itemRef);
+
+    
       // Update local state
       setSoldItems(soldItems.filter((item) => item.id !== itemId)); 
       setFilteredItems(filteredItems.filter((item) => item.id !== itemId)); 

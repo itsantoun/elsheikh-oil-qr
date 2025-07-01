@@ -20,34 +20,49 @@ const FetchProducts = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchProducts = async () => {
+    try {
+      setIsRefreshing(true);
+      const productsRef = ref(database, 'products');
+      const snapshot = await get(productsRef);
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const productList = Object.keys(data).map((key) => ({
+          id: key,
+          ...data[key],
+        }));
+        // Sort products alphabetically by name after fetching
+        const sortedProducts = sortProducts(productList, 'name', 'asc');
+        setProducts(sortedProducts);
+        setFilteredProducts(sortedProducts);
+      } else {
+        setProducts([]);
+        setFilteredProducts([]);
+      }
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      setErrorMessage("Error fetching products. Please try again.");
+      setTimeout(() => setErrorMessage(null), 3000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const productsRef = ref(database, 'products');
-        const snapshot = await get(productsRef);
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const productList = Object.keys(data).map((key) => ({
-            id: key,
-            ...data[key],
-          }));
-          // Sort products alphabetically by name after fetching
-          const sortedProducts = sortProducts(productList, 'name', 'asc');
-          setProducts(sortedProducts);
-          setFilteredProducts(sortedProducts);
-        }
-      } catch (error) {
-        console.error("Error fetching products:", error);
-      }
-    };
-  
     fetchProducts();
   }, []);
 
   useEffect(() => {
     handleSearch();
   }, [searchTerm, searchCategory, products]);
+
+  const handleRefresh = () => {
+    fetchProducts();
+    setSuccessMessage("Products refreshed successfully!");
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
 
   const handleSearch = () => {
     if (!searchTerm.trim()) {
@@ -153,71 +168,64 @@ const FetchProducts = () => {
 
   const rowRef = useRef(null);
 
-  // const handleEditProduct = (product) => {
-  //   setEditingProduct({ ...product });
-  //   setTimeout(() => {
-  //     rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  //   }, 100);
-  // };
-
   const handleEditProduct = (product) => {
-  setEditingProduct({ ...product, originalId: product.id });
-  setTimeout(() => {
-    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, 100);
-};
+    setEditingProduct({ ...product, originalId: product.id });
+    setTimeout(() => {
+      rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  };
 
   const handleSaveChanges = async () => {
-  const oldId = editingProduct.originalId || editingProduct.id;
-  const newId = sanitizeId(editingProduct.id);
-  
-  if (!newId) {
-    setErrorMessage("Barcode (ID) cannot be empty.");
-    setTimeout(() => setErrorMessage(null), 3000);
-    return;
-  }
-
-  const newProductRef = ref(database, `products/${newId}`);
-  const oldProductRef = ref(database, `products/${oldId}`);
-
-  try {
-    const parsedItemCost = parseFloat(editingProduct.itemCost);
-    const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
-
-    // If the ID changed, remove the old one
-    if (oldId !== newId) {
-      await remove(oldProductRef);
+    const oldId = editingProduct.originalId || editingProduct.id;
+    const newId = sanitizeId(editingProduct.id);
+    
+    if (!newId) {
+      setErrorMessage("Barcode (ID) cannot be empty.");
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
     }
 
-    await set(newProductRef, {
-      name: editingProduct.name.trim() || 'Unnamed Product',
-      productType: editingProduct.productType.trim() || 'Unknown Type',
-      itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
-      purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
-      quantity: editingProduct.quantity || 0,
-    });
+    const newProductRef = ref(database, `products/${newId}`);
+    const oldProductRef = ref(database, `products/${oldId}`);
 
-    const updatedProducts = products.map((product) =>
-      product.id === oldId
-        ? {
-            ...editingProduct,
-            id: newId,
-            itemCost: parsedItemCost,
-            purchasingPrice: parsedPurchasingPrice
-          }
-        : product
-    );
+    try {
+      const parsedItemCost = parseFloat(editingProduct.itemCost);
+      const parsedPurchasingPrice = parseFloat(editingProduct.purchasingPrice);
 
-    setProducts(updatedProducts);
-    setEditingProduct(null);
-    setSuccessMessage('Product updated successfully!');
-    setTimeout(() => setSuccessMessage(null), 3000);
-  } catch (error) {
-    console.error('Error updating product:', error);
-    setErrorMessage('Error updating product. Please try again.');
-    setTimeout(() => setErrorMessage(null), 3000);
-  }
-};
+      // If the ID changed, remove the old one
+      if (oldId !== newId) {
+        await remove(oldProductRef);
+      }
+
+      await set(newProductRef, {
+        name: editingProduct.name.trim() || 'Unnamed Product',
+        productType: editingProduct.productType.trim() || 'Unknown Type',
+        itemCost: !isNaN(parsedItemCost) ? parsedItemCost : null,
+        purchasingPrice: !isNaN(parsedPurchasingPrice) ? parsedPurchasingPrice : null,
+        quantity: editingProduct.quantity || 0,
+      });
+
+      const updatedProducts = products.map((product) =>
+        product.id === oldId
+          ? {
+              ...editingProduct,
+              id: newId,
+              itemCost: parsedItemCost,
+              purchasingPrice: parsedPurchasingPrice
+            }
+          : product
+      );
+
+      setProducts(updatedProducts);
+      setEditingProduct(null);
+      setSuccessMessage('Product updated successfully!');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error) {
+      console.error('Error updating product:', error);
+      setErrorMessage('Error updating product. Please try again.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
+  };
   
   const handleExportToExcel = () => {
     if (products.length === 0) {
@@ -396,9 +404,14 @@ const FetchProducts = () => {
         </div>
       </div>
 
-      <button onClick={handleExportToExcel} className="admin-button">
-        Export to Excel
-      </button>
+      <div className="table-controls">
+        <button onClick={handleExportToExcel} className="admin-button">
+          Export to Excel
+        </button>
+        <button onClick={handleRefresh} className="admin-button" disabled={isRefreshing}>
+          {isRefreshing ? '🔄' : '🔄'} {isRefreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
 
       <div className="admin-products">
         <h2>Product List</h2>

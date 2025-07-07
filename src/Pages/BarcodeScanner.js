@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
-import { ref, get, update, child, push, onValue ,off} from "firebase/database";
+import { ref, get, update, child, push, onValue ,off, query,
+  orderByChild,
+  startAt,serverTimestamp,
+  set} from "firebase/database";
 import { UserContext } from '../Auth/userContext';  
 import '../CSS/BarcodeScanner.css';
 import { signOut } from 'firebase/auth';
@@ -163,34 +166,66 @@ const BarcodeScanner = () => {
     }
   };
 
-  useEffect(() => {
+//   useEffect(() => {
+//   if (!user || !user.uid || !name) return;
+
+//   const soldItemsRef = ref(database, "SoldItems");
+
+//   const listener = onValue(soldItemsRef, (snapshot) => {
+//     if (snapshot.exists()) {
+//       const items = Object.values(snapshot.val());
+
+//       const filteredItems = items.filter((item) => {
+//         const itemDate = new Date(item.dateScanned);
+//         return (
+//           item.scannedBy === name &&
+//           itemDate >= customDate
+//         );
+//       });
+
+//       setScannedItems(filteredItems);
+//     } else {
+//       setScannedItems([]);
+//     }
+//   });
+
+//   // Cleanup listener on component unmount
+//   return () => {
+//     off(soldItemsRef, "value", listener);
+//   };
+// // }, [user, name]);
+// }, [user, name, customDate]);
+
+// Replace your current useEffect for scannedItems with this optimized version
+useEffect(() => {
   if (!user || !user.uid || !name) return;
 
-  const soldItemsRef = ref(database, "SoldItems");
+  // Create a query that filters by date first
+  const soldItemsRef = query(
+    ref(database, "SoldItems"),
+    orderByChild("dateScanned"),
+    startAt(customDate.toISOString())
+  );
 
   const listener = onValue(soldItemsRef, (snapshot) => {
     if (snapshot.exists()) {
-      const items = Object.values(snapshot.val());
-
-      const filteredItems = items.filter((item) => {
-        const itemDate = new Date(item.dateScanned);
-        return (
-          item.scannedBy === name &&
-          itemDate >= customDate
-        );
+      const items = [];
+      snapshot.forEach((childSnapshot) => {
+        const item = childSnapshot.val();
+        if (item.scannedBy === name) {
+          items.push({
+            ...item,
+            id: childSnapshot.key // Include the Firebase key
+          });
+        }
       });
-
-      setScannedItems(filteredItems);
+      setScannedItems(items);
     } else {
       setScannedItems([]);
     }
   });
 
-  // Cleanup listener on component unmount
-  return () => {
-    off(soldItemsRef, "value", listener);
-  };
-// }, [user, name]);
+  return () => off(soldItemsRef, "value", listener);
 }, [user, name, customDate]);
 
   useEffect(() => {
@@ -237,59 +272,111 @@ const BarcodeScanner = () => {
       setIsPopupOpen(false);
     }
   };
-  const saveScannedItem = async () => {
-    if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
-      setDialogMessage("!يجب تعبئت كل الخانات");
-      return;
-    }
+  // const saveScannedItem = async () => {
+  //   if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
+  //     setDialogMessage("!يجب تعبئت كل الخانات");
+  //     return;
+  //   }
   
-    const totalCost = scannedProduct.itemCost * quantity;
+  //   const totalCost = scannedProduct.itemCost * quantity;
   
-    // Ensure name is set correctly from the context
-    const scannedBy = name || 'Unknown'; // Ensure fallback if name is not available
+  //   // Ensure name is set correctly from the context
+  //   const scannedBy = name || 'Unknown'; // Ensure fallback if name is not available
     
-    // Find the customer by ID to get the name
-    const customer = customers.find(c => c.id === selectedCustomer);
+  //   // Find the customer by ID to get the name
+  //   const customer = customers.find(c => c.id === selectedCustomer);
   
+  //   if (!customer) {
+  //     setDialogMessage("Error: Customer not found.");
+  //     return;
+  //   }
+  
+  //   const soldItemsRef = ref(database, 'SoldItems');
+  //   const currentDate = new Date().toISOString();
+  
+  //   const newItem = {
+  //     barcode: scannedProduct.barcode,
+  //     name: scannedProduct.name,
+  //     category: scannedProduct.category || 'Unknown',
+  //     price: scannedProduct.price || 0,
+  //     dateScanned: currentDate,
+  //     scannedBy: scannedBy,  // Use the name from the context
+  //     customerName: customer.name,  // Store the customer name instead of the ID
+  //     quantity: quantity,
+  //     paymentStatus: paymentStatus, // Store the correct payment status
+  //     itemCost: scannedProduct.itemCost, // Include item cost for reference
+  //     totalCost: totalCost,  // Save the calculated total cost
+  //     remark: remark, 
+  //   };
+  
+  //   try {
+  //     await push(soldItemsRef, newItem);
+  //     setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
+  //     setTimeout(() => setSuccessMessage(null), 3000);
+  //     setIsPopupOpen(false);
+  //     setDialogMessage(null);
+  //     setScannedProduct(null);
+  //     setSelectedCustomer('');
+  //     setQuantity(1);
+  //     setPaymentStatus('Unpaid');
+  //     setRemark('');
+  //   } catch (error) {
+  //     console.error("Error saving scanned item:", error);
+  //     setDialogMessage("Error saving item to the database.");
+  //   }
+  // };
+
+const saveScannedItem = async () => {
+  if (!scannedProduct || !scannedProduct.barcode || !selectedCustomer || quantity <= 0) {
+    setDialogMessage("!يجب تعبئت كل الخانات");
+    return;
+  }
+
+  setLoading(true);
+  
+  try {
+    const totalCost = scannedProduct.itemCost * quantity;
+    const scannedBy = name || 'Unknown';
+    const customer = customers.find(c => c.id === selectedCustomer);
+
     if (!customer) {
       setDialogMessage("Error: Customer not found.");
       return;
     }
-  
-    const soldItemsRef = ref(database, 'SoldItems');
-    const currentDate = new Date().toISOString();
-  
-    const newItem = {
+
+    const newItemRef = push(ref(database, 'SoldItems'));
+    
+    await set(newItemRef, {
+      id: newItemRef.key,
       barcode: scannedProduct.barcode,
       name: scannedProduct.name,
       category: scannedProduct.category || 'Unknown',
       price: scannedProduct.price || 0,
-      dateScanned: currentDate,
-      scannedBy: scannedBy,  // Use the name from the context
-      customerName: customer.name,  // Store the customer name instead of the ID
-      quantity: quantity,
-      paymentStatus: paymentStatus, // Store the correct payment status
-      itemCost: scannedProduct.itemCost, // Include item cost for reference
-      totalCost: totalCost,  // Save the calculated total cost
-      remark: remark, 
-    };
-  
-    try {
-      await push(soldItemsRef, newItem);
-      setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-      setIsPopupOpen(false);
-      setDialogMessage(null);
-      setScannedProduct(null);
-      setSelectedCustomer('');
-      setQuantity(1);
-      setPaymentStatus('Unpaid');
-      setRemark('');
-    } catch (error) {
-      console.error("Error saving scanned item:", error);
-      setDialogMessage("Error saving item to the database.");
-    }
-  };
+      dateScanned: serverTimestamp(), // Use server timestamp here
+      scannedBy,
+      customerId: selectedCustomer,
+      customerName: customer.name,
+      quantity,
+      paymentStatus,
+      itemCost: scannedProduct.itemCost,
+      totalCost,
+      remark, 
+    });
+
+    setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
+    setIsPopupOpen(false);
+    setScannedProduct(null);
+    setSelectedCustomer('');
+    setQuantity(1);
+    setPaymentStatus('Unpaid');
+    setRemark('');
+  } catch (error) {
+    console.error("Error saving scanned item:", error);
+    setDialogMessage("Error saving item to the database.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handlePaymentStatusChange = (e) => {
     setPaymentStatus(e.target.value);

@@ -112,6 +112,23 @@ const fetchProducts = async () => {
   //   return () => unsubscribe(); // Cleanup on unmount
   // }, []);
 
+useEffect(() => {
+  const productsRef = ref(database, 'products');
+  const unsubscribeProducts = onValue(productsRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const productsData = snapshot.val();
+      const productList = Object.keys(productsData).map((key) => ({
+        id: key,
+        barcode: key,
+        ...productsData[key],
+      }));
+      setProducts(productList);
+    }
+  });
+
+  return () => unsubscribeProducts();
+}, []);
+
   useEffect(() => {
   // Reference to customers data
   const customersRef = ref(database, 'customers');
@@ -309,6 +326,7 @@ const fetchProducts = async () => {
     // setNewProductType(item.name || '');
     // setNewQuantity(item.quantity || 0);
 
+    const matchingProduct = products.find(p => p.id === item.barcode);
     setEditingItem(item);
     setNewRemark(item.remark || '');
     setNewTotalCost(item.totalCost || '');

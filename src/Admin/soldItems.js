@@ -318,15 +318,15 @@ useEffect(() => {
   }, [filterType, searchTerm, dateFilter, monthFilter, soldItems, checkedItems, checkFilter]);
 
   const handleEdit = (item) => {
-    // setEditingItem(item);
-    // setNewRemark(item.remark || '');
-    // setNewTotalCost(item.totalCost || '');
-    // setNewPaymentStatus(item.paymentStatus || 'Paid');
-    // setNewCustomer(item.customerName || '');
-    // setNewProductType(item.name || '');
-    // setNewQuantity(item.quantity || 0);
+  try {
+    // Ensure the item exists before trying to edit
+    if (!item || !item.id) {
+      console.error('Invalid item for editing:', item);
+      setErrorMessage('Invalid item selected for editing.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
 
-    const matchingProduct = products.find(p => p.id === item.barcode);
     setEditingItem(item);
     setNewRemark(item.remark || '');
     setNewTotalCost(item.totalCost || '');
@@ -334,8 +334,13 @@ useEffect(() => {
     setNewCustomer(item.customerName || '');
     setNewProductType(item.name || '');
     setNewQuantity(item.quantity || 0);
-    setNewDate(item.dateScanned || new Date().toISOString()); // Add this line
-  };
+    setNewDate(item.dateScanned || new Date().toISOString());
+  } catch (error) {
+    console.error('Error in handleEdit:', error);
+    setErrorMessage('Error occurred while editing item.');
+    setTimeout(() => setErrorMessage(null), 3000);
+  }
+};
 
   const saveEditedItem = async () => {
     if (editingItem) {

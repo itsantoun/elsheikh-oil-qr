@@ -4,6 +4,7 @@ import { database } from '../Auth/firebase';
 // import { ref, get, child, push, set } from 'firebase/database';
 import { ref, get, child, push, set, update, remove } from 'firebase/database';
 import '../CSS/remainingProducts.css';
+import * as XLSX from 'xlsx';
 
 const RemainingProducts = () => {
   const [scanStatus, setScanStatus] = useState('Press "Scan Barcode" to start scanning.');
@@ -40,6 +41,63 @@ const RemainingProducts = () => {
       return 'all_time';
     }
   };
+
+
+  const exportToExcel = () => {
+  // Filter records based on date range and status filter
+  const recordsToExport = filteredRecords.filter(record => {
+    if (!fromDate && !toDate) return true;
+    
+    const recordDate = new Date(record.timestamp || record.dateScanned);
+    const from = fromDate ? new Date(fromDate) : null;
+    const to = toDate ? new Date(toDate) : null;
+    
+    if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
+    if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
+    return true;
+  });
+
+  // Prepare data for Excel
+  const excelData = recordsToExport.map(record => ({
+    'Product Name': record.name,
+    'Barcode': record.barcode,
+    'Product Type': record.productType,
+    'Item Cost': record.itemCost,
+    'Initial Quantity': record.initialQuantity,
+    'Sold Count': record.soldCount,
+    'Calculated Remaining': record.calculatedRemaining,
+    'Status': record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed',
+    'Uncertain Quantity': record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A',
+    'Date Scanned': record.timestamp || 'N/A'
+  }));
+
+  // Create workbook and worksheet
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(excelData);
+
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Records');
+
+  // Generate filename with date range
+  let filename = 'stock_records';
+  if (fromDate && toDate) {
+    filename += `_${fromDate}_to_${toDate}`;
+  } else if (fromDate) {
+    filename += `_from_${fromDate}`;
+  } else if (toDate) {
+    filename += `_to_${toDate}`;
+  }
+  
+  if (statusFilter !== 'All') {
+    filename += `_${statusFilter.toLowerCase().replace(' ', '_')}`;
+  }
+  
+  filename += '.xlsx';
+
+  // Save file
+  XLSX.writeFile(wb, filename);
+};
+
 
   // Function to check if product is already scanned for current date range
   const checkIfProductAlreadyScanned = async (barcode) => {
@@ -784,6 +842,7 @@ const saveRemainingStock = async (status, uncertainQuantity = null) => {
           </button>
         </div>
 
+
         {/* Display selected date range */}
         {(fromDate || toDate) && (
           <div style={{ 
@@ -796,6 +855,8 @@ const saveRemainingStock = async (status, uncertainQuantity = null) => {
           </div>
         )}
       </div>
+
+ 
 
       {/* Action Buttons */}
       <div style={{ 
@@ -984,6 +1045,23 @@ const saveRemainingStock = async (status, uncertainQuantity = null) => {
           )}
         </div>
       )}
+           <button
+  onClick={exportToExcel}
+  style={{
+    fontSize: '1rem',
+    padding: '8px 15px',
+    backgroundColor: '#4CAF50',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px'
+  }}
+>
+  📊 Export to Excel
+</button>
 
       {/* Popup Modal */}
      {isPopupOpen && scannedProduct && (

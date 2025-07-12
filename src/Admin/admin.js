@@ -41,6 +41,8 @@ const Admin = () => {
         return <AddUsers />;
       case 'addProducts':
         return <FetchProducts />;
+        case 'holdProducts':
+        return <FetchProducts />;
       case 'itemsSold':
         return <ItemsSold />;
       case 'addCustomer':

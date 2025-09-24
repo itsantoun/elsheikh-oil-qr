@@ -41,6 +41,26 @@ const [products, setProducts] = useState([]);
 const [selectedProduct, setSelectedProduct] = useState(null);
 const [scannedBarcode, setScannedBarcode] = useState('');
 
+// const fetchProducts = async () => {
+//   try {
+//     const productsRef = ref(database, 'products');
+//     const snapshot = await get(productsRef);
+//     if (snapshot.exists()) {
+//       const productsData = snapshot.val();
+//       const productList = Object.keys(productsData).map((key) => ({
+//         id: key,
+//         barcode: key,
+//         ...productsData[key],
+//       }));
+//       setProducts(productList);
+//     }
+//   } catch (error) {
+//     console.error('Error fetching products:', error);
+//     setErrorMessage('Failed to fetch products.');
+//     setTimeout(() => setErrorMessage(null), 3000);
+//   }
+// };
+
 const fetchProducts = async () => {
   try {
     const productsRef = ref(database, 'products');
@@ -52,6 +72,10 @@ const fetchProducts = async () => {
         barcode: key,
         ...productsData[key],
       }));
+      
+      // Sort products alphabetically by name
+      productList.sort((a, b) => a.name.localeCompare(b.name));
+      
       setProducts(productList);
     }
   } catch (error) {
@@ -192,38 +216,73 @@ useEffect(() => {
 }, []);
 
   // Move stock items to transactions immediately
-  useEffect(() => {
-    const moveStockItems = async () => {
-      try {
-        const soldItemsRef = ref(database, 'SoldItems');
-        const snapshot = await get(soldItemsRef);
+  // useEffect(() => {
+  //   const moveStockItems = async () => {
+  //     try {
+  //       const soldItemsRef = ref(database, 'SoldItems');
+  //       const snapshot = await get(soldItemsRef);
         
-        if (snapshot.exists()) {
-          const data = snapshot.val();
+  //       if (snapshot.exists()) {
+  //         const data = snapshot.val();
           
-          for (const key in data) {
-            if (data[key].paymentStatus === 'Stock') {
-              const stockItem = data[key];
-              const transactionsRef = ref(database, `transactions/${key}`);
+  //         for (const key in data) {
+  //           if (data[key].paymentStatus === 'Stock') {
+  //             const stockItem = data[key];
+  //             const transactionsRef = ref(database, `transactions/${key}`);
 
-              // Move item to transactions
-              await set(transactionsRef, {
-                ...stockItem,
-                movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
-              });
+  //             // Move item to transactions
+  //             await set(transactionsRef, {
+  //               ...stockItem,
+  //               movedToTransactionsAt: new Date().toISOString(), // Timestamp when moved
+  //             });
 
-              // Remove from SoldItems
-              await remove(ref(database, `SoldItems/${key}`));
-            }
+  //             // Remove from SoldItems
+  //             await remove(ref(database, `SoldItems/${key}`));
+  //           }
+  //         }
+  //       }
+  //     } catch (error) {
+  //       console.error('Error moving stock items:', error);
+  //     }
+  //   };
+
+  //   moveStockItems();
+  // }, []);
+
+  // Move stock items to transactions immediately
+useEffect(() => {
+  const moveStockItems = async () => {
+    try {
+      const soldItemsRef = ref(database, 'SoldItems');
+      const snapshot = await get(soldItemsRef);
+      
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        
+        for (const key in data) {
+          if (data[key].paymentStatus === 'Stock') {
+            const stockItem = data[key];
+            const transactionsRef = ref(database, `transactions/${key}`);
+
+            // Move item to transactions
+            await set(transactionsRef, {
+              ...stockItem,
+              movedToTransactionsAt: new Date().toISOString(),
+            });
+
+            // Remove from SoldItems
+            await remove(ref(database, `SoldItems/${key}`));
           }
         }
-      } catch (error) {
-        console.error('Error moving stock items:', error);
       }
-    };
+    } catch (error) {
+      console.error('Error moving stock items:', error);
+    }
+  };
 
-    moveStockItems();
-  }, []);
+  moveStockItems();
+}, []);
+
 
   useEffect(() => {
     const fetchCustomersAndSoldItems = async () => {
@@ -663,7 +722,7 @@ useEffect(() => {
       <h3>Add Missing Item</h3>
       
       <div className="product-selection">
-        <select
+        {/* <select
           value={selectedProduct?.id || ''}
           onChange={(e) => {
             const productId = e.target.value;
@@ -678,8 +737,26 @@ useEffect(() => {
               {product.name} - {product.barcode}
             </option>
           ))}
-        </select>
-        
+        </select> */}
+
+<select
+  value={selectedProduct?.id || ''}
+  onChange={(e) => {
+    const productId = e.target.value;
+    const product = products.find(p => p.id === productId);
+    setSelectedProduct(product);
+  }}
+  autoFocus
+>
+  <option value="">Select a Product</option>
+  {[...products].sort((a, b) => a.name.localeCompare(b.name)).map((product) => (
+    <option key={product.id} value={product.id}>
+      {product.name} - {product.barcode}
+    </option>
+  ))}
+</select>
+
+
         {selectedProduct && (
           <div className="barcode-display">
             <h4>{selectedProduct.name}</h4>

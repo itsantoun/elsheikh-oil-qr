@@ -8,43 +8,59 @@ const Transactions = () => {
   const [editing, setEditing] = useState(null);
   const [editedValues, setEditedValues] = useState({});
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [products, setProducts] = useState({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Fetch all transactions on component mount
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      try {
-        const transactionsRef = ref(database, 'transactions');
-        const snapshot = await get(transactionsRef);
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const transactionsArray = await Promise.all(
-            Object.keys(data).map(async (key) => {
-              const transaction = { id: key, ...data[key] };
-
-              // Fetch the corresponding product barcode
-              if (transaction.productId) {
-                const productRef = ref(database, `products/${transaction.productId}`);
-                const productSnapshot = await get(productRef);
-                if (productSnapshot.exists()) {
-                  transaction.barcode = productSnapshot.val().barcode; // Assuming barcode exists in products
-                }
-              }
-
-              return transaction;
-            })
-          );
-
-          setTransactions(transactionsArray);
-        } else {
-          setTransactions([]);
-        }
-      } catch (error) {
-        console.error('Error fetching transactions:', error);
+  // Reusable data fetching function
+  const fetchData = async () => {
+    setIsRefreshing(true);
+    try {
+      // Fetch products first to cache them
+      const productsRef = ref(database, 'products');
+      const productsSnapshot = await get(productsRef);
+      if (productsSnapshot.exists()) {
+        setProducts(productsSnapshot.val());
       }
-    };
 
-    fetchTransactions();
+      // Then fetch transactions
+      const transactionsRef = ref(database, 'transactions');
+      const transactionsSnapshot = await get(transactionsRef);
+      if (transactionsSnapshot.exists()) {
+        const data = transactionsSnapshot.val();
+        const transactionsArray = Object.keys(data).map((key) => {
+          const transaction = { id: key, ...data[key] };
+          
+          // Get barcode from cached products
+          if (transaction.productId && productsSnapshot.exists()) {
+            const product = productsSnapshot.val()[transaction.productId];
+            if (product) {
+              transaction.barcode = product.barcode;
+            }
+          }
+
+          return transaction;
+        });
+
+        setTransactions(transactionsArray);
+      } else {
+        setTransactions([]);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchData();
   }, []);
+
+  // Handle refresh button click
+  const handleRefresh = () => {
+    fetchData();
+  };
 
   // Handle month selection change
   const handleMonthChange = (e) => {
@@ -53,101 +69,120 @@ const Transactions = () => {
 
   // Filter transactions by selected month
   const filterTransactionsByMonth = () => {
-    if (!selectedMonth) return transactions; // If no month is selected, return all transactions
+    if (!selectedMonth) return transactions;
 
     return transactions.filter((transaction) => {
       const transactionDate = new Date(transaction.dateScanned);
-      const transactionMonth = transactionDate.getMonth() + 1; // Months are 0-indexed in JavaScript
+      const transactionMonth = transactionDate.getMonth() + 1;
       return transactionMonth === parseInt(selectedMonth);
     });
   };
 
-  // Get filtered transactions based on the selected month
   const filteredTransactions = filterTransactionsByMonth();
 
-  console.log('Filtered Transactions:', filteredTransactions); // Debugging
-
-  // Handle confirming a transaction
+  // Optimized confirm function
   const handleConfirm = async (id, barcode, transactionQuantity) => {
     try {
-      const productRef = ref(database, `products/${barcode}`);
-      const productSnapshot = await get(productRef);
+      // Update transaction status first for immediate UI feedback
+      setTransactions(prev =>
+        prev.map(t => t.id === id ? { ...t, paymentStatus: 'Confirmed' } : t)
+      );
 
-      if (productSnapshot.exists()) {
-        const productData = productSnapshot.val();
-        const currentQuantity = parseFloat(productData.quantity);
-        const confirmedQuantity = parseFloat(transactionQuantity);
-
-        if (isNaN(currentQuantity) || isNaN(confirmedQuantity)) {
-          console.error('Invalid quantity values');
-          return;
+      // Then perform database updates
+      const updates = {};
+      updates[`transactions/${id}/paymentStatus`] = 'Confirmed';
+      
+      if (barcode) {
+        const productRef = ref(database, `products/${barcode}`);
+        const productSnapshot = await get(productRef);
+        
+        if (productSnapshot.exists()) {
+          const productData = productSnapshot.val();
+          const currentQuantity = parseFloat(productData.quantity) || 0;
+          const confirmedQuantity = parseFloat(transactionQuantity) || 0;
+          const newQuantity = currentQuantity + confirmedQuantity;
+          
+          updates[`products/${barcode}/quantity`] = newQuantity;
         }
-
-        const newQuantity = currentQuantity + confirmedQuantity;
-        await update(productRef, { quantity: newQuantity });
-
-        const transactionRef = ref(database, `transactions/${id}`);
-        await update(transactionRef, { paymentStatus: 'Confirmed' });
-
-        setTransactions((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, paymentStatus: 'Confirmed' } : t))
-        );
-      } else {
-        console.error('Product not found in database');
       }
+
+      await update(ref(database), updates);
     } catch (error) {
       console.error('Error confirming transaction:', error);
+      // Revert UI if error occurs
+      setTransactions(prev =>
+        prev.map(t => t.id === id ? { ...t, paymentStatus: 'Pending' } : t)
+      );
     }
   };
 
-  // Handle unconfirming a transaction
+  // Optimized unconfirm function
   const handleUnconfirm = async (id, barcode, transactionQuantity) => {
     try {
-      const productRef = ref(database, `products/${barcode}`);
-      const productSnapshot = await get(productRef);
+      // Update transaction status first for immediate UI feedback
+      setTransactions(prev =>
+        prev.map(t => t.id === id ? { ...t, paymentStatus: 'Pending' } : t)
+      );
 
-      if (productSnapshot.exists()) {
-        const productData = productSnapshot.val();
-        const newQuantity = productData.quantity - transactionQuantity;
-
-        if (newQuantity < 0) {
-          console.error('Quantity cannot be negative');
-          return;
+      // Then perform database updates
+      const updates = {};
+      updates[`transactions/${id}/paymentStatus`] = 'Pending';
+      
+      if (barcode) {
+        const productRef = ref(database, `products/${barcode}`);
+        const productSnapshot = await get(productRef);
+        
+        if (productSnapshot.exists()) {
+          const productData = productSnapshot.val();
+          const currentQuantity = parseFloat(productData.quantity) || 0;
+          const unconfirmedQuantity = parseFloat(transactionQuantity) || 0;
+          const newQuantity = currentQuantity - unconfirmedQuantity;
+          
+          if (newQuantity >= 0) {
+            updates[`products/${barcode}/quantity`] = newQuantity;
+          } else {
+            throw new Error('Quantity cannot be negative');
+          }
         }
-
-        await update(productRef, { quantity: newQuantity });
-
-        const transactionRef = ref(database, `transactions/${id}`);
-        await update(transactionRef, { paymentStatus: 'Pending' });
-
-        setTransactions((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, paymentStatus: 'Pending' } : t))
-        );
-      } else {
-        console.error('Product not found in database');
       }
+
+      await update(ref(database), updates);
     } catch (error) {
       console.error('Error unconfirming transaction:', error);
+      // Revert UI if error occurs
+      setTransactions(prev =>
+        prev.map(t => t.id === id ? { ...t, paymentStatus: 'Confirmed' } : t)
+      );
     }
   };
 
   // Handle editing a transaction
-  const handleEdit = (id, field, value) => {
-    setEditing(id);
-    setEditedValues({ ...editedValues, [field]: value });
+  const handleEdit = (transaction) => {
+    setEditing(transaction.id);
+    setEditedValues({
+      quantity: transaction.quantity,
+      totalCost: transaction.totalCost,
+      dateScanned: transaction.dateScanned
+    });
   };
 
   // Handle saving edited transaction
   const handleSave = async (id) => {
     try {
-      const transactionRef = ref(database, `transactions/${id}`);
-      await update(transactionRef, { ...editedValues });
+      const updates = {
+        quantity: parseFloat(editedValues.quantity) || 0,
+        totalCost: parseFloat(editedValues.totalCost) || 0,
+        dateScanned: editedValues.dateScanned
+      };
 
-      setTransactions((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, ...editedValues } : t))
+      await update(ref(database, `transactions/${id}`), updates);
+
+      setTransactions(prev =>
+        prev.map(t => t.id === id ? { ...t, ...updates } : t)
       );
 
       setEditing(null);
+      setEditedValues({});
     } catch (error) {
       console.error('Error updating transaction:', error);
     }
@@ -156,23 +191,33 @@ const Transactions = () => {
   // Handle canceling edit
   const handleCancel = () => {
     setEditing(null);
+    setEditedValues({});
   };
 
   // Handle deleting a transaction
   const handleDelete = async (id) => {
-    try {
-      const transactionRef = ref(database, `transactions/${id}`);
-      await remove(transactionRef);
-
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
-    } catch (error) {
-      console.error('Error deleting transaction:', error);
+    if (window.confirm('Are you sure you want to delete this transaction?')) {
+      try {
+        await remove(ref(database, `transactions/${id}`));
+        setTransactions(prev => prev.filter(t => t.id !== id));
+      } catch (error) {
+        console.error('Error deleting transaction:', error);
+      }
     }
   };
 
   return (
     <div className="transactions-container">
-      <h1>Transactions</h1>
+      <div className="transactions-header">
+        <h1>Transactions</h1>
+        <button 
+          onClick={handleRefresh} 
+          className="refresh-button"
+          disabled={isRefreshing}
+        >
+          {isRefreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
       <div>
         <label htmlFor="month">Select Month: </label>
         <select id="month" value={selectedMonth} onChange={handleMonthChange}>
@@ -209,13 +254,26 @@ const Transactions = () => {
           <tbody>
             {filteredTransactions.map((item) => (
               <tr key={item.id}>
-                <td>{new Date(item.dateScanned).toLocaleString()}</td>
+                <td>
+                  {editing === item.id ? (
+                    <input
+                      type="datetime-local"
+                      value={editedValues.dateScanned ? new Date(editedValues.dateScanned).toISOString().slice(0, 16) : ''}
+                      onChange={(e) =>
+                        setEditedValues({ ...editedValues, dateScanned: e.target.value })
+                      }
+                    />
+                  ) : (
+                    new Date(item.dateScanned).toLocaleString()
+                  )}
+                </td>
                 <td>{item.barcode ?? 'N/A'}</td>
                 <td>{item.name}</td>
                 <td>
                   {editing === item.id ? (
                     <input
                       type="number"
+                      step="0.01"
                       value={editedValues.quantity ?? item.quantity}
                       onChange={(e) =>
                         setEditedValues({ ...editedValues, quantity: e.target.value })
@@ -229,6 +287,7 @@ const Transactions = () => {
                   {editing === item.id ? (
                     <input
                       type="number"
+                      step="0.01"
                       value={editedValues.totalCost ?? item.totalCost}
                       onChange={(e) =>
                         setEditedValues({ ...editedValues, totalCost: e.target.value })
@@ -270,7 +329,7 @@ const Transactions = () => {
                   ) : (
                     item.paymentStatus !== 'Confirmed' && (
                       <button
-                        onClick={() => handleEdit(item.id, 'quantity', item.quantity)}
+                        onClick={() => handleEdit(item)}
                         className="action-button edit-button"
                       >
                         Edit
@@ -281,7 +340,6 @@ const Transactions = () => {
                   <button
                     onClick={() => handleDelete(item.id)}
                     className="action-button delete-button"
-                    style={{ marginLeft: '10px', backgroundColor: '#ff4d4d', color: '#fff' }}
                   >
                     Delete
                   </button>

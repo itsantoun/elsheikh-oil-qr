@@ -8,8 +8,10 @@ const Transactions = () => {
   const [editing, setEditing] = useState(null);
   const [editedValues, setEditedValues] = useState({});
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState('');
   const [products, setProducts] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [filteredTotals, setFilteredTotals] = useState({ totalQuantity: 0, totalCost: 0 });
 
   // Reusable data fetching function
   const fetchData = async () => {
@@ -19,7 +21,8 @@ const Transactions = () => {
       const productsRef = ref(database, 'products');
       const productsSnapshot = await get(productsRef);
       if (productsSnapshot.exists()) {
-        setProducts(productsSnapshot.val());
+        const productsData = productsSnapshot.val();
+        setProducts(productsData);
       }
 
       // Then fetch transactions
@@ -30,12 +33,15 @@ const Transactions = () => {
         const transactionsArray = Object.keys(data).map((key) => {
           const transaction = { id: key, ...data[key] };
           
-          // Get barcode from cached products
+          // Get barcode and product name from cached products
           if (transaction.productId && productsSnapshot.exists()) {
             const product = productsSnapshot.val()[transaction.productId];
             if (product) {
               transaction.barcode = product.barcode;
+              transaction.productName = product.name || 'Unknown Product';
             }
+          } else {
+            transaction.productName = transaction.name || 'Unknown Product';
           }
 
           return transaction;
@@ -57,6 +63,28 @@ const Transactions = () => {
     fetchData();
   }, []);
 
+  // Calculate totals whenever filtered transactions change
+  useEffect(() => {
+    if (filteredTransactions.length > 0) {
+      const totals = filteredTransactions.reduce(
+        (acc, transaction) => {
+          const quantity = parseFloat(transaction.quantity) || 0;
+          const cost = parseFloat(transaction.totalCost) || 0;
+          
+          return {
+            totalQuantity: acc.totalQuantity + quantity,
+            totalCost: acc.totalCost + cost
+          };
+        },
+        { totalQuantity: 0, totalCost: 0 }
+      );
+      
+      setFilteredTotals(totals);
+    } else {
+      setFilteredTotals({ totalQuantity: 0, totalCost: 0 });
+    }
+  }, [selectedMonth, selectedProduct, transactions]);
+
   // Handle refresh button click
   const handleRefresh = () => {
     fetchData();
@@ -67,18 +95,44 @@ const Transactions = () => {
     setSelectedMonth(e.target.value);
   };
 
-  // Filter transactions by selected month
-  const filterTransactionsByMonth = () => {
-    if (!selectedMonth) return transactions;
-
-    return transactions.filter((transaction) => {
-      const transactionDate = new Date(transaction.dateScanned);
-      const transactionMonth = transactionDate.getMonth() + 1;
-      return transactionMonth === parseInt(selectedMonth);
-    });
+  // Handle product selection change
+  const handleProductChange = (e) => {
+    setSelectedProduct(e.target.value);
   };
 
-  const filteredTransactions = filterTransactionsByMonth();
+  // Get unique product names from transactions for the filter dropdown
+  const getUniqueProductNames = () => {
+    const productNames = transactions
+      .map(transaction => transaction.productName)
+      .filter(name => name && name.trim() !== '');
+    
+    return ['', ...new Set(productNames)].sort();
+  };
+
+  // Filter transactions by selected month and product
+  const filterTransactions = () => {
+    let filtered = transactions;
+
+    // Filter by month if selected
+    if (selectedMonth) {
+      filtered = filtered.filter((transaction) => {
+        const transactionDate = new Date(transaction.dateScanned);
+        const transactionMonth = transactionDate.getMonth() + 1;
+        return transactionMonth === parseInt(selectedMonth);
+      });
+    }
+
+    // Filter by product if selected
+    if (selectedProduct) {
+      filtered = filtered.filter((transaction) => {
+        return transaction.productName === selectedProduct;
+      });
+    }
+
+    return filtered;
+  };
+
+  const filteredTransactions = filterTransactions();
 
   // Optimized confirm function
   const handleConfirm = async (id, barcode, transactionQuantity) => {
@@ -218,136 +272,182 @@ const Transactions = () => {
           {isRefreshing ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
-      <div>
-        <label htmlFor="month">Select Month: </label>
-        <select id="month" value={selectedMonth} onChange={handleMonthChange}>
-          <option value="">All</option>
-          <option value="1">January</option>
-          <option value="2">February</option>
-          <option value="3">March</option>
-          <option value="4">April</option>
-          <option value="5">May</option>
-          <option value="6">June</option>
-          <option value="7">July</option>
-          <option value="8">August</option>
-          <option value="9">September</option>
-          <option value="10">October</option>
-          <option value="11">November</option>
-          <option value="12">December</option>
-        </select>
-      </div>
-      {filteredTransactions.length === 0 ? (
-        <p>No transactions for the selected month.</p>
-      ) : (
-        <table className="transactions-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Barcode</th>
-              <th>Product</th>
-              <th>Quantity</th>
-              <th>Total Cost</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((item) => (
-              <tr key={item.id}>
-                <td>
-                  {editing === item.id ? (
-                    <input
-                      type="datetime-local"
-                      value={editedValues.dateScanned ? new Date(editedValues.dateScanned).toISOString().slice(0, 16) : ''}
-                      onChange={(e) =>
-                        setEditedValues({ ...editedValues, dateScanned: e.target.value })
-                      }
-                    />
-                  ) : (
-                    new Date(item.dateScanned).toLocaleString()
-                  )}
-                </td>
-                <td>{item.barcode ?? 'N/A'}</td>
-                <td>{item.name}</td>
-                <td>
-                  {editing === item.id ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editedValues.quantity ?? item.quantity}
-                      onChange={(e) =>
-                        setEditedValues({ ...editedValues, quantity: e.target.value })
-                      }
-                    />
-                  ) : (
-                    item.quantity
-                  )}
-                </td>
-                <td>
-                  {editing === item.id ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editedValues.totalCost ?? item.totalCost}
-                      onChange={(e) =>
-                        setEditedValues({ ...editedValues, totalCost: e.target.value })
-                      }
-                    />
-                  ) : (
-                    `$${item.totalCost}`
-                  )}
-                </td>
-                <td>{item.paymentStatus}</td>
-                <td>
-                  {(item.paymentStatus === 'Pending' || item.paymentStatus === 'Stock') && (
-                    <button
-                      onClick={() => handleConfirm(item.id, item.barcode, item.quantity)}
-                      className="action-button confirm-button"
-                    >
-                      Confirm
-                    </button>
-                  )}
-
-                  {item.paymentStatus === 'Confirmed' && (
-                    <button
-                      onClick={() => handleUnconfirm(item.id, item.barcode, item.quantity)}
-                      className="action-button unconfirm-button"
-                    >
-                      Unconfirm
-                    </button>
-                  )}
-
-                  {editing === item.id ? (
-                    <>
-                      <button onClick={() => handleSave(item.id)} className="action-button save-button">
-                        Save
-                      </button>
-                      <button onClick={handleCancel} className="action-button cancel-button">
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    item.paymentStatus !== 'Confirmed' && (
-                      <button
-                        onClick={() => handleEdit(item)}
-                        className="action-button edit-button"
-                      >
-                        Edit
-                      </button>
-                    )
-                  )}
-
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="action-button delete-button"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
+      
+      <div className="filters-container">
+        <div className="filter-group">
+          <label htmlFor="month">Filter by Month: </label>
+          <select id="month" value={selectedMonth} onChange={handleMonthChange}>
+            <option value="">All Months</option>
+            <option value="1">January</option>
+            <option value="2">February</option>
+            <option value="3">March</option>
+            <option value="4">April</option>
+            <option value="5">May</option>
+            <option value="6">June</option>
+            <option value="7">July</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
+        </div>
+        
+        <div className="filter-group">
+          <label htmlFor="product">Filter by Product: </label>
+          <select id="product" value={selectedProduct} onChange={handleProductChange}>
+            <option value="">All Products</option>
+            {getUniqueProductNames().map((productName, index) => (
+              productName && (
+                <option key={index} value={productName}>
+                  {productName}
+                </option>
+              )
             ))}
-          </tbody>
-        </table>
+          </select>
+        </div>
+      </div>
+      
+      {/* Totals Display */}
+      {filteredTransactions.length > 0 && (
+        <div className="totals-container">
+          <div className="total-card">
+            <h3>Filtered Totals</h3>
+            <div className="total-details">
+              <div className="total-item">
+                <span className="total-label">Total Quantity:</span>
+                <span className="total-value">{filteredTotals.totalQuantity.toFixed(2)}</span>
+              </div>
+              <div className="total-item">
+                <span className="total-label">Total Cost:</span>
+                <span className="total-value">${filteredTotals.totalCost.toFixed(2)}</span>
+              </div>
+              <div className="total-item">
+                <span className="total-label">Transactions:</span>
+                <span className="total-value">{filteredTransactions.length}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {filteredTransactions.length === 0 ? (
+        <p>No transactions found for the selected filters.</p>
+      ) : (
+        <div>
+          <p className="transactions-count">
+            Showing {filteredTransactions.length} transaction(s)
+          </p>
+          <table className="transactions-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Barcode</th>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Total Cost</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTransactions.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    {editing === item.id ? (
+                      <input
+                        type="datetime-local"
+                        value={editedValues.dateScanned ? new Date(editedValues.dateScanned).toISOString().slice(0, 16) : ''}
+                        onChange={(e) =>
+                          setEditedValues({ ...editedValues, dateScanned: e.target.value })
+                        }
+                      />
+                    ) : (
+                      new Date(item.dateScanned).toLocaleString()
+                    )}
+                  </td>
+                  <td>{item.barcode ?? 'N/A'}</td>
+                  <td>{item.productName}</td>
+                  <td>
+                    {editing === item.id ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editedValues.quantity ?? item.quantity}
+                        onChange={(e) =>
+                          setEditedValues({ ...editedValues, quantity: e.target.value })
+                        }
+                      />
+                    ) : (
+                      item.quantity
+                    )}
+                  </td>
+                  <td>
+                    {editing === item.id ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editedValues.totalCost ?? item.totalCost}
+                        onChange={(e) =>
+                          setEditedValues({ ...editedValues, totalCost: e.target.value })
+                        }
+                      />
+                    ) : (
+                      `$${parseFloat(item.totalCost).toFixed(2)}`
+                    )}
+                  </td>
+                  <td>{item.paymentStatus}</td>
+                  <td>
+                    {(item.paymentStatus === 'Pending' || item.paymentStatus === 'Stock') && (
+                      <button
+                        onClick={() => handleConfirm(item.id, item.barcode, item.quantity)}
+                        className="action-button confirm-button"
+                      >
+                        Confirm
+                      </button>
+                    )}
+
+                    {item.paymentStatus === 'Confirmed' && (
+                      <button
+                        onClick={() => handleUnconfirm(item.id, item.barcode, item.quantity)}
+                        className="action-button unconfirm-button"
+                      >
+                        Unconfirm
+                      </button>
+                    )}
+
+                    {editing === item.id ? (
+                      <>
+                        <button onClick={() => handleSave(item.id)} className="action-button save-button">
+                          Save
+                        </button>
+                        <button onClick={handleCancel} className="action-button cancel-button">
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      item.paymentStatus !== 'Confirmed' && (
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="action-button edit-button"
+                        >
+                          Edit
+                        </button>
+                      )
+                    )}
+
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="action-button delete-button"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

@@ -322,10 +322,6 @@ const Transactions = () => {
                 <span className="total-label">Total Cost:</span>
                 <span className="total-value">${filteredTotals.totalCost.toFixed(2)}</span>
               </div>
-              <div className="total-item">
-                <span className="total-label">Transactions:</span>
-                <span className="total-value">{filteredTransactions.length}</span>
-              </div>
             </div>
           </div>
         </div>
@@ -335,9 +331,6 @@ const Transactions = () => {
         <p>No transactions found for the selected filters.</p>
       ) : (
         <div>
-          <p className="transactions-count">
-            Showing {filteredTransactions.length} transaction(s)
-          </p>
           <table className="transactions-table">
             <thead>
               <tr>

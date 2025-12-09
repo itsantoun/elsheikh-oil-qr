@@ -1811,9 +1811,9 @@ const BarcodeScanner = () => {
                       }
                       className="form-select"
                     >
-                      <option value="Paid">Paid</option>
-                      <option value="Unpaid">Unpaid</option>
-                      <option value="Stock">Stock</option>
+                      <option value="Paid">مدفوع</option>
+                      <option value="Unpaid">غير مدفوع</option>
+                      <option value="Stock">استلام</option>
                     </select>
                   </div>
                 </div>
@@ -1821,7 +1821,7 @@ const BarcodeScanner = () => {
                 <div className="form-group">
                   <label className="form-label">
                     <span className="label-icon">📝</span>
-                    Remarks
+                    ملاحظة 
                   </label>
                   <textarea
                     value={editingItem.remark}
@@ -1844,14 +1844,14 @@ const BarcodeScanner = () => {
                 onClick={() => saveEditedItem(editingItem)}
               >
                 <span className="button-icon">💾</span>
-                Save Changes
+              حفظ تعديل 
               </button>
               <button 
                 className="btn-secondary"
                 onClick={() => setEditingItem(null)}
               >
                 <span className="button-icon">✕</span>
-                Cancel
+                الغاء
               </button>
             </div>
           </div>

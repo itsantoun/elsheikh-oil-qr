@@ -1,5 +1,21 @@
+Universal box-sizing
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Reset body and root elements */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden; /* Prevent horizontal scroll */
+}
+
 .App {
   text-align: center;
+  width: 100%;
+  min-height: 100vh;
 }
 
 .App-logo {
@@ -16,6 +32,7 @@
 .App-header {
   background-color: #282c34;
   min-height: 100vh;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;

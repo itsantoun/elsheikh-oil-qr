@@ -2645,1202 +2645,6 @@
 
 // export default RemainingProducts;
 
-// import React, { useState, useEffect, useRef } from 'react';
-// import { BrowserMultiFormatReader } from '@zxing/library';
-// import { database } from '../Auth/firebase';
-// import { ref, get, child, push, set, update, remove } from 'firebase/database';
-// import '../CSS/remainingProducts.css';
-// import * as XLSX from 'xlsx';
-
-// const RemainingProducts = () => {
-//   const [scanStatus, setScanStatus] = useState('Press "Scan Barcode" to start scanning.');
-//   const [scannedProduct, setScannedProduct] = useState(null);
-//   const [zoomLevel, setZoomLevel] = useState(1);
-//   const [isPopupOpen, setIsPopupOpen] = useState(false);
-//   const [products, setProducts] = useState([]);
-//   const [selectedProduct, setSelectedProduct] = useState('');
-//   const [showScanner, setShowScanner] = useState(false);
-//   const [showDropdown, setShowDropdown] = useState(false);
-//   const [statusFilter, setStatusFilter] = useState('All');
-//   const [soldCount, setSoldCount] = useState(0);
-//   const [fromDate, setFromDate] = useState('');
-//   const [toDate, setToDate] = useState('');
-//   const [uncertainQuantity, setUncertainQuantity] = useState('');
-//   const [scannedProductsForCurrentRange, setScannedProductsForCurrentRange] = useState(new Set());
-//   const [availableDateRanges, setAvailableDateRanges] = useState([]);
-//   const [mostRecentDateRange, setMostRecentDateRange] = useState(null);
-//   const [selectedHistoryRange, setSelectedHistoryRange] = useState('');
-//   const [stockRecords, setStockRecords] = useState([]);
-//   const [editingId, setEditingId] = useState(null);
-//   const [editFormData, setEditFormData] = useState({
-//     status: '',
-//     uncertainQuantity: '',
-//     soldCount: '',
-//     calculatedRemaining: ''
-//   });
-//   const [isRefreshing, setIsRefreshing] = useState(false);
-
-//   const scannerRef = useRef(null);
-
-//   // Function to refresh all data
-//   const handleRefresh = async () => {
-//     setIsRefreshing(true);
-//     try {
-//       // Clear all filters and selections
-//       clearAllFilters();
-      
-//       // Refresh data from database
-//       await fetchProducts();
-//       await fetchAvailableDateRanges();
-//       await fetchStockRecords();
-      
-//       // Reset UI states
-//       setScannedProduct(null);
-//       setShowScanner(false);
-//       setShowDropdown(false);
-//       setSelectedProduct('');
-//       setUncertainQuantity('');
-//       setScanStatus('Press "Scan Barcode" to start scanning.');
-      
-//       // Show success message
-//       setScanStatus('Data refreshed successfully!');
-//       setTimeout(() => {
-//         setScanStatus('Press "Scan Barcode" to start scanning.');
-//       }, 2000);
-      
-//     } catch (error) {
-//       console.error('Error refreshing data:', error);
-//       setScanStatus('Error refreshing data. Please try again.');
-//     } finally {
-//       setIsRefreshing(false);
-//     }
-//   };
-
-//   // Function to clear all filters
-//   const clearAllFilters = () => {
-//     setFromDate('');
-//     setToDate('');
-//     setSelectedHistoryRange('');
-//     setStatusFilter('All');
-//     setSelectedProduct('');
-//     setScannedProductsForCurrentRange(new Set());
-//     setUncertainQuantity('');
-//   };
-
-//   // Function to fetch all available date ranges and find the most recent
-//   const fetchAvailableDateRanges = async () => {
-//     const dbRef = ref(database, 'remainingStocks');
-//     try {
-//       const snapshot = await get(dbRef);
-//       if (snapshot.exists()) {
-//         const dateRanges = [];
-//         let mostRecent = null;
-//         let mostRecentTimestamp = 0;
-
-//         snapshot.forEach((dateRangeSnapshot) => {
-//           const dateRangeKey = dateRangeSnapshot.key;
-//           const dateRangeData = dateRangeSnapshot.val();
-          
-//           let latestTimestamp = 0;
-//           Object.values(dateRangeData).forEach(record => {
-//             const timestamp = new Date(record.timestamp || record.dateScanned).getTime();
-//             if (timestamp > latestTimestamp) {
-//               latestTimestamp = timestamp;
-//             }
-//           });
-
-//           dateRanges.push({
-//             key: dateRangeKey,
-//             latestTimestamp: latestTimestamp
-//           });
-
-//           if (latestTimestamp > mostRecentTimestamp) {
-//             mostRecentTimestamp = latestTimestamp;
-//             mostRecent = {
-//               key: dateRangeKey,
-//               timestamp: latestTimestamp
-//             };
-//           }
-//         });
-
-//         dateRanges.sort((a, b) => b.latestTimestamp - a.latestTimestamp);
-        
-//         setAvailableDateRanges(dateRanges);
-//         setMostRecentDateRange(mostRecent);
-//       } else {
-//         setAvailableDateRanges([]);
-//         setMostRecentDateRange(null);
-//       }
-//     } catch (error) {
-//       console.error('Error fetching available date ranges:', error);
-//     }
-//   };
-
-//   // Function to parse date range key and return formatted string
-//   const formatDateRangeKey = (key) => {
-//     if (key === 'all_time') return 'All Time';
-    
-//     if (key.startsWith('from_')) {
-//       const fromDate = key.replace('from_', '');
-//       return `From ${formatDateForDisplay(fromDate)}`;
-//     }
-    
-//     if (key.startsWith('to_')) {
-//       const toDate = key.replace('to_', '');
-//       return `Up to ${formatDateForDisplay(toDate)}`;
-//     }
-    
-//     if (key.includes('_to_')) {
-//       const [from, to] = key.split('_to_');
-//       return `${formatDateForDisplay(from)} to ${formatDateForDisplay(to)}`;
-//     }
-    
-//     return key;
-//   };
-
-//   // Function to fetch products
-//   const fetchProducts = async () => {
-//     const dbRef = ref(database);
-//     try {
-//       const productsSnapshot = await get(child(dbRef, 'products'));
-//       if (productsSnapshot.exists()) {
-//         const productsData = productsSnapshot.val();
-//         const productsList = Object.keys(productsData).map((barcode) => ({
-//           barcode,
-//           ...productsData[barcode],
-//         }));
-//         const sortedProducts = productsList.sort((a, b) => a.name.localeCompare(b.name));
-//         setProducts(sortedProducts);
-//       }
-//     } catch (error) {
-//       console.error('Error fetching products:', error);
-//     }
-//   };
-
-//   // Load available date ranges on component mount
-//   useEffect(() => {
-//     fetchAvailableDateRanges();
-//     fetchProducts();
-//   }, [isPopupOpen]);
-
-//   // Handle history range selection
-//   const handleHistoryRangeSelect = (rangeKey) => {
-//     setSelectedHistoryRange(rangeKey);
-    
-//     if (rangeKey === 'all_time') {
-//       setFromDate('');
-//       setToDate('');
-//     } else if (rangeKey.startsWith('from_')) {
-//       const fromDateVal = rangeKey.replace('from_', '');
-//       setFromDate(fromDateVal);
-//       setToDate('');
-//     } else if (rangeKey.startsWith('to_')) {
-//       const toDateVal = rangeKey.replace('to_', '');
-//       setFromDate('');
-//       setToDate(toDateVal);
-//     } else if (rangeKey.includes('_to_')) {
-//       const [from, to] = rangeKey.split('_to_');
-//       setFromDate(from);
-//       setToDate(to);
-//     }
-//   };
-
-//   // Function to get current date key for tracking scanned items
-//   const getCurrentDateKey = () => {
-//     if (fromDate && toDate) {
-//       return `${fromDate}_to_${toDate}`;
-//     } else if (fromDate) {
-//       return `from_${fromDate}`;
-//     } else if (toDate) {
-//       return `to_${toDate}`;
-//     } else {
-//       return 'all_time';
-//     }
-//   };
-
-//   const exportToExcel = () => {
-//     const recordsToExport = filteredRecords.filter(record => {
-//       if (!fromDate && !toDate) return true;
-      
-//       const recordDate = new Date(record.timestamp || record.dateScanned);
-//       const from = fromDate ? new Date(fromDate) : null;
-//       const to = toDate ? new Date(toDate) : null;
-      
-//       if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
-//       if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
-//       return true;
-//     });
-
-//     const excelData = recordsToExport.map(record => ({
-//       'Product Name': record.name,
-//       'Barcode': record.barcode,
-//       'Product Type': record.productType,
-//       'Item Cost': record.itemCost,
-//       'Initial Quantity': record.initialQuantity,
-//       'Sold Count': record.soldCount,
-//       'Calculated Remaining': record.calculatedRemaining,
-//       'Status': record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed',
-//       'Uncertain Quantity': record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A',
-//       'Date Scanned': record.timestamp || 'N/A'
-//     }));
-
-//     const wb = XLSX.utils.book_new();
-//     const ws = XLSX.utils.json_to_sheet(excelData);
-
-//     XLSX.utils.book_append_sheet(wb, ws, 'Stock Records');
-
-//     let filename = 'stock_records';
-//     if (fromDate && toDate) {
-//       filename += `_${fromDate}_to_${toDate}`;
-//     } else if (fromDate) {
-//       filename += `_from_${fromDate}`;
-//     } else if (toDate) {
-//       filename += `_to_${toDate}`;
-//     }
-    
-//     if (statusFilter !== 'All') {
-//       filename += `_${statusFilter.toLowerCase().replace(' ', '_')}`;
-//     }
-    
-//     filename += '.xlsx';
-
-//     XLSX.writeFile(wb, filename);
-//   };
-
-//   // Function to check if product is already scanned for current date range
-//   const checkIfProductAlreadyScanned = async (barcode) => {
-//     const dateKey = getCurrentDateKey();
-//     const dbRef = ref(database, `remainingStocks/${dateKey}`);
-    
-//     try {
-//       const snapshot = await get(dbRef);
-//       if (snapshot.exists()) {
-//         const stockData = snapshot.val();
-//         const isAlreadyScanned = Object.values(stockData).some(item => item.barcode === barcode);
-//         return isAlreadyScanned;
-//       }
-//       return false;
-//     } catch (error) {
-//       console.error('Error checking if product already scanned:', error);
-//       return false;
-//     }
-//   };
-
-//   // Function to load scanned products for current date range
-//   const loadScannedProductsForCurrentRange = async () => {
-//     const dateKey = getCurrentDateKey();
-//     const dbRef = ref(database, `remainingStocks/${dateKey}`);
-    
-//     try {
-//       const snapshot = await get(dbRef);
-//       if (snapshot.exists()) {
-//         const stockData = snapshot.val();
-//         const scannedBarcodes = Object.values(stockData).map(item => item.barcode);
-//         setScannedProductsForCurrentRange(new Set(scannedBarcodes));
-//       } else {
-//         setScannedProductsForCurrentRange(new Set());
-//       }
-//     } catch (error) {
-//       console.error('Error loading scanned products:', error);
-//       setScannedProductsForCurrentRange(new Set());
-//     }
-//   };
-
-//   // Load scanned products whenever date range changes
-//   useEffect(() => {
-//     loadScannedProductsForCurrentRange();
-//   }, [fromDate, toDate]);
-
-//   useEffect(() => {
-//     if (showScanner) {
-//       const codeReader = new BrowserMultiFormatReader();
-//       const videoElement = scannerRef.current;
-
-//       codeReader
-//         .decodeFromVideoDevice(null, videoElement, (result, error) => {
-//           if (result) {
-//             setScanStatus('Barcode detected! Processing...');
-//             fetchProductDetails(result.text);
-//           } else if (error) {
-//             setScanStatus('Align the barcode and hold steady.');
-//           }
-//         }, {
-//           tryHarder: true,
-//           constraints: {
-//             video: {
-//               facingMode: 'environment',
-//               width: { ideal: 1280 },
-//               height: { ideal: 720 },
-//             },
-//           },
-//         })
-//         .then(() => {
-//           applyZoom();
-//         })
-//         .catch((err) => console.error('Camera initialization failed:', err));
-
-//       return () => {
-//         codeReader.reset();
-//       };
-//     }
-//   }, [zoomLevel, showScanner]);
-
-//   const applyZoom = async () => {
-//     try {
-//       const videoElement = scannerRef.current;
-//       const stream = videoElement.srcObject;
-//       const [track] = stream.getVideoTracks();
-
-//       const capabilities = track.getCapabilities();
-//       if ('zoom' in capabilities) {
-//         const constraints = {
-//           advanced: [{ zoom: zoomLevel }],
-//         };
-//         await track.applyConstraints(constraints);
-//       }
-//     } catch (error) {
-//       console.error('Error applying zoom:', error);
-//     }
-//   };
-
-//   const changeZoom = async (level) => {
-//     const videoElement = scannerRef.current;
-//     const stream = videoElement.srcObject;
-//     const [track] = stream.getVideoTracks();
-
-//     const capabilities = track.getCapabilities();
-//     if ('zoom' in capabilities) {
-//       const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max || 10);
-//       setZoomLevel(newZoomLevel);
-//       try {
-//         await track.applyConstraints({
-//           advanced: [{ zoom: newZoomLevel }],
-//         });
-//       } catch (error) {
-//         console.error('Failed to apply zoom:', error);
-//       }
-//     } else {
-//       console.warn('Zoom capability is not supported by this device.');
-//     }
-//   };
-
-//   // Function to fetch all stock records
-//   const fetchStockRecords = async () => {
-//     const dbRef = ref(database, 'remainingStocks');
-//     try {
-//       const snapshot = await get(dbRef);
-//       if (snapshot.exists()) {
-//         const records = [];
-        
-//         snapshot.forEach((dateRangeSnapshot) => {
-//           const dateRangeKey = dateRangeSnapshot.key;
-//           const dateRangeData = dateRangeSnapshot.val();
-          
-//           Object.keys(dateRangeData).forEach((recordId) => {
-//             const record = dateRangeData[recordId];
-//             records.push({
-//               id: `${dateRangeKey}/${recordId}`,
-//               ...record,
-//               dateRange: dateRangeKey,
-//               timestamp: record.timestamp ? new Date(record.timestamp).toLocaleString() : 'N/A'
-//             });
-//           });
-//         });
-        
-//         const sortedRecords = records.sort((a, b) => 
-//           new Date(b.timestamp) - new Date(a.timestamp)
-//         );
-        
-//         setStockRecords(sortedRecords);
-//       } else {
-//         setStockRecords([]);
-//       }
-//     } catch (error) {
-//       console.error('Error fetching stock records:', error);
-//       setStockRecords([]);
-//     }
-//   };
-
-//   // Load stock records on component mount and when saved
-//   useEffect(() => {
-//     fetchStockRecords();
-//   }, [isPopupOpen]);
-
-//   // Filter records based on status filter
-//   const filteredRecords = stockRecords.filter(record => {
-//     if (statusFilter === 'All') return true;
-//     if (statusFilter === 'Confirmed') return record.status === 'CONFIRMED';
-//     if (statusFilter === 'Not Confirmed') return record.status === 'NOT_CONFIRMED';
-//     return true;
-//   });
-
-//   const handleEditClick = (record) => {
-//     setEditingId(record.id);
-//     setEditFormData({
-//       status: record.status,
-//       uncertainQuantity: record.uncertainQuantity || '',
-//       soldCount: record.soldCount,
-//       calculatedRemaining: record.calculatedRemaining,
-//       originalQuantity: record.initialQuantity
-//     });
-//   };
-
-//   // Handle form input changes
-//   const handleEditFormChange = (e) => {
-//     const { name, value } = e.target;
-//     setEditFormData({
-//       ...editFormData,
-//       [name]: value
-//     });
-//   };
-
-//   // Handle cancel edit
-//   const handleCancelClick = () => {
-//     setEditingId(null);
-//   };
-
-//   const handleSaveClick = async () => {
-//     try {
-//       const recordRef = ref(database, `remainingStocks/${editingId}`);
-//       const record = stockRecords.find(r => r.id === editingId);
-      
-//       if (!record) {
-//         throw new Error('Record not found');
-//       }
-
-//       // Prepare the update data
-//       const updateData = {
-//         status: editFormData.status,
-//         soldCount: parseInt(editFormData.soldCount) || 0,
-//         calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
-//       };
-
-//       // Handle product quantity updates
-//       const productRef = ref(database, `products/${record.barcode}`);
-
-//       if (editFormData.status === 'CONFIRMED') {
-//         // If changing to CONFIRMED, update product quantity
-//         let newQuantity;
-
-//         if (record.status === 'NOT_CONFIRMED') {
-//           // If changing from NOT_CONFIRMED → CONFIRMED, use uncertainQuantity
-//           newQuantity = parseInt(editFormData.uncertainQuantity) || 0;
-//         } else {
-//           // If already CONFIRMED or new, use calculatedRemaining
-//           newQuantity = updateData.calculatedRemaining;
-//         }
-
-//         await update(productRef, {
-//           quantity: newQuantity
-//         });
-
-//         // Ensure calculatedRemaining matches the new quantity
-//         updateData.calculatedRemaining = newQuantity;
-//         updateData.uncertainQuantity = null;
-
-//       } else if (editFormData.status === 'NOT_CONFIRMED') {
-//         // If changing from CONFIRMED → NOT_CONFIRMED, restore original quantity
-//         if (record.status === 'CONFIRMED') {
-//           await update(productRef, {
-//             quantity: editFormData.originalQuantity
-//           });
-//         }
-        
-//         // Set uncertain quantity if provided
-//         updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
-//       }
-
-//       await update(recordRef, updateData);
-//       setEditingId(null);
-//       fetchStockRecords();
-//     } catch (error) {
-//       console.error('Error updating record:', error);
-//       alert('Failed to update record');
-//     }
-//   };
-
-//   // Handle delete record
-//   const handleDeleteClick = async (recordId) => {
-//     if (window.confirm('Are you sure you want to delete this record?')) {
-//       try {
-//         const recordRef = ref(database, `remainingStocks/${recordId}`);
-//         await remove(recordRef);
-//         fetchStockRecords();
-//       } catch (error) {
-//         console.error('Error deleting record:', error);
-//         alert('Failed to delete record');
-//       }
-//     }
-//   };
-
-//   const saveRemainingStock = async (status, uncertainQuantity = null) => {
-//     try {
-//       // Create a date key based on the selected date range
-//       let dateKey;
-//       if (fromDate && toDate) {
-//         dateKey = `${fromDate}_to_${toDate}`;
-//       } else if (fromDate) {
-//         dateKey = `from_${fromDate}`;
-//       } else if (toDate) {
-//         dateKey = `to_${toDate}`;
-//       } else {
-//         dateKey = 'all_time';
-//       }
-      
-//       // Calculate remaining quantity
-//       const remainingQuantity = status === 'CONFIRMED' 
-//         ? scannedProduct.quantity - soldCount 
-//         : uncertainQuantity;
-
-//       // Structure: remainingStocks -> dateKey -> individual items
-//       const dbRef = ref(database, `remainingStocks/${dateKey}`);
-//       const newStockRef = push(dbRef);
-      
-//       // Get current timestamp
-//       const currentTimestamp = new Date().toISOString();
-      
-//       const stockData = {
-//         barcode: scannedProduct.barcode,
-//         name: scannedProduct.name,
-//         productType: scannedProduct.productType,
-//         itemCost: scannedProduct.itemCost,
-//         initialQuantity: scannedProduct.quantity,
-//         soldCount: soldCount,
-//         calculatedRemaining: remainingQuantity,
-//         status: status,
-//         timestamp: currentTimestamp,
-//         dateScanned: currentTimestamp,
-//         dateRangeInfo: {
-//           fromDate: fromDate || null,
-//           toDate: toDate || null,
-//           dateKey: dateKey
-//         },
-//         ...(status === 'NOT_CONFIRMED' && { uncertainQuantity: parseInt(uncertainQuantity) }),
-//       };
-
-//       await set(newStockRef, stockData);
-      
-//       // Update the product quantity in the products table if status is CONFIRMED
-//       if (status === 'CONFIRMED') {
-//         const productRef = ref(database, `products/${scannedProduct.barcode}`);
-//         await update(productRef, {
-//           quantity: remainingQuantity
-//         });
-//       }
-      
-//       // Update the scanned products set for current range
-//       setScannedProductsForCurrentRange(prev => new Set([...prev, scannedProduct.barcode]));
-      
-//       return true;
-//     } catch (error) {
-//       console.error('Error saving remaining stock:', error);
-//       return false;
-//     }
-//   };
-
-//   const fetchSoldCount = async (productName, productBarcode) => {
-//     const dbRef = ref(database);
-//     try {
-//       const soldItemsSnapshot = await get(child(dbRef, 'SoldItems'));
-//       if (soldItemsSnapshot.exists()) {
-//         const soldData = soldItemsSnapshot.val();
-//         let count = 0;
-
-//         // Create date range if filters are set
-//         let fromDateObj = null;
-//         let toDateObj = null;
-
-//         if (fromDate) {
-//           fromDateObj = new Date(fromDate);
-//           fromDateObj.setHours(0, 0, 0, 0);
-//         }
-
-//         if (toDate) {
-//           toDateObj = new Date(toDate);
-//           toDateObj.setHours(23, 59, 59, 999);
-//         }
-
-//         Object.values(soldData).forEach((item) => {
-//           // Match by product name or barcode
-//           const matchesProduct = 
-//             (item.name && item.name.toLowerCase() === productName.toLowerCase()) ||
-//             (item.barcode && item.barcode === productBarcode);
-
-//           if (matchesProduct) {
-//             // Check date range if filters are applied
-//             if (fromDateObj || toDateObj) {
-//               const itemDate = new Date(item.dateScanned);
-              
-//               if (fromDateObj && itemDate < fromDateObj) return;
-//               if (toDateObj && itemDate > toDateObj) return;
-//             }
-            
-//             count += parseInt(item.quantity) || 1;
-//           }
-//         });
-
-//         setSoldCount(count);
-//       } else {
-//         setSoldCount(0);
-//       }
-//     } catch (error) {
-//       console.error('Error fetching sold count:', error);
-//       setSoldCount(0);
-//     }
-//   };
-
-//   const fetchProductDetails = async (barcode) => {
-//     // First check if product is already scanned for current date range
-//     const isAlreadyScanned = await checkIfProductAlreadyScanned(barcode);
-    
-//     if (isAlreadyScanned) {
-//       setScanStatus('Item already scanned for this date range!');
-//       setTimeout(() => {
-//         setScanStatus('Align the barcode within the frame.');
-//       }, 3000);
-//       return;
-//     }
-
-//     const dbRef = ref(database);
-//     try {
-//       const productSnapshot = await get(child(dbRef, `products/${barcode}`));
-//       if (productSnapshot.exists()) {
-//         const product = productSnapshot.val();
-//         const productData = {
-//           barcode,
-//           name: product.name,
-//           itemCost: product.itemCost,
-//           productType: product.productType,
-//           quantity: product.quantity,
-//         };
-//         setScannedProduct(productData);
-        
-//         // Fetch sold count for this product
-//         await fetchSoldCount(product.name, barcode);
-        
-//         setIsPopupOpen(true);
-//       } else {
-//         setScanStatus('Product not found in the database.');
-//       }
-//     } catch (error) {
-//       console.error('Error fetching product details:', error);
-//       setScanStatus('Error retrieving product information.');
-//     }
-//   };
-
-//   const handleProductSelect = async (event) => {
-//     const selectedBarcode = event.target.value;
-//     setSelectedProduct(selectedBarcode);
-//     if (selectedBarcode) {
-//       await fetchProductDetails(selectedBarcode);
-//     }
-//   };
-
-//   const clearDateFilters = () => {
-//     setFromDate('');
-//     setToDate('');
-//     setSelectedHistoryRange('');
-//   };
-
-//   // Helper function to format date for display
-//   const formatDateForDisplay = (dateString) => {
-//     if (!dateString) return '';
-//     const date = new Date(dateString);
-//     return date.toLocaleDateString('en-US', { 
-//       year: 'numeric', 
-//       month: 'long', 
-//       day: 'numeric' 
-//     });
-//   };
-
-//   // Filter products to exclude already scanned ones for current date range
-//   const availableProducts = products.filter(product => 
-//     !scannedProductsForCurrentRange.has(product.barcode)
-//   );
-
-//   return (
-//     <div className="stock-management">
-//       {/* Header with Refresh Button */}
-//       <div className="stock-header">
-//         <h1 className="stock-header__title">Stock Management</h1>
-//         <button
-//           onClick={handleRefresh}
-//           className="refresh-button"
-//           disabled={isRefreshing}
-//         >
-//           {isRefreshing ? 'Refreshing...' : '🔄 Refresh'}
-//         </button>
-//       </div>
-
-//       {/* Most Recent Date Range Display */}
-//       {mostRecentDateRange && (
-//         <div className="recent-stock-alert">
-//           <h3 className="recent-stock-alert__title">Most Recent Stock Check</h3>
-//           <p className="recent-stock-alert__info">
-//             <strong>{formatDateRangeKey(mostRecentDateRange.key)}</strong>
-//             {' - '}
-//             {new Date(mostRecentDateRange.timestamp).toLocaleString()}
-//           </p>
-//         </div>
-//       )}
-
-//       {/* History/Archive Section */}
-//       <div className="history-section">
-//         <h3 className="history-section__title">Stock Check History</h3>
-//         {availableDateRanges.length === 0 ? (
-//           <p className="history-section__empty">No stock check history available yet.</p>
-//         ) : (
-//           <div className="history-selector">
-//             <label className="history-selector__label">View Historical Data:</label>
-//             <select
-//               value={selectedHistoryRange}
-//               onChange={(e) => handleHistoryRangeSelect(e.target.value)}
-//               className="history-selector__dropdown"
-//             >
-//               <option value="">Select a date range...</option>
-//               {availableDateRanges.map((range) => (
-//                 <option key={range.key} value={range.key}>
-//                   {formatDateRangeKey(range.key)} - {new Date(range.latestTimestamp).toLocaleDateString()}
-//                 </option>
-//               ))}
-//             </select>
-//             {selectedHistoryRange && (
-//               <button
-//                 onClick={() => {
-//                   setSelectedHistoryRange('');
-//                   setFromDate('');
-//                   setToDate('');
-//                 }}
-//                 className="history-selector__clear"
-//               >
-//                 Clear History Selection
-//               </button>
-//             )}
-//           </div>
-//         )}
-//       </div>
-
-//       {/* Date Range Filters */}
-//       <div className="date-filter-section">
-//         <h3 className="date-filter-section__title">Date Range for Sold Items Count</h3>
-        
-//         <div className="date-filter-controls">
-//           <div className="date-filter-group">
-//             <label className="date-filter-label">From:</label>
-//             <input 
-//               type="date" 
-//               value={fromDate}
-//               onChange={(e) => setFromDate(e.target.value)}
-//               className="date-filter-input"
-//             />
-//           </div>
-
-//           <div className="date-filter-group">
-//             <label className="date-filter-label">To:</label>
-//             <input 
-//               type="date" 
-//               value={toDate}
-//               onChange={(e) => setToDate(e.target.value)}
-//               className="date-filter-input"
-//             />
-//           </div>
-
-//           <button
-//             onClick={clearDateFilters}
-//             className="date-filter-clear"
-//           >
-//             Clear Dates
-//           </button>
-//         </div>
-
-//         {/* Display selected date range */}
-//         {(fromDate || toDate) && (
-//           <div className="date-filter-display">
-//             Selected range: {fromDate ? formatDateForDisplay(fromDate) : 'Beginning'} to {toDate ? formatDateForDisplay(toDate) : 'Today'}
-//           </div>
-//         )}
-//       </div>
-
-//       {/* Action Buttons */}
-//       <div className="action-buttons">
-//         <button
-//           className="action-button action-button--primary"
-//           onClick={() => {
-//             setShowScanner(true);
-//             setShowDropdown(false);
-//             setScanStatus('Align the barcode within the frame.');
-//           }}
-//         >
-//           Scan Barcode
-//         </button>
-//         <button
-//           className="action-button action-button--primary"
-//           onClick={() => {
-//             setShowDropdown(true);
-//             setShowScanner(false);
-//             setScanStatus('Select a product from the dropdown.');
-//           }}
-//         >
-//           Search for Product
-//         </button>
-//       </div>
-
-//       {/* Filters Section */}
-//       <div className="filter-section">
-//         <div className="status-filter">
-//           <label htmlFor="status-filter" className="status-filter__label">Filter by Status:</label>
-//           <select 
-//             id="status-filter"
-//             value={statusFilter} 
-//             onChange={(e) => setStatusFilter(e.target.value)}
-//             className="status-filter__dropdown"
-//           >
-//             <option value="All">All Status</option>
-//             <option value="Confirmed">Confirmed</option>
-//             <option value="Not Confirmed">Not Confirmed</option>
-//           </select>
-//         </div>
-//       </div>
-
-//       {/* Scanner Section */}
-//       {showScanner && (
-//         <div className="scanner-section">
-//           <video 
-//             ref={scannerRef} 
-//             className="scanner-video"
-//           ></video>
-//           <p className={`scanner-status ${scanStatus.includes('already scanned') ? 'scanner-status--error' : ''}`}>
-//             {scanStatus}
-//           </p>
-
-//           <div className="zoom-controls">
-//             <button 
-//               onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}
-//               className="zoom-button zoom-button--out"
-//             >
-//               Zoom Out
-//             </button>
-//             <input
-//               type="range"
-//               min="0.5"
-//               max="10"
-//               step="0.1"
-//               value={zoomLevel}
-//               onChange={(e) => changeZoom(parseFloat(e.target.value))}
-//               className="zoom-slider"
-//             />
-//             <button 
-//               onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}
-//               className="zoom-button zoom-button--in"
-//             >
-//               Zoom In
-//             </button>
-//           </div>
-//         </div>
-//       )}
-
-//       {/* Dropdown Section */}
-//       {showDropdown && (
-//         <div className="product-selector">
-//           <select 
-//             value={selectedProduct} 
-//             onChange={handleProductSelect}
-//             className="product-selector__dropdown"
-//           >
-//             <option value="">Select a product</option>
-//             {availableProducts.map((product) => (
-//               <option key={product.barcode} value={product.barcode}>
-//                 {product.name} ({product.barcode})
-//               </option>
-//             ))}
-//           </select>
-//           {availableProducts.length === 0 && (
-//             <p className="product-selector__empty">
-//               All products have been scanned for this date range.
-//             </p>
-//           )}
-//         </div>
-//       )}
-
-//       <button
-//         onClick={exportToExcel}
-//         className="export-button"
-//       >
-//         📊 Export to Excel
-//       </button>
-
-//       {/* Popup Modal */}
-//       {isPopupOpen && scannedProduct && (
-//         <div className="product-modal">
-//           <div className="product-modal__content">
-//             <button
-//               onClick={() => {
-//                 setIsPopupOpen(false);
-//                 setSoldCount(0);
-//               }}
-//               className="product-modal__close"
-//             >
-//               ×
-//             </button>
-//             <h3 className="product-modal__title">
-//               {scannedProduct.name}
-//             </h3>
-            
-//             <div className="product-details">
-//               <div className="product-detail">
-//                 <p className="product-detail__label">Product Type:</p>
-//                 <p className="product-detail__value">{scannedProduct.productType}</p>
-//               </div>
-              
-//               <div className="product-detail">
-//                 <p className="product-detail__label">Item Cost:</p>
-//                 <p className="product-detail__value">${scannedProduct.itemCost}</p>
-//               </div>
-
-//               <div className="product-detail">
-//                 <p className="product-detail__label">Initial Quantity:</p>
-//                 <p className="product-detail__value">{scannedProduct.quantity}</p>
-//               </div>
-
-//               <div className="product-stat product-stat--sold">
-//                 <p className="product-stat__label">Total Sold:</p>
-//                 <p className="product-stat__value">{soldCount}</p>
-//               </div>
-
-//               <div className="product-stat product-stat--remaining">
-//                 <p className="product-stat__label">Remaining Quantity:</p>
-//                 <p className="product-stat__value">{scannedProduct.quantity - soldCount}</p>
-//               </div>
-
-//               {/* Action buttons section */}
-//               <div className="product-actions">
-//                 <button
-//                   onClick={async () => {
-//                     const saved = await saveRemainingStock('CONFIRMED');
-//                     if (saved) {
-//                       setIsPopupOpen(false);
-//                       setSoldCount(0);
-//                     }
-//                   }}
-//                   className="action-button action-button--confirm"
-//                 >
-//                   Confirm Existing Quantity
-//                 </button>
-
-//                 <div className="uncertain-quantity">
-//                   <input
-//                     type="number"
-//                     value={uncertainQuantity}
-//                     onChange={(e) => setUncertainQuantity(e.target.value)}
-//                     placeholder="Enter uncertain quantity"
-//                     className="uncertain-quantity__input"
-//                   />
-//                   <button
-//                     onClick={async () => {
-//                       if (!uncertainQuantity || isNaN(uncertainQuantity)) {
-//                         alert('Please enter a valid quantity');
-//                         return;
-//                       }
-                      
-//                       const saved = await saveRemainingStock('NOT_CONFIRMED', uncertainQuantity);
-//                       if (saved) {
-//                         setIsPopupOpen(false);
-//                         setSoldCount(0);
-//                         setUncertainQuantity('');
-//                       } else {
-//                         alert('Failed to save uncertain quantity.');
-//                       }
-//                     }}
-//                     className="action-button action-button--uncertain"
-//                   >
-//                     Save Uncertain Quantity
-//                   </button>
-//                 </div>
-//               </div>
-//             </div>
-//           </div>
-//         </div>
-//       )}
-
-//       <div className="records-section">
-//         <h3 className="records-section__title">
-//           Stock Records
-//           {(fromDate || toDate) && (
-//             <span className="records-section__subtitle">
-//               {fromDate && toDate ? `(From ${formatDateForDisplay(fromDate)} to ${formatDateForDisplay(toDate)})` : 
-//                fromDate ? `(From ${formatDateForDisplay(fromDate)})` : 
-//                `(Up to ${formatDateForDisplay(toDate)})`}
-//             </span>
-//           )}
-//         </h3>
-        
-//         {!fromDate && !toDate ? (
-//           <div className="records-note">
-//             <p>
-//               <strong>Note:</strong> Please select a date range to view filtered stock records.
-//               Currently showing all records.
-//             </p>
-//           </div>
-//         ) : null}
-
-//         {filteredRecords.length === 0 ? (
-//           <div className="records-empty">
-//             {fromDate || toDate ? (
-//               <p>
-//                 No stock records found for the selected date range: 
-//                 {fromDate ? ` from ${formatDateForDisplay(fromDate)}` : ''}
-//                 {toDate ? ` to ${formatDateForDisplay(toDate)}` : ''}
-//               </p>
-//             ) : (
-//               <p>
-//                 No stock records found. Scan some products to see records.
-//               </p>
-//             )}
-//           </div>
-//         ) : (
-//           <table className="records-table">
-//             <thead>
-//               <tr className="records-table__header">
-//                 <th className="records-table__cell">Product</th>
-//                 <th className="records-table__cell">Barcode</th>
-//                 <th className="records-table__cell">Initial Qty</th>
-//                 <th className="records-table__cell">Sold</th>
-//                 <th className="records-table__cell">Remaining</th>
-//                 <th className="records-table__cell">Status</th>
-//                 <th className="records-table__cell">Uncertain Qty</th>
-//                 <th className="records-table__cell">Date Scanned</th>
-//                 <th className="records-table__cell">Actions</th>
-//               </tr>
-//             </thead>
-//             <tbody>
-//               {filteredRecords
-//                 .filter(record => {
-//                   if (!fromDate && !toDate) return true;
-                  
-//                   const recordDate = new Date(record.timestamp || record.dateScanned);
-//                   const from = fromDate ? new Date(fromDate) : null;
-//                   const to = toDate ? new Date(toDate) : null;
-                  
-//                   if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
-//                   if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
-//                   return true;
-//                 })
-//                 .map((record) => (
-//                   <tr key={record.id} className={`records-table__row ${editingId === record.id ? 'records-table__row--editing' : ''}`}>
-//                     <td className="records-table__cell">{record.name}</td>
-//                     <td className="records-table__cell">{record.barcode}</td>
-//                     <td className="records-table__cell">{record.initialQuantity}</td>
-                    
-//                     {editingId === record.id ? (
-//                       <>
-//                         <td className="records-table__cell">
-//                           <input
-//                             type="number"
-//                             name="soldCount"
-//                             value={editFormData.soldCount}
-//                             onChange={handleEditFormChange}
-//                             className="edit-input"
-//                           />
-//                         </td>
-//                         <td className="records-table__cell">
-//                           <input
-//                             type="number"
-//                             name="calculatedRemaining"
-//                             value={editFormData.calculatedRemaining}
-//                             onChange={handleEditFormChange}
-//                             className="edit-input"
-//                           />
-//                         </td>
-//                         <td className="records-table__cell">
-//                           <select
-//                             name="status"
-//                             value={editFormData.status}
-//                             onChange={handleEditFormChange}
-//                             className="edit-select"
-//                           >
-//                             <option value="CONFIRMED">Confirmed</option>
-//                             <option value="NOT_CONFIRMED">Not Confirmed</option>
-//                           </select>
-//                         </td>
-//                         <td className="records-table__cell">
-//                           {editFormData.status === 'NOT_CONFIRMED' ? (
-//                             <input
-//                               type="number"
-//                               name="uncertainQuantity"
-//                               value={editFormData.uncertainQuantity}
-//                               onChange={handleEditFormChange}
-//                               className="edit-input"
-//                             />
-//                           ) : (
-//                             'N/A'
-//                           )}
-//                         </td>
-//                       </>
-//                     ) : (
-//                       <>
-//                         <td className="records-table__cell">{record.soldCount}</td>
-//                         <td className="records-table__cell">{record.calculatedRemaining}</td>
-//                         <td className="records-table__cell">
-//                           <span className={`status-indicator status-indicator--${record.status === 'CONFIRMED' ? 'confirmed' : 'not-confirmed'}`}>
-//                             {record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed'}
-//                           </span>
-//                         </td>
-//                         <td className="records-table__cell">
-//                           {record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A'}
-//                         </td>
-//                       </>
-//                     )}
-                    
-//                     <td className="records-table__cell">
-//                       {record.timestamp || 'N/A'}
-//                     </td>
-                    
-//                     <td className="records-table__cell">
-//                       {editingId === record.id ? (
-//                         <div className="edit-actions">
-//                           <button
-//                             onClick={handleSaveClick}
-//                             className="action-button action-button--save"
-//                           >
-//                             Save
-//                           </button>
-//                           <button
-//                             onClick={handleCancelClick}
-//                             className="action-button action-button--cancel"
-//                           >
-//                             Cancel
-//                           </button>
-//                         </div>
-//                       ) : (
-//                         <div className="record-actions">
-//                           <button
-//                             onClick={() => handleEditClick(record)}
-//                             className="action-button action-button--edit"
-//                           >
-//                             Edit
-//                           </button>
-//                           <button
-//                             onClick={() => handleDeleteClick(record.id)}
-//                             className="action-button action-button--delete"
-//                           >
-//                             Delete
-//                           </button>
-//                         </div>
-//                       )}
-//                     </td>
-//                   </tr>
-//                 ))}
-//             </tbody>
-//           </table>
-//         )}
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default RemainingProducts;
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { database } from '../Auth/firebase';
@@ -3849,7 +2653,7 @@ import '../CSS/remainingProducts.css';
 import * as XLSX from 'xlsx';
 
 const RemainingProducts = () => {
-  const [scanStatus, setScanStatus] = useState('Ready to scan');
+  const [scanStatus, setScanStatus] = useState('Press "Scan Barcode" to start scanning.');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
@@ -3882,22 +2686,31 @@ const RemainingProducts = () => {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
+      // Clear all filters and selections
       clearAllFilters();
+      
+      // Refresh data from database
       await fetchProducts();
       await fetchAvailableDateRanges();
       await fetchStockRecords();
+      
+      // Reset UI states
       setScannedProduct(null);
       setShowScanner(false);
       setShowDropdown(false);
       setSelectedProduct('');
       setUncertainQuantity('');
+      setScanStatus('Press "Scan Barcode" to start scanning.');
+      
+      // Show success message
       setScanStatus('Data refreshed successfully!');
       setTimeout(() => {
-        setScanStatus('Ready to scan');
+        setScanStatus('Press "Scan Barcode" to start scanning.');
       }, 2000);
+      
     } catch (error) {
       console.error('Error refreshing data:', error);
-      setScanStatus('Error refreshing data');
+      setScanStatus('Error refreshing data. Please try again.');
     } finally {
       setIsRefreshing(false);
     }
@@ -3951,6 +2764,7 @@ const RemainingProducts = () => {
         });
 
         dateRanges.sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+        
         setAvailableDateRanges(dateRanges);
         setMostRecentDateRange(mostRecent);
       } else {
@@ -3965,18 +2779,22 @@ const RemainingProducts = () => {
   // Function to parse date range key and return formatted string
   const formatDateRangeKey = (key) => {
     if (key === 'all_time') return 'All Time';
+    
     if (key.startsWith('from_')) {
       const fromDate = key.replace('from_', '');
       return `From ${formatDateForDisplay(fromDate)}`;
     }
+    
     if (key.startsWith('to_')) {
       const toDate = key.replace('to_', '');
       return `Up to ${formatDateForDisplay(toDate)}`;
     }
+    
     if (key.includes('_to_')) {
       const [from, to] = key.split('_to_');
       return `${formatDateForDisplay(from)} to ${formatDateForDisplay(to)}`;
     }
+    
     return key;
   };
 
@@ -4008,6 +2826,7 @@ const RemainingProducts = () => {
   // Handle history range selection
   const handleHistoryRangeSelect = (rangeKey) => {
     setSelectedHistoryRange(rangeKey);
+    
     if (rangeKey === 'all_time') {
       setFromDate('');
       setToDate('');
@@ -4042,9 +2861,11 @@ const RemainingProducts = () => {
   const exportToExcel = () => {
     const recordsToExport = filteredRecords.filter(record => {
       if (!fromDate && !toDate) return true;
+      
       const recordDate = new Date(record.timestamp || record.dateScanned);
       const from = fromDate ? new Date(fromDate) : null;
       const to = toDate ? new Date(toDate) : null;
+      
       if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
       if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
       return true;
@@ -4065,13 +2886,22 @@ const RemainingProducts = () => {
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(excelData);
+
     XLSX.utils.book_append_sheet(wb, ws, 'Stock Records');
 
     let filename = 'stock_records';
-    if (fromDate && toDate) filename += `_${fromDate}_to_${toDate}`;
-    else if (fromDate) filename += `_from_${fromDate}`;
-    else if (toDate) filename += `_to_${toDate}`;
-    if (statusFilter !== 'All') filename += `_${statusFilter.toLowerCase().replace(' ', '_')}`;
+    if (fromDate && toDate) {
+      filename += `_${fromDate}_to_${toDate}`;
+    } else if (fromDate) {
+      filename += `_from_${fromDate}`;
+    } else if (toDate) {
+      filename += `_to_${toDate}`;
+    }
+    
+    if (statusFilter !== 'All') {
+      filename += `_${statusFilter.toLowerCase().replace(' ', '_')}`;
+    }
+    
     filename += '.xlsx';
 
     XLSX.writeFile(wb, filename);
@@ -4081,11 +2911,13 @@ const RemainingProducts = () => {
   const checkIfProductAlreadyScanned = async (barcode) => {
     const dateKey = getCurrentDateKey();
     const dbRef = ref(database, `remainingStocks/${dateKey}`);
+    
     try {
       const snapshot = await get(dbRef);
       if (snapshot.exists()) {
         const stockData = snapshot.val();
-        return Object.values(stockData).some(item => item.barcode === barcode);
+        const isAlreadyScanned = Object.values(stockData).some(item => item.barcode === barcode);
+        return isAlreadyScanned;
       }
       return false;
     } catch (error) {
@@ -4098,6 +2930,7 @@ const RemainingProducts = () => {
   const loadScannedProductsForCurrentRange = async () => {
     const dateKey = getCurrentDateKey();
     const dbRef = ref(database, `remainingStocks/${dateKey}`);
+    
     try {
       const snapshot = await get(dbRef);
       if (snapshot.exists()) {
@@ -4141,7 +2974,9 @@ const RemainingProducts = () => {
             },
           },
         })
-        .then(() => applyZoom())
+        .then(() => {
+          applyZoom();
+        })
         .catch((err) => console.error('Camera initialization failed:', err));
 
       return () => {
@@ -4155,6 +2990,7 @@ const RemainingProducts = () => {
       const videoElement = scannerRef.current;
       const stream = videoElement.srcObject;
       const [track] = stream.getVideoTracks();
+
       const capabilities = track.getCapabilities();
       if ('zoom' in capabilities) {
         const constraints = {
@@ -4171,6 +3007,7 @@ const RemainingProducts = () => {
     const videoElement = scannerRef.current;
     const stream = videoElement.srcObject;
     const [track] = stream.getVideoTracks();
+
     const capabilities = track.getCapabilities();
     if ('zoom' in capabilities) {
       const newZoomLevel = Math.min(Math.max(level, capabilities.zoom.min), capabilities.zoom.max || 10);
@@ -4182,6 +3019,8 @@ const RemainingProducts = () => {
       } catch (error) {
         console.error('Failed to apply zoom:', error);
       }
+    } else {
+      console.warn('Zoom capability is not supported by this device.');
     }
   };
 
@@ -4192,9 +3031,11 @@ const RemainingProducts = () => {
       const snapshot = await get(dbRef);
       if (snapshot.exists()) {
         const records = [];
+        
         snapshot.forEach((dateRangeSnapshot) => {
           const dateRangeKey = dateRangeSnapshot.key;
           const dateRangeData = dateRangeSnapshot.val();
+          
           Object.keys(dateRangeData).forEach((recordId) => {
             const record = dateRangeData[recordId];
             records.push({
@@ -4205,9 +3046,11 @@ const RemainingProducts = () => {
             });
           });
         });
+        
         const sortedRecords = records.sort((a, b) => 
           new Date(b.timestamp) - new Date(a.timestamp)
         );
+        
         setStockRecords(sortedRecords);
       } else {
         setStockRecords([]);
@@ -4260,28 +3103,50 @@ const RemainingProducts = () => {
     try {
       const recordRef = ref(database, `remainingStocks/${editingId}`);
       const record = stockRecords.find(r => r.id === editingId);
-      if (!record) throw new Error('Record not found');
+      
+      if (!record) {
+        throw new Error('Record not found');
+      }
 
+      // Prepare the update data
       const updateData = {
         status: editFormData.status,
         soldCount: parseInt(editFormData.soldCount) || 0,
         calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
       };
 
+      // Handle product quantity updates
       const productRef = ref(database, `products/${record.barcode}`);
 
       if (editFormData.status === 'CONFIRMED') {
-        let newQuantity = record.status === 'NOT_CONFIRMED' 
-          ? parseInt(editFormData.uncertainQuantity) || 0 
-          : updateData.calculatedRemaining;
+        // If changing to CONFIRMED, update product quantity
+        let newQuantity;
 
-        await update(productRef, { quantity: newQuantity });
+        if (record.status === 'NOT_CONFIRMED') {
+          // If changing from NOT_CONFIRMED → CONFIRMED, use uncertainQuantity
+          newQuantity = parseInt(editFormData.uncertainQuantity) || 0;
+        } else {
+          // If already CONFIRMED or new, use calculatedRemaining
+          newQuantity = updateData.calculatedRemaining;
+        }
+
+        await update(productRef, {
+          quantity: newQuantity
+        });
+
+        // Ensure calculatedRemaining matches the new quantity
         updateData.calculatedRemaining = newQuantity;
         updateData.uncertainQuantity = null;
+
       } else if (editFormData.status === 'NOT_CONFIRMED') {
+        // If changing from CONFIRMED → NOT_CONFIRMED, restore original quantity
         if (record.status === 'CONFIRMED') {
-          await update(productRef, { quantity: editFormData.originalQuantity });
+          await update(productRef, {
+            quantity: editFormData.originalQuantity
+          });
         }
+        
+        // Set uncertain quantity if provided
         updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
       }
 
@@ -4310,18 +3175,28 @@ const RemainingProducts = () => {
 
   const saveRemainingStock = async (status, uncertainQuantity = null) => {
     try {
+      // Create a date key based on the selected date range
       let dateKey;
-      if (fromDate && toDate) dateKey = `${fromDate}_to_${toDate}`;
-      else if (fromDate) dateKey = `from_${fromDate}`;
-      else if (toDate) dateKey = `to_${toDate}`;
-      else dateKey = 'all_time';
+      if (fromDate && toDate) {
+        dateKey = `${fromDate}_to_${toDate}`;
+      } else if (fromDate) {
+        dateKey = `from_${fromDate}`;
+      } else if (toDate) {
+        dateKey = `to_${toDate}`;
+      } else {
+        dateKey = 'all_time';
+      }
       
+      // Calculate remaining quantity
       const remainingQuantity = status === 'CONFIRMED' 
         ? scannedProduct.quantity - soldCount 
         : uncertainQuantity;
 
+      // Structure: remainingStocks -> dateKey -> individual items
       const dbRef = ref(database, `remainingStocks/${dateKey}`);
       const newStockRef = push(dbRef);
+      
+      // Get current timestamp
       const currentTimestamp = new Date().toISOString();
       
       const stockData = {
@@ -4345,12 +3220,17 @@ const RemainingProducts = () => {
 
       await set(newStockRef, stockData);
       
+      // Update the product quantity in the products table if status is CONFIRMED
       if (status === 'CONFIRMED') {
         const productRef = ref(database, `products/${scannedProduct.barcode}`);
-        await update(productRef, { quantity: remainingQuantity });
+        await update(productRef, {
+          quantity: remainingQuantity
+        });
       }
       
+      // Update the scanned products set for current range
       setScannedProductsForCurrentRange(prev => new Set([...prev, scannedProduct.barcode]));
+      
       return true;
     } catch (error) {
       console.error('Error saving remaining stock:', error);
@@ -4366,6 +3246,7 @@ const RemainingProducts = () => {
         const soldData = soldItemsSnapshot.val();
         let count = 0;
 
+        // Create date range if filters are set
         let fromDateObj = null;
         let toDateObj = null;
 
@@ -4380,16 +3261,20 @@ const RemainingProducts = () => {
         }
 
         Object.values(soldData).forEach((item) => {
+          // Match by product name or barcode
           const matchesProduct = 
             (item.name && item.name.toLowerCase() === productName.toLowerCase()) ||
             (item.barcode && item.barcode === productBarcode);
 
           if (matchesProduct) {
+            // Check date range if filters are applied
             if (fromDateObj || toDateObj) {
               const itemDate = new Date(item.dateScanned);
+              
               if (fromDateObj && itemDate < fromDateObj) return;
               if (toDateObj && itemDate > toDateObj) return;
             }
+            
             count += parseInt(item.quantity) || 1;
           }
         });
@@ -4405,7 +3290,9 @@ const RemainingProducts = () => {
   };
 
   const fetchProductDetails = async (barcode) => {
+    // First check if product is already scanned for current date range
     const isAlreadyScanned = await checkIfProductAlreadyScanned(barcode);
+    
     if (isAlreadyScanned) {
       setScanStatus('Item already scanned for this date range!');
       setTimeout(() => {
@@ -4427,7 +3314,10 @@ const RemainingProducts = () => {
           quantity: product.quantity,
         };
         setScannedProduct(productData);
+        
+        // Fetch sold count for this product
         await fetchSoldCount(product.name, barcode);
+        
         setIsPopupOpen(true);
       } else {
         setScanStatus('Product not found in the database.');
@@ -4458,7 +3348,7 @@ const RemainingProducts = () => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       year: 'numeric', 
-      month: 'short', 
+      month: 'long', 
       day: 'numeric' 
     });
   };
@@ -4469,295 +3359,260 @@ const RemainingProducts = () => {
   );
 
   return (
-    <div className="admin-container">
-      {/* Page Header */}
-      <div className="page-header">
-        <h1 className="page-title">Stock Management</h1>
-        <p className="page-subtitle">Track and manage product inventory</p>
+    <div className="stock-management">
+      {/* Header with Refresh Button */}
+      <div className="stock-header">
+        <h1 className="stock-header__title">Stock Management</h1>
+        <button
+          onClick={handleRefresh}
+          className="refresh-button"
+          disabled={isRefreshing}
+        >
+          {isRefreshing ? 'Refreshing...' : '🔄 Refresh'}
+        </button>
       </div>
 
-      {/* Main Actions Card */}
-      <div className="actions-card">
-        <div className="card-header">
-          <h2 className="card-title">
-            <span className="card-icon">📊</span>
-            Stock Management Tools
-          </h2>
-          <div className="card-actions">
-            <button 
-              onClick={handleRefresh}
-              className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? (
-                <>
-                  <span className="spinner"></span>
-                  Refreshing...
-                </>
-              ) : (
-                <>
-                  <span className="button-icon">🔄</span>
-                  Refresh
-                </>
-              )}
-            </button>
-            <button onClick={exportToExcel} className="btn-primary">
-              <span className="button-icon">📊</span>
-              Export Excel
-            </button>
-          </div>
+      {/* Most Recent Date Range Display */}
+      {mostRecentDateRange && (
+        <div className="recent-stock-alert">
+          <h3 className="recent-stock-alert__title">Most Recent Stock Check</h3>
+          <p className="recent-stock-alert__info">
+            <strong>{formatDateRangeKey(mostRecentDateRange.key)}</strong>
+            {' - '}
+            {new Date(mostRecentDateRange.timestamp).toLocaleString()}
+          </p>
         </div>
+      )}
 
-        <div className="action-buttons-grid">
-          <button
-            className="action-card"
-            onClick={() => {
-              setShowScanner(true);
-              setShowDropdown(false);
-              setScanStatus('Align barcode within frame');
-            }}
-          >
-            <div className="action-card-icon">📷</div>
-            <div className="action-card-content">
-              <h3 className="action-card-title">Scan Barcode</h3>
-              <p className="action-card-description">Use camera to scan product barcodes</p>
-            </div>
-          </button>
-
-          <button
-            className="action-card"
-            onClick={() => {
-              setShowDropdown(true);
-              setShowScanner(false);
-              setScanStatus('Select a product from dropdown');
-            }}
-          >
-            <div className="action-card-icon">🔍</div>
-            <div className="action-card-content">
-              <h3 className="action-card-title">Search Product</h3>
-              <p className="action-card-description">Find and select product manually</p>
-            </div>
-          </button>
-        </div>
-
-        {/* Scanner Section */}
-        {showScanner && (
-          <div className="scanner-section">
-            <div className="scanner-container">
-              <video ref={scannerRef} className="scanner-video"></video>
-              <div className="scanner-overlay">
-                <div className="scanner-frame"></div>
-                <p className={`scanner-status ${scanStatus.includes('already scanned') ? 'error' : ''}`}>
-                  {scanStatus}
-                </p>
-              </div>
-            </div>
-
-            <div className="scanner-controls">
-              <button 
-                onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}
-                className="btn-secondary btn-small"
-              >
-                🔍 Zoom Out
-              </button>
-              <div className="zoom-slider-container">
-                <input
-                  type="range"
-                  min="0.5"
-                  max="10"
-                  step="0.1"
-                  value={zoomLevel}
-                  onChange={(e) => changeZoom(parseFloat(e.target.value))}
-                  className="zoom-slider"
-                />
-                <span className="zoom-value">{zoomLevel.toFixed(1)}x</span>
-              </div>
-              <button 
-                onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}
-                className="btn-secondary btn-small"
-              >
-                🔍 Zoom In
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Dropdown Section */}
-        {showDropdown && (
-          <div className="product-selector-card">
-            <div className="selector-header">
-              <h3 className="selector-title">Select Product</h3>
-              <span className="selector-count">
-                {availableProducts.length} products available
-              </span>
-            </div>
-            <select 
-              value={selectedProduct} 
-              onChange={handleProductSelect}
-              className="product-select"
-            >
-              <option value="">Choose a product...</option>
-              {availableProducts.map((product) => (
-                <option key={product.barcode} value={product.barcode}>
-                  {product.name} ({product.barcode})
-                </option>
-              ))}
-            </select>
-            {availableProducts.length === 0 && (
-              <div className="selector-empty">
-                <span className="empty-icon">📦</span>
-                <p>All products scanned for current date range</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Filters Card */}
-      <div className="filters-card">
-        <div className="filters-grid">
-          {/* Date Range Filters */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <span className="filter-icon">📅</span>
-              Date Range
-            </label>
-            <div className="date-inputs">
-              <div className="date-input-group">
-                <label className="date-label">From</label>
-                <input 
-                  type="date" 
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="date-input"
-                />
-              </div>
-              <div className="date-input-group">
-                <label className="date-label">To</label>
-                <input 
-                  type="date" 
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="date-input"
-                />
-              </div>
-            </div>
-            {(fromDate || toDate) && (
-              <div className="date-range-display">
-                <span className="range-label">Selected:</span>
-                <span className="range-value">
-                  {fromDate ? formatDateForDisplay(fromDate) : 'Beginning'} to {toDate ? formatDateForDisplay(toDate) : 'Today'}
-                </span>
-                <button onClick={clearDateFilters} className="clear-range-btn">
-                  ✕ Clear
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Status Filter */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <span className="filter-icon">📊</span>
-              Filter by Status
-            </label>
-            <select 
-              value={statusFilter} 
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="status-select"
-            >
-              <option value="All">All Status</option>
-              <option value="Confirmed">Confirmed</option>
-              <option value="Not Confirmed">Not Confirmed</option>
-            </select>
-          </div>
-
-          {/* History Selector */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <span className="filter-icon">📋</span>
-              Stock History
-            </label>
+      {/* History/Archive Section */}
+      <div className="history-section">
+        <h3 className="history-section__title">Stock Check History</h3>
+        {availableDateRanges.length === 0 ? (
+          <p className="history-section__empty">No stock check history available yet.</p>
+        ) : (
+          <div className="history-selector">
+            <label className="history-selector__label">View Historical Data:</label>
             <select
               value={selectedHistoryRange}
               onChange={(e) => handleHistoryRangeSelect(e.target.value)}
-              className="history-select"
+              className="history-selector__dropdown"
             >
-              <option value="">Select date range...</option>
+              <option value="">Select a date range...</option>
               {availableDateRanges.map((range) => (
                 <option key={range.key} value={range.key}>
-                  {formatDateRangeKey(range.key)}
+                  {formatDateRangeKey(range.key)} - {new Date(range.latestTimestamp).toLocaleDateString()}
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-
-        {/* Most Recent Stock Check */}
-        {mostRecentDateRange && (
-          <div className="recent-stock-info">
-            <div className="recent-icon">⏱️</div>
-            <div className="recent-content">
-              <div className="recent-title">Most Recent Stock Check</div>
-              <div className="recent-details">
-                {formatDateRangeKey(mostRecentDateRange.key)} • {new Date(mostRecentDateRange.timestamp).toLocaleString()}
-              </div>
-            </div>
+            {selectedHistoryRange && (
+              <button
+                onClick={() => {
+                  setSelectedHistoryRange('');
+                  setFromDate('');
+                  setToDate('');
+                }}
+                className="history-selector__clear"
+              >
+                Clear History Selection
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Product Modal */}
+      {/* Date Range Filters */}
+      <div className="date-filter-section">
+        <h3 className="date-filter-section__title">Date Range for Sold Items Count</h3>
+        
+        <div className="date-filter-controls">
+          <div className="date-filter-group">
+            <label className="date-filter-label">From:</label>
+            <input 
+              type="date" 
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="date-filter-input"
+            />
+          </div>
+
+          <div className="date-filter-group">
+            <label className="date-filter-label">To:</label>
+            <input 
+              type="date" 
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="date-filter-input"
+            />
+          </div>
+
+          <button
+            onClick={clearDateFilters}
+            className="date-filter-clear"
+          >
+            Clear Dates
+          </button>
+        </div>
+
+        {/* Display selected date range */}
+        {(fromDate || toDate) && (
+          <div className="date-filter-display">
+            Selected range: {fromDate ? formatDateForDisplay(fromDate) : 'Beginning'} to {toDate ? formatDateForDisplay(toDate) : 'Today'}
+          </div>
+        )}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="action-buttons">
+        <button
+          className="action-button action-button--primary"
+          onClick={() => {
+            setShowScanner(true);
+            setShowDropdown(false);
+            setScanStatus('Align the barcode within the frame.');
+          }}
+        >
+          Scan Barcode
+        </button>
+        <button
+          className="action-button action-button--primary"
+          onClick={() => {
+            setShowDropdown(true);
+            setShowScanner(false);
+            setScanStatus('Select a product from the dropdown.');
+          }}
+        >
+          Search for Product
+        </button>
+      </div>
+
+      {/* Filters Section */}
+      <div className="filter-section">
+        <div className="status-filter">
+          <label htmlFor="status-filter" className="status-filter__label">Filter by Status:</label>
+          <select 
+            id="status-filter"
+            value={statusFilter} 
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="status-filter__dropdown"
+          >
+            <option value="All">All Status</option>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Not Confirmed">Not Confirmed</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Scanner Section */}
+      {showScanner && (
+        <div className="scanner-section">
+          <video 
+            ref={scannerRef} 
+            className="scanner-video"
+          ></video>
+          <p className={`scanner-status ${scanStatus.includes('already scanned') ? 'scanner-status--error' : ''}`}>
+            {scanStatus}
+          </p>
+
+          <div className="zoom-controls">
+            <button 
+              onClick={() => changeZoom(Math.max(0.5, zoomLevel - 0.5))}
+              className="zoom-button zoom-button--out"
+            >
+              Zoom Out
+            </button>
+            <input
+              type="range"
+              min="0.5"
+              max="10"
+              step="0.1"
+              value={zoomLevel}
+              onChange={(e) => changeZoom(parseFloat(e.target.value))}
+              className="zoom-slider"
+            />
+            <button 
+              onClick={() => changeZoom(Math.min(10, zoomLevel + 0.5))}
+              className="zoom-button zoom-button--in"
+            >
+              Zoom In
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dropdown Section */}
+      {showDropdown && (
+        <div className="product-selector">
+          <select 
+            value={selectedProduct} 
+            onChange={handleProductSelect}
+            className="product-selector__dropdown"
+          >
+            <option value="">Select a product</option>
+            {availableProducts.map((product) => (
+              <option key={product.barcode} value={product.barcode}>
+                {product.name} ({product.barcode})
+              </option>
+            ))}
+          </select>
+          {availableProducts.length === 0 && (
+            <p className="product-selector__empty">
+              All products have been scanned for this date range.
+            </p>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={exportToExcel}
+        className="export-button"
+      >
+        📊 Export to Excel
+      </button>
+
+      {/* Popup Modal */}
       {isPopupOpen && scannedProduct && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3 className="modal-title">
-                <span className="modal-product-icon">📦</span>
-                {scannedProduct.name}
-              </h3>
-              <button
-                onClick={() => {
-                  setIsPopupOpen(false);
-                  setSoldCount(0);
-                }}
-                className="modal-close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="modal-content">
-              <div className="product-details-grid">
-                <div className="product-detail">
-                  <span className="detail-label">Barcode</span>
-                  <span className="detail-value barcode">{scannedProduct.barcode}</span>
-                </div>
-                <div className="product-detail">
-                  <span className="detail-label">Product Type</span>
-                  <span className="detail-value">{scannedProduct.productType}</span>
-                </div>
-                <div className="product-detail">
-                  <span className="detail-label">Item Cost</span>
-                  <span className="detail-value price">${scannedProduct.itemCost}</span>
-                </div>
-                <div className="product-detail">
-                  <span className="detail-label">Initial Quantity</span>
-                  <span className="detail-value quantity">{scannedProduct.quantity}</span>
-                </div>
+        <div className="product-modal">
+          <div className="product-modal__content">
+            <button
+              onClick={() => {
+                setIsPopupOpen(false);
+                setSoldCount(0);
+              }}
+              className="product-modal__close"
+            >
+              ×
+            </button>
+            <h3 className="product-modal__title">
+              {scannedProduct.name}
+            </h3>
+            
+            <div className="product-details">
+              <div className="product-detail">
+                <p className="product-detail__label">Product Type:</p>
+                <p className="product-detail__value">{scannedProduct.productType}</p>
+              </div>
+              
+              <div className="product-detail">
+                <p className="product-detail__label">Item Cost:</p>
+                <p className="product-detail__value">${scannedProduct.itemCost}</p>
               </div>
 
-              <div className="product-stats">
-                <div className="product-stat sold-stat">
-                  <div className="stat-label">Total Sold</div>
-                  <div className="stat-value">{soldCount}</div>
-                </div>
-                <div className="product-stat remaining-stat">
-                  <div className="stat-label">Remaining Quantity</div>
-                  <div className="stat-value">{scannedProduct.quantity - soldCount}</div>
-                </div>
+              <div className="product-detail">
+                <p className="product-detail__label">Initial Quantity:</p>
+                <p className="product-detail__value">{scannedProduct.quantity}</p>
               </div>
 
+              <div className="product-stat product-stat--sold">
+                <p className="product-stat__label">Total Sold:</p>
+                <p className="product-stat__value">{soldCount}</p>
+              </div>
+
+              <div className="product-stat product-stat--remaining">
+                <p className="product-stat__label">Remaining Quantity:</p>
+                <p className="product-stat__value">{scannedProduct.quantity - soldCount}</p>
+              </div>
+
+              {/* Action buttons section */}
               <div className="product-actions">
                 <button
                   onClick={async () => {
@@ -4767,40 +3622,39 @@ const RemainingProducts = () => {
                       setSoldCount(0);
                     }
                   }}
-                  className="btn-success"
+                  className="action-button action-button--confirm"
                 >
-                  <span className="button-icon">✅</span>
-                  Confirm Quantity
+                  Confirm Existing Quantity
                 </button>
 
-                <div className="uncertain-section">
-                  <div className="uncertain-input-group">
-                    <input
-                      type="number"
-                      value={uncertainQuantity}
-                      onChange={(e) => setUncertainQuantity(e.target.value)}
-                      placeholder="Enter uncertain quantity"
-                      className="uncertain-input"
-                    />
-                    <button
-                      onClick={async () => {
-                        if (!uncertainQuantity || isNaN(uncertainQuantity)) {
-                          alert('Please enter a valid quantity');
-                          return;
-                        }
-                        const saved = await saveRemainingStock('NOT_CONFIRMED', uncertainQuantity);
-                        if (saved) {
-                          setIsPopupOpen(false);
-                          setSoldCount(0);
-                          setUncertainQuantity('');
-                        }
-                      }}
-                      className="btn-warning"
-                    >
-                      <span className="button-icon">❓</span>
-                      Save Uncertain
-                    </button>
-                  </div>
+                <div className="uncertain-quantity">
+                  <input
+                    type="number"
+                    value={uncertainQuantity}
+                    onChange={(e) => setUncertainQuantity(e.target.value)}
+                    placeholder="Enter uncertain quantity"
+                    className="uncertain-quantity__input"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!uncertainQuantity || isNaN(uncertainQuantity)) {
+                        alert('Please enter a valid quantity');
+                        return;
+                      }
+                      
+                      const saved = await saveRemainingStock('NOT_CONFIRMED', uncertainQuantity);
+                      if (saved) {
+                        setIsPopupOpen(false);
+                        setSoldCount(0);
+                        setUncertainQuantity('');
+                      } else {
+                        alert('Failed to save uncertain quantity.');
+                      }
+                    }}
+                    className="action-button action-button--uncertain"
+                  >
+                    Save Uncertain Quantity
+                  </button>
                 </div>
               </div>
             </div>
@@ -4808,177 +3662,177 @@ const RemainingProducts = () => {
         </div>
       )}
 
-      {/* Stock Records Table */}
-      <div className="table-card">
-        <div className="table-header">
-          <div className="table-header-left">
-            <h2 className="table-title">
-              <span className="table-icon">📋</span>
-              Stock Records
-            </h2>
-            <div className="table-stats">
-              {filteredRecords.length} records • 
-              {statusFilter === 'All' ? ' All status' : ` ${statusFilter}`}
-            </div>
-          </div>
-          <div className="table-header-right">
-            <button onClick={clearAllFilters} className="btn-secondary btn-small">
-              ✕ Clear Filters
-            </button>
-          </div>
-        </div>
-
-        <div className="table-container">
-          {filteredRecords.length === 0 ? (
-            <div className="empty-table">
-              <div className="empty-icon">📊</div>
-              <p className="empty-title">No stock records found</p>
-              <p className="empty-description">
-                {fromDate || toDate 
-                  ? `No records for selected date range${fromDate ? ` from ${formatDateForDisplay(fromDate)}` : ''}${toDate ? ` to ${formatDateForDisplay(toDate)}` : ''}`
-                  : 'Scan or search products to create stock records'}
-              </p>
-            </div>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Barcode</th>
-                  <th>Initial Qty</th>
-                  <th>Sold</th>
-                  <th>Remaining</th>
-                  <th>Status</th>
-                  <th>Uncertain Qty</th>
-                  <th>Date Scanned</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecords
-                  .filter(record => {
-                    if (!fromDate && !toDate) return true;
-                    const recordDate = new Date(record.timestamp || record.dateScanned);
-                    const from = fromDate ? new Date(fromDate) : null;
-                    const to = toDate ? new Date(toDate) : null;
-                    if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
-                    if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
-                    return true;
-                  })
-                  .map((record) => (
-                    <tr key={record.id} className={editingId === record.id ? 'editing-row' : ''}>
-                      <td>
-                        <div className="product-cell">
-                          <span className="product-name">{record.name}</span>
-                          <span className="product-type">{record.productType}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="barcode-cell">{record.barcode}</span>
-                      </td>
-                      <td>
-                        <span className="quantity-cell">{record.initialQuantity}</span>
-                      </td>
-                      
-                      {editingId === record.id ? (
-                        <>
-                          <td>
-                            <input
-                              type="number"
-                              name="soldCount"
-                              value={editFormData.soldCount}
-                              onChange={handleEditFormChange}
-                              className="edit-input"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              name="calculatedRemaining"
-                              value={editFormData.calculatedRemaining}
-                              onChange={handleEditFormChange}
-                              className="edit-input"
-                            />
-                          </td>
-                          <td>
-                            <select
-                              name="status"
-                              value={editFormData.status}
-                              onChange={handleEditFormChange}
-                              className="edit-select"
-                            >
-                              <option value="CONFIRMED">Confirmed</option>
-                              <option value="NOT_CONFIRMED">Not Confirmed</option>
-                            </select>
-                          </td>
-                          <td>
-                            {editFormData.status === 'NOT_CONFIRMED' ? (
-                              <input
-                                type="number"
-                                name="uncertainQuantity"
-                                value={editFormData.uncertainQuantity}
-                                onChange={handleEditFormChange}
-                                className="edit-input"
-                              />
-                            ) : (
-                              'N/A'
-                            )}
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td>
-                            <span className="sold-cell">{record.soldCount}</span>
-                          </td>
-                          <td>
-                            <span className="remaining-cell">{record.calculatedRemaining}</span>
-                          </td>
-                          <td>
-                            <span className={`status-badge ${record.status === 'CONFIRMED' ? 'confirmed' : 'not-confirmed'}`}>
-                              {record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed'}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="uncertain-cell">
-                              {record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A'}
-                            </span>
-                          </td>
-                        </>
-                      )}
-                      
-                      <td>
-                        <span className="date-cell">{record.timestamp || 'N/A'}</span>
-                      </td>
-                      
-                      <td>
-                        <div className="action-buttons">
-                          {editingId === record.id ? (
-                            <>
-                              <button onClick={handleSaveClick} className="btn-small btn-success">
-                                💾 Save
-                              </button>
-                              <button onClick={handleCancelClick} className="btn-small btn-secondary">
-                                ✕ Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button onClick={() => handleEditClick(record)} className="btn-small btn-primary">
-                                ✏️ Edit
-                              </button>
-                              <button onClick={() => handleDeleteClick(record.id)} className="btn-small btn-danger">
-                                🗑️ Delete
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+      <div className="records-section">
+        <h3 className="records-section__title">
+          Stock Records
+          {(fromDate || toDate) && (
+            <span className="records-section__subtitle">
+              {fromDate && toDate ? `(From ${formatDateForDisplay(fromDate)} to ${formatDateForDisplay(toDate)})` : 
+               fromDate ? `(From ${formatDateForDisplay(fromDate)})` : 
+               `(Up to ${formatDateForDisplay(toDate)})`}
+            </span>
           )}
-        </div>
+        </h3>
+        
+        {!fromDate && !toDate ? (
+          <div className="records-note">
+            <p>
+              <strong>Note:</strong> Please select a date range to view filtered stock records.
+              Currently showing all records.
+            </p>
+          </div>
+        ) : null}
+
+        {filteredRecords.length === 0 ? (
+          <div className="records-empty">
+            {fromDate || toDate ? (
+              <p>
+                No stock records found for the selected date range: 
+                {fromDate ? ` from ${formatDateForDisplay(fromDate)}` : ''}
+                {toDate ? ` to ${formatDateForDisplay(toDate)}` : ''}
+              </p>
+            ) : (
+              <p>
+                No stock records found. Scan some products to see records.
+              </p>
+            )}
+          </div>
+        ) : (
+          <table className="records-table">
+            <thead>
+              <tr className="records-table__header">
+                <th className="records-table__cell">Product</th>
+                <th className="records-table__cell">Barcode</th>
+                <th className="records-table__cell">Initial Qty</th>
+                <th className="records-table__cell">Sold</th>
+                <th className="records-table__cell">Remaining</th>
+                <th className="records-table__cell">Status</th>
+                <th className="records-table__cell">Uncertain Qty</th>
+                <th className="records-table__cell">Date Scanned</th>
+                <th className="records-table__cell">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRecords
+                .filter(record => {
+                  if (!fromDate && !toDate) return true;
+                  
+                  const recordDate = new Date(record.timestamp || record.dateScanned);
+                  const from = fromDate ? new Date(fromDate) : null;
+                  const to = toDate ? new Date(toDate) : null;
+                  
+                  if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
+                  if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
+                  return true;
+                })
+                .map((record) => (
+                  <tr key={record.id} className={`records-table__row ${editingId === record.id ? 'records-table__row--editing' : ''}`}>
+                    <td className="records-table__cell">{record.name}</td>
+                    <td className="records-table__cell">{record.barcode}</td>
+                    <td className="records-table__cell">{record.initialQuantity}</td>
+                    
+                    {editingId === record.id ? (
+                      <>
+                        <td className="records-table__cell">
+                          <input
+                            type="number"
+                            name="soldCount"
+                            value={editFormData.soldCount}
+                            onChange={handleEditFormChange}
+                            className="edit-input"
+                          />
+                        </td>
+                        <td className="records-table__cell">
+                          <input
+                            type="number"
+                            name="calculatedRemaining"
+                            value={editFormData.calculatedRemaining}
+                            onChange={handleEditFormChange}
+                            className="edit-input"
+                          />
+                        </td>
+                        <td className="records-table__cell">
+                          <select
+                            name="status"
+                            value={editFormData.status}
+                            onChange={handleEditFormChange}
+                            className="edit-select"
+                          >
+                            <option value="CONFIRMED">Confirmed</option>
+                            <option value="NOT_CONFIRMED">Not Confirmed</option>
+                          </select>
+                        </td>
+                        <td className="records-table__cell">
+                          {editFormData.status === 'NOT_CONFIRMED' ? (
+                            <input
+                              type="number"
+                              name="uncertainQuantity"
+                              value={editFormData.uncertainQuantity}
+                              onChange={handleEditFormChange}
+                              className="edit-input"
+                            />
+                          ) : (
+                            'N/A'
+                          )}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="records-table__cell">{record.soldCount}</td>
+                        <td className="records-table__cell">{record.calculatedRemaining}</td>
+                        <td className="records-table__cell">
+                          <span className={`status-indicator status-indicator--${record.status === 'CONFIRMED' ? 'confirmed' : 'not-confirmed'}`}>
+                            {record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed'}
+                          </span>
+                        </td>
+                        <td className="records-table__cell">
+                          {record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A'}
+                        </td>
+                      </>
+                    )}
+                    
+                    <td className="records-table__cell">
+                      {record.timestamp || 'N/A'}
+                    </td>
+                    
+                    <td className="records-table__cell">
+                      {editingId === record.id ? (
+                        <div className="edit-actions">
+                          <button
+                            onClick={handleSaveClick}
+                            className="action-button action-button--save"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={handleCancelClick}
+                            className="action-button action-button--cancel"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="record-actions">
+                          <button
+                            onClick={() => handleEditClick(record)}
+                            className="action-button action-button--edit"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(record.id)}
+                            className="action-button action-button--delete"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

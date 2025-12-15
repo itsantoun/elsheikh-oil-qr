@@ -1,135 +1,87 @@
 // utils/stockCalculator.js
-import { ref, get, set, push, update } from 'firebase/database';
+import { ref, get, query, orderByChild, startAt, endAt } from 'firebase/database';
 
-export const calculateProductStock = async (barcode, database) => {
+export const calculateStockForDateRange = async (barcode, database, fromDate = null, toDate = null) => {
   try {
-    const db = database;
+    // 1. Get product quantity from Products collection
+    const productRef = ref(database, `products/${barcode}`);
+    const productSnap = await get(productRef);
     
-    // Get all relevant data in parallel
-    const [productSnap, transactionsSnap, soldItemsSnap] = await Promise.all([
-      get(ref(db, `products/${barcode}`)),
-      get(ref(db, 'transactions')),
-      get(ref(db, 'SoldItems'))
-    ]);
-    
-    // Get initial quantity from product
-    let initialQuantity = 0;
-    let productName = '';
-    
-    if (productSnap.exists()) {
-      const productData = productSnap.val();
-      initialQuantity = parseFloat(productData.quantity) || 0;
-      productName = productData.name || '';
+    if (!productSnap.exists()) {
+      throw new Error('Product not found');
     }
     
+    const productData = productSnap.val();
+    const initialQuantity = parseFloat(productData.quantity) || 0;
+    const productName = productData.name || '';
+    
+    // 2. Get SoldItems for this product in date range
+    const soldItemsRef = ref(database, 'SoldItems');
+    let soldItemsQuery = soldItemsRef;
+    
+    // Filter by date if provided
+    if (fromDate || toDate) {
+      const startDate = fromDate ? new Date(fromDate).getTime() : 0;
+      const endDate = toDate ? new Date(toDate).getTime() : Date.now() + 86400000; // Add 1 day
+      
+      soldItemsQuery = query(
+        soldItemsRef,
+        orderByChild('dateScanned'),
+        startAt(startDate),
+        endAt(endDate)
+      );
+    }
+    
+    const soldItemsSnap = await get(soldItemsQuery);
+    
+    // 3. Calculate total sold for this specific product
     let totalSold = 0;
-    let transactionsCount = 0;
-    let soldItemsCount = 0;
     
-    // Sum from transactions (CONFIRMED status)
-    if (transactionsSnap.exists()) {
-      const transactions = transactionsSnap.val();
-      Object.values(transactions).forEach(transaction => {
-        const transBarcode = transaction.barcode || transaction.productId;
-        const transName = transaction.name || transaction.productName;
-        
-        // Match by barcode OR name
-        const matchesProduct = 
-          transBarcode === barcode ||
-          (productName && transName && 
-           transName.toLowerCase() === productName.toLowerCase());
-        
-        if (matchesProduct && transaction.paymentStatus === 'Confirmed') {
-          const quantity = parseFloat(transaction.quantity) || 0;
-          totalSold += quantity;
-          transactionsCount += quantity;
-        }
-      });
-    }
-    
-    // Sum from SoldItems (PAID status)
     if (soldItemsSnap.exists()) {
       const soldItems = soldItemsSnap.val();
+      
       Object.values(soldItems).forEach(item => {
-        const itemBarcode = item.barcode || '';
-        const itemName = item.name || '';
-        
-        // Match by barcode OR name
+        // Match by barcode OR product name
         const matchesProduct = 
-          itemBarcode === barcode ||
-          (productName && itemName && 
-           itemName.toLowerCase() === productName.toLowerCase());
+          (item.barcode && item.barcode === barcode) ||
+          (item.name && productName && 
+           item.name.toLowerCase() === productName.toLowerCase());
         
+        // Only count PAID items (not unpaid or stock)
         if (matchesProduct && item.paymentStatus === 'Paid') {
-          const quantity = parseFloat(item.quantity) || 0;
-          totalSold += quantity;
-          soldItemsCount += quantity;
+          totalSold += parseFloat(item.quantity) || 0;
         }
       });
     }
     
+    // 4. Calculate remaining stock
     const calculatedRemaining = initialQuantity - totalSold;
     
     return {
-      barcode,
-      productName,
-      initialQuantity,
-      totalSold,
-      calculatedRemaining,
-      breakdown: {
-        fromTransactions: transactionsCount,
-        fromSoldItems: soldItemsCount
+      success: true,
+      product: {
+        barcode,
+        name: productName,
+        initialQuantity
       },
-      lastCalculated: new Date().toISOString(),
-      isValid: calculatedRemaining >= 0
+      sold: {
+        totalSold,
+        dateRange: {
+          from: fromDate,
+          to: toDate
+        }
+      },
+      calculation: {
+        remaining: calculatedRemaining,
+        formula: `${initialQuantity} - ${totalSold} = ${calculatedRemaining}`
+      }
     };
     
   } catch (error) {
-    console.error('Error in calculateProductStock:', error);
-    throw error;
-  }
-};
-
-export const validateStockQuantity = (currentQuantity, newQuantity, varianceThreshold = 0.1) => {
-  const current = parseFloat(currentQuantity) || 0;
-  const newQty = parseFloat(newQuantity) || 0;
-  
-  if (newQty < 0) {
+    console.error('Error calculating stock:', error);
     return {
-      valid: false,
-      message: 'Quantity cannot be negative',
-      discrepancy: 0
+      success: false,
+      error: error.message
     };
-  }
-  
-  const discrepancy = Math.abs(current - newQty);
-  const percentageDiff = current > 0 ? (discrepancy / current) * 100 : 100;
-  
-  if (percentageDiff > varianceThreshold * 100) {
-    return {
-      valid: false,
-      message: `Large variance detected: ${percentageDiff.toFixed(1)}%`,
-      discrepancy,
-      percentageDiff
-    };
-  }
-  
-  return {
-    valid: true,
-    message: 'Quantity validated',
-    discrepancy,
-    percentageDiff
-  };
-};
-
-export const logStockChange = async (database, changeData) => {
-  try {
-    const logRef = ref(database, 'stockAuditLogs');
-    await set(push(logRef), {
-      ...changeData,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Failed to log stock change:', error);
   }
 };

@@ -20,6 +20,7 @@ const RemainingProducts = () => {
   const [activeTab, setActiveTab]               = useState('check');
   const [isLoading, setIsLoading]               = useState(false);
   const [isArchiving, setIsArchiving]           = useState(false);
+  const [isRestoring, setIsRestoring]           = useState(false);
 
   const [countedQty, setCountedQty]     = useState({});
   const [reconfirmQty, setReconfirmQty] = useState({});
@@ -467,6 +468,51 @@ const RemainingProducts = () => {
     }
   };
 
+  const handleRestoreArchive = async () => {
+    if (!selectedArchive) {
+      showError('Select an archive first.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Restore archive from ${formatDate(selectedArchive.archivedAt)}?\n\n` +
+      'This will overwrite current live products, SoldItems, stockChecks, and stockCheckHistory.'
+    );
+    if (!confirmed) return;
+
+    setIsRestoring(true);
+    try {
+      const productsPayload = objCount(selectedArchive.products) ? selectedArchive.products : null;
+      const soldItemsPayload = objCount(selectedArchive.soldItems) ? selectedArchive.soldItems : null;
+      const checksPayload = objCount(selectedArchive.stockChecks) ? selectedArchive.stockChecks : null;
+      const historyPayload = objCount(selectedArchive.stockCheckHistory) ? selectedArchive.stockCheckHistory : null;
+
+      await Promise.all([
+        set(ref(database, 'products'), productsPayload),
+        set(ref(database, 'SoldItems'), soldItemsPayload),
+        set(ref(database, 'stockChecks'), checksPayload),
+        set(ref(database, 'stockCheckHistory'), historyPayload),
+      ]);
+
+      await fetchData();
+      setCountedQty({});
+      setReconfirmQty({});
+      if (activeTab === 'history') fetchHistory(historyMonth);
+      if (activeTab === 'archives') fetchArchives();
+
+      showSuccess(`Archive restored successfully (${objCount(selectedArchive.products)} products).`);
+    } catch (err) {
+      console.error(err);
+      if (err?.code === 'PERMISSION_DENIED') {
+        showError('Permission denied. Check read/write rules for products, SoldItems, stockChecks, and stockCheckHistory.');
+      } else {
+        showError('Failed to restore archive. Please try again.');
+      }
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   // ── Render: Check tab ──────────────────────────────────────────────────────
 
   const renderCheckTab = () => (
@@ -485,7 +531,7 @@ const RemainingProducts = () => {
           <button
             onClick={handleArchiveAllStock}
             className="btn-danger"
-            disabled={isArchiving || isLoading || products.length === 0}
+            disabled={isArchiving || isRestoring || isLoading || products.length === 0}
             title="Archive and clear all live products, sold items, and stock checks"
           >
             {isArchiving ? '🗄️ Archiving...' : '🗄️ Archive & Clear All'}
@@ -859,7 +905,17 @@ const RemainingProducts = () => {
                 </div>
               ) : (
                 <div style={{ padding: 16 }}>
-                  <h3 style={{ marginTop: 0, marginBottom: 12 }}>Archive Details</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <h3 style={{ margin: 0 }}>Archive Details</h3>
+                    <button
+                      className="btn-warning"
+                      onClick={handleRestoreArchive}
+                      disabled={isRestoring || archiveDetailLoading}
+                      title="Restore this archive to live products, sold items, checks, and history"
+                    >
+                      {isRestoring ? '🔄 Restoring...' : '♻️ Restore This Archive'}
+                    </button>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                     <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
                       <div style={{ fontSize: 12, color: '#666' }}>Archived At</div>

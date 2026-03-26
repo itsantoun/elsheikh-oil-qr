@@ -391,11 +391,9 @@ const RemainingProducts = () => {
   // ── Actions: archive all stock and reset ──────────────────────────────────
 
   const handleArchiveAllStock = async () => {
-    if (products.length === 0) { showError('No products available to archive.'); return; }
-
     const confirmed = window.confirm(
-      'Archive all current stock data + all Sold Items and start fresh?\n\n' +
-      'This keeps product quantities unchanged, stores snapshots in "stockArchives", and clears live SoldItems + stock check history.'
+      'Archive ALL products + Sold Items and start from scratch?\n\n' +
+      'This applies to all products in the database and will remove live products, SoldItems, stockChecks, and stockCheckHistory after archiving.'
     );
     if (!confirmed) return;
 
@@ -404,50 +402,51 @@ const RemainingProducts = () => {
     const archiveId = archivedAt.replace(/[.:]/g, '-');
 
     try {
-      const [checksSnap, historySnap, soldSnap] = await Promise.all([
+      const [productsSnap, checksSnap, historySnap, soldSnap] = await Promise.all([
+        get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'stockCheckHistory')),
         get(ref(database, 'SoldItems')),
       ]);
 
-      const productSnapshot = products.reduce((acc, product) => {
+      if (!productsSnap.exists()) {
+        showError('No products available to archive.');
+        return;
+      }
+
+      const allProducts = Object.entries(productsSnap.val()).map(([id, value]) => ({ id, ...value }));
+
+      const productSnapshot = allProducts.reduce((acc, product) => {
         acc[product.id] = { ...product };
         return acc;
       }, {});
 
+      const allChecks = checksSnap.exists() ? checksSnap.val() : {};
+      const pendingFromDb = Object.values(allChecks).filter((check) => check?.status === 'pending').length;
+
       await set(ref(database, `stockArchives/${archiveId}`), {
         archivedAt,
         summary: {
-          productsArchived: products.length,
+          productsArchived: allProducts.length,
           soldItemsArchived: soldSnap.exists() ? Object.keys(soldSnap.val()).length : 0,
-          pendingChecksArchived: pendingChecks.length,
+          pendingChecksArchived: pendingFromDb,
           historyMonthsArchived: historySnap.exists() ? Object.keys(historySnap.val()).length : 0,
         },
         products: productSnapshot,
         soldItems: soldSnap.exists() ? soldSnap.val() : {},
-        stockChecks: checksSnap.exists() ? checksSnap.val() : {},
+        stockChecks: allChecks,
         stockCheckHistory: historySnap.exists() ? historySnap.val() : {},
       });
 
-      const resetChecks = {};
-      products.forEach((product) => {
-        const currentQty = parseFloat(product.quantity) || 0;
-        resetChecks[product.id] = {
-          productName: product.name || '',
-          systemQuantity: currentQty,
-          countedQuantity: currentQty,
-          status: 'accurate',
-          checkedAt: archivedAt,
-          resetFromArchive: archiveId,
-        };
-      });
-
       await Promise.all([
+        set(ref(database, 'products'), null),
         set(ref(database, 'stockCheckHistory'), null),
         set(ref(database, 'SoldItems'), null),
-        set(ref(database, 'stockChecks'), resetChecks),
+        set(ref(database, 'stockChecks'), null),
       ]);
 
+      setProducts([]);
+      setFilteredProducts([]);
       setPendingChecks([]);
       setCountedQty({});
       setReconfirmQty({});
@@ -455,7 +454,7 @@ const RemainingProducts = () => {
       setHistoryData([]);
       if (activeTab === 'archives') fetchArchives();
 
-      showSuccess(`Archived stock + sold data for ${products.length} products and started fresh. Product quantities were not changed.`);
+      showSuccess(`Archived and cleared all live stock data (${allProducts.length} products). You can now start from scratch.`);
     } catch (err) {
       console.error(err);
       if (err?.code === 'PERMISSION_DENIED') {
@@ -487,9 +486,9 @@ const RemainingProducts = () => {
             onClick={handleArchiveAllStock}
             className="btn-danger"
             disabled={isArchiving || isLoading || products.length === 0}
-            title="Archive old stock + SoldItems data and reset tracking without changing product quantities"
+            title="Archive and clear all live products, sold items, and stock checks"
           >
-            {isArchiving ? '🗄️ Archiving...' : '🗄️ Archive Stock + Sales Data'}
+            {isArchiving ? '🗄️ Archiving...' : '🗄️ Archive & Clear All'}
           </button>
           <button onClick={() => setScannerOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             📷 Scan Barcode

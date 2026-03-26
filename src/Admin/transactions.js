@@ -1010,7 +1010,7 @@ const Transactions = () => {
                 <th>Product</th>
                 <th>Quantity</th>
                 <th>Sell Price</th>
-                <th>Buy Price</th>
+                <th>Purchasing Price</th>
                 <th>Total Cost</th>
                 <th>Profit</th>
                 <th>Status</th>

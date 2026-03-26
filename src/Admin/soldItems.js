@@ -25,7 +25,8 @@ const SoldItems = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [newDate, setNewDate] = useState('');
   const [newRemark, setNewRemark] = useState('');
-  const [newTotalCost, setNewTotalCost] = useState('');
+  const [newSellPrice, setNewSellPrice] = useState('');
+  const [newPurchasingPrice, setNewPurchasingPrice] = useState('');
   const [newPaymentStatus, setNewPaymentStatus] = useState('');
   const [newCustomer, setNewCustomer] = useState('');
   const [newProductType, setNewProductType] = useState('');
@@ -369,9 +370,11 @@ const SoldItems = () => {
   // Edit functions
   const handleEdit = (item) => {
     if (!item || !item.id) return;
+    const metrics = getItemProfitMetrics(item);
     setEditingItem(item);
     setNewRemark(item.remark || '');
-    setNewTotalCost(item.totalCost || '');
+    setNewSellPrice(metrics.unitSellPrice);
+    setNewPurchasingPrice(metrics.unitPurchasePrice);
     setNewPaymentStatus(item.paymentStatus || 'Paid');
     setNewCustomer(item.customerName || '');
     setNewProductType(item.name || '');
@@ -388,18 +391,18 @@ const SoldItems = () => {
     // Convert date from local format to ISO string
     const dateToSave = newDate ? new Date(newDate).toISOString() : new Date().toISOString();
     const parsedQuantity = toNumber(newQuantity);
-    const unitSellPrice = toNumber(editingItem.itemCost);
-    const parsedInputCost = parseFloat(newTotalCost);
-    const hasInputCost = Number.isFinite(parsedInputCost);
+    const unitSellPrice = toNumber(newSellPrice);
+    const unitPurchasingPrice = toNumber(newPurchasingPrice);
     const stockLike = isStockLikeStatus(newPaymentStatus);
     const computedTotalCost = stockLike
       ? 0
-      : (hasInputCost ? parsedInputCost : unitSellPrice * parsedQuantity);
+      : unitSellPrice * parsedQuantity;
     const profitMetrics = getItemProfitMetrics(editingItem, {
       quantity: parsedQuantity,
       totalCost: computedTotalCost,
       paymentStatus: newPaymentStatus,
       itemCost: unitSellPrice,
+      purchasingPrice: unitPurchasingPrice,
     });
     
     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
@@ -407,12 +410,13 @@ const SoldItems = () => {
       await update(itemRef, {
         remark: newRemark,
         totalCost: computedTotalCost,
+        itemCost: unitSellPrice,
         paymentStatus: newPaymentStatus,
         customerName: newCustomer,
         name: newProductType,
         quantity: parsedQuantity,
         dateScanned: dateToSave,
-        purchasingPrice: profitMetrics.unitPurchasePrice,
+        purchasingPrice: unitPurchasingPrice,
         unitProfit: profitMetrics.profit,
         totalProfit: profitMetrics.totalProfitAmount,
       });
@@ -423,12 +427,13 @@ const SoldItems = () => {
               ...item,
               remark: newRemark,
               totalCost: computedTotalCost,
+              itemCost: unitSellPrice,
               paymentStatus: newPaymentStatus,
               customerName: newCustomer,
               name: newProductType,
               quantity: parsedQuantity,
               dateScanned: dateToSave,
-              purchasingPrice: profitMetrics.unitPurchasePrice,
+              purchasingPrice: unitPurchasingPrice,
               unitProfit: profitMetrics.profit,
               totalProfit: profitMetrics.totalProfitAmount,
             }
@@ -784,11 +789,21 @@ const SoldItems = () => {
             <tbody>
               {filteredItems.map((item) => {
                 const liveMetrics = getItemProfitMetrics(item);
-                const editingMetrics = editingItem && editingItem.id === item.id
+                const isEditing = editingItem && editingItem.id === item.id;
+                const editedStatus = newPaymentStatus || item.paymentStatus;
+                const editedQuantity = toNumber(newQuantity);
+                const editedSellPrice = toNumber(newSellPrice);
+                const editedPurchasingPrice = toNumber(newPurchasingPrice);
+                const editedTotalCost = isStockLikeStatus(editedStatus)
+                  ? 0
+                  : editedSellPrice * editedQuantity;
+                const editingMetrics = isEditing
                   ? getItemProfitMetrics(item, {
-                    quantity: toNumber(newQuantity),
-                    totalCost: toNumber(newTotalCost),
-                    paymentStatus: newPaymentStatus || item.paymentStatus,
+                    quantity: editedQuantity,
+                    totalCost: editedTotalCost,
+                    paymentStatus: editedStatus,
+                    itemCost: editedSellPrice,
+                    purchasingPrice: editedPurchasingPrice,
                   })
                   : null;
                 const rowMetrics = editingMetrics || liveMetrics;
@@ -796,7 +811,7 @@ const SoldItems = () => {
                 return (
                 <tr key={item.id} className={checkedItems.includes(item.id) ? 'checked-row' : ''}>
                   <td className="date-cell">
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <input
                         type="datetime-local"
                         value={newDate || ''}
@@ -808,7 +823,7 @@ const SoldItems = () => {
                     )}
                   </td>
                   <td>
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <select 
                         value={newCustomer} 
                         onChange={(e) => setNewCustomer(e.target.value)}
@@ -826,7 +841,7 @@ const SoldItems = () => {
                     )}
                   </td>
                   <td>
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <input
                         type="text"
                         value={newProductType}
@@ -838,7 +853,7 @@ const SoldItems = () => {
                     )}
                   </td>
                   <td>
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <input
                         type="number"
                         value={newQuantity}
@@ -849,11 +864,35 @@ const SoldItems = () => {
                       item.quantity || 0
                     )}
                   </td>
-                  <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
-                  <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={newSellPrice}
+                        onChange={(e) => setNewSellPrice(e.target.value)}
+                        className="edit-input"
+                      />
+                    ) : (
+                      `$${rowMetrics.unitSellPrice.toFixed(2)}`
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={newPurchasingPrice}
+                        onChange={(e) => setNewPurchasingPrice(e.target.value)}
+                        className="edit-input"
+                      />
+                    ) : (
+                      `$${rowMetrics.unitPurchasePrice.toFixed(2)}`
+                    )}
+                  </td>
                   <td>{item.scannedBy || 'N/A'}</td>
                   <td>
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <input
                         type="text"
                         value={newRemark}
@@ -864,25 +903,14 @@ const SoldItems = () => {
                       item.remark || 'N/A'
                     )}
                   </td>
-                  <td>
-                    {editingItem && editingItem.id === item.id ? (
-                      <input
-                        type="number"
-                        value={newTotalCost}
-                        onChange={(e) => setNewTotalCost(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      `$${rowMetrics.revenue.toFixed(2)}`
-                    )}
-                  </td>
+                  <td>{`$${rowMetrics.revenue.toFixed(2)}`}</td>
                   <td>
                     <span style={{ color: rowMetrics.profit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}>
                       ${rowMetrics.profit.toFixed(2)}
                     </span>
                   </td>
                   <td>
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <select
                         value={newPaymentStatus}
                         onChange={(e) => setNewPaymentStatus(e.target.value)}
@@ -922,7 +950,7 @@ const SoldItems = () => {
                     )}
                   </td>
                   <td>
-                    {editingItem && editingItem.id === item.id ? (
+                    {isEditing ? (
                       <div className="action-buttons">
                         <button className="btn-small btn-success" onClick={saveEditedItem}>
                           Save

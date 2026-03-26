@@ -27,6 +27,20 @@ const FetchProducts = () => {
 
   const rowRef = useRef(null);
 
+  const toNumber = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const getProfitMetrics = (product) => {
+    const sellingPrice = toNumber(product?.itemCost);
+    const purchasingPrice = toNumber(product?.purchasingPrice);
+    const quantity = toNumber(product?.quantity);
+    const unitProfit = sellingPrice - purchasingPrice;
+    const totalProfit = unitProfit * quantity;
+    return { unitProfit, totalProfit };
+  };
+
   // Format date to DD-MM-YYYY
   const formatDate = (dateString) => {
     try {
@@ -352,7 +366,16 @@ const FetchProducts = () => {
       return;
     }
 
-    const worksheet = XLSX.utils.json_to_sheet(products);
+    const exportRows = products.map((product) => {
+      const metrics = getProfitMetrics(product);
+      return {
+        ...product,
+        unitProfit: Number(metrics.unitProfit.toFixed(2)),
+        totalProfit: Number(metrics.totalProfit.toFixed(2)),
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
     XLSX.writeFile(workbook, `products_${formatDate(new Date())}.xlsx`);
@@ -454,6 +477,16 @@ const FetchProducts = () => {
     if (sortBy.field !== field) return '↕️';
     return sortBy.order === 'asc' ? '↑' : '↓';
   };
+
+  const filteredProductsProfitTotal = filteredProducts.reduce(
+    (sum, product) => sum + getProfitMetrics(product).totalProfit,
+    0
+  );
+
+  const heldProductsProfitTotal = heldProducts.reduce(
+    (sum, product) => sum + getProfitMetrics(product).totalProfit,
+    0
+  );
 
   const renderProductsTab = () => (
     <div className="products-content">
@@ -646,7 +679,7 @@ const FetchProducts = () => {
           <div className="table-header">
             <h3>Product List</h3>
             <div className="table-stats">
-              Showing {filteredProducts.length} of {products.length} products
+              Showing {filteredProducts.length} of {products.length} products • Potential Profit: ${filteredProductsProfitTotal.toFixed(2)}
             </div>
           </div>
           
@@ -684,11 +717,15 @@ const FetchProducts = () => {
                   <th className="text-right">Quantity</th>
                   <th className="text-right">Selling Price</th>
                   <th className="text-right">Purchasing Price</th>
+                  <th className="text-right">Unit Profit</th>
+                  <th className="text-right">Total Profit</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => (
+                {filteredProducts.map((product) => {
+                  const metrics = getProfitMetrics(product);
+                  return (
                   <tr 
                     key={product.id} 
                     ref={editingProduct?.id === product.id ? rowRef : null}
@@ -780,6 +817,22 @@ const FetchProducts = () => {
                         <span className="price-cell cost">${parseFloat(product.purchasingPrice || 0).toFixed(2)}</span>
                       )}
                     </td>
+                    <td className="text-right">
+                      <span
+                        className="price-cell"
+                        style={{ color: metrics.unitProfit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}
+                      >
+                        ${metrics.unitProfit.toFixed(2)}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <span
+                        className="price-cell"
+                        style={{ color: metrics.totalProfit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}
+                      >
+                        ${metrics.totalProfit.toFixed(2)}
+                      </span>
+                    </td>
                     <td>
                       <div className="action-buttons">
                         {editingProduct && editingProduct.id === product.id ? (
@@ -807,7 +860,7 @@ const FetchProducts = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>
@@ -836,6 +889,9 @@ const FetchProducts = () => {
           <div className="stats-badge">
             {heldProducts.length} Hold
           </div>
+          <div className="stats-badge">
+            Potential Profit: ${heldProductsProfitTotal.toFixed(2)}
+          </div>
         </div>
         <div className="header-right">
           <button 
@@ -860,12 +916,16 @@ const FetchProducts = () => {
                   <th className="text-right">Quantity</th>
                   <th className="text-right">Selling Price</th>
                   <th className="text-right">Purchasing Price</th>
+                  <th className="text-right">Unit Profit</th>
+                  <th className="text-right">Total Profit</th>
                   <th>Hold Date</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {heldProducts.map((product) => (
+                {heldProducts.map((product) => {
+                  const metrics = getProfitMetrics(product);
+                  return (
                   <tr key={product.id}>
                     <td>
                       <span className="barcode-cell">{product.id}</span>
@@ -885,6 +945,22 @@ const FetchProducts = () => {
                     <td className="text-right">
                       <span className="price-cell cost">${parseFloat(product.purchasingPrice || 0).toFixed(2)}</span>
                     </td>
+                    <td className="text-right">
+                      <span
+                        className="price-cell"
+                        style={{ color: metrics.unitProfit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}
+                      >
+                        ${metrics.unitProfit.toFixed(2)}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <span
+                        className="price-cell"
+                        style={{ color: metrics.totalProfit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}
+                      >
+                        ${metrics.totalProfit.toFixed(2)}
+                      </span>
+                    </td>
                     <td>
                       <span className="date-cell">{formatDate(product.heldDate)}</span>
                     </td>
@@ -897,7 +973,7 @@ const FetchProducts = () => {
                       </button>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>

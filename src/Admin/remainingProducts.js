@@ -75,6 +75,8 @@ const RemainingProducts = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   };
 
+  const hasStock = (product) => (parseFloat(product?.quantity) || 0) > 0;
+
   const objCount = (obj) => (obj && typeof obj === 'object' ? Object.keys(obj).length : 0);
 
   const historyEntriesCount = (historyObj) => {
@@ -109,7 +111,7 @@ const RemainingProducts = () => {
         const list = Object.entries(prodSnap.val()).map(([id, v]) => ({ id, ...v }));
         list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         setProducts(list);
-        setFilteredProducts(list);
+        setFilteredProducts(list.filter(hasStock));
       } else {
         setProducts([]); setFilteredProducts([]);
       }
@@ -154,9 +156,10 @@ const RemainingProducts = () => {
   useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
-    if (!searchTerm.trim()) { setFilteredProducts(products); return; }
+    const stockProducts = products.filter(hasStock);
+    if (!searchTerm.trim()) { setFilteredProducts(stockProducts); return; }
     const t = searchTerm.toLowerCase();
-    setFilteredProducts(products.filter(p =>
+    setFilteredProducts(stockProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
   }, [searchTerm, products]);
@@ -255,14 +258,14 @@ const RemainingProducts = () => {
       scanCoolRef.current = setTimeout(() => { scanCoolRef.current = null; }, 2500);
 
       const barcode = result.getText();
-      const found = products.find(p => p.id === barcode);
+      const found = products.find(p => p.id === barcode && hasStock(p));
       if (found) {
         setScannerPaused(true);
         setScannedProduct(found);
         setScanQty('');
         setScanStatus(`Found: ${found.name}`);
       } else {
-        setScanStatus(`Barcode "${barcode}" not found in products.`);
+        setScanStatus(`Barcode "${barcode}" not found in active stock.`);
         setTimeout(() => setScanStatus('Align barcode within the frame.'), 2500);
       }
     }, { tryHarder: false, constraints: { video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } } } })
@@ -452,9 +455,9 @@ const RemainingProducts = () => {
         set(ref(database, 'stockChecks'), null),
       ]);
 
-      const localResetProducts = allProducts.map((product) => ({ ...product, quantity: 0 }));
-      setProducts(localResetProducts);
-      setFilteredProducts(localResetProducts);
+      // In RemainingProducts, start fresh by clearing the visible stock list immediately.
+      setProducts([]);
+      setFilteredProducts([]);
       setPendingChecks([]);
       setCountedQty({});
       setReconfirmQty({});
@@ -462,7 +465,7 @@ const RemainingProducts = () => {
       setHistoryData([]);
       if (activeTab === 'archives') fetchArchives();
 
-      showSuccess(`Archived stock data and reset quantities to 0 for ${allProducts.length} products.`);
+      showSuccess(`Archived stock data and reset quantities to 0 for ${allProducts.length} products. Remaining stock list is now cleared.`);
     } catch (err) {
       console.error(err);
       if (err?.code === 'PERMISSION_DENIED') {
@@ -1112,7 +1115,7 @@ const RemainingProducts = () => {
 
       <div className="tab-navigation">
         <button onClick={() => setActiveTab('check')}   className={`tab-button ${activeTab === 'check'   ? 'active' : ''}`}>
-          <span className="tab-icon">🔍</span><span className="tab-label">Check Stock ({products.length})</span>
+          <span className="tab-icon">🔍</span><span className="tab-label">Check Stock ({products.filter(hasStock).length})</span>
         </button>
         <button onClick={() => setActiveTab('pending')} className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}>
           <span className="tab-icon">⚠️</span><span className="tab-label">Pending ({pendingChecks.length})</span>

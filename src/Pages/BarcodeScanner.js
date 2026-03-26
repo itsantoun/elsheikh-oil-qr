@@ -1114,6 +1114,38 @@ const BarcodeScanner = () => {
     }
   }, []);
 
+  const calculateSaleProfit = useCallback((item, overrides = {}) => {
+    const merged = { ...item, ...overrides };
+    const parsedQuantity = parseFloat(merged.quantity);
+    const quantityValue = Number.isFinite(parsedQuantity) ? parsedQuantity : 0;
+    const isStockStatus = String(merged.paymentStatus || '').toLowerCase().startsWith('stock');
+
+    const parsedSellPrice = parseFloat(merged.itemCost);
+    const hasSellPrice = Number.isFinite(parsedSellPrice);
+    const parsedBuyPrice = parseFloat(merged.purchasingPrice);
+    const hasBuyPrice = Number.isFinite(parsedBuyPrice);
+    const parsedTotalCost = parseFloat(merged.totalCost);
+    const hasTotalCost = Number.isFinite(parsedTotalCost);
+
+    const unitSellPrice = hasSellPrice ? parsedSellPrice : 0;
+    const unitBuyPrice = hasBuyPrice ? parsedBuyPrice : 0;
+    const revenue = isStockStatus
+      ? 0
+      : (hasTotalCost ? parsedTotalCost : unitSellPrice * quantityValue);
+    const purchaseCost = isStockStatus ? 0 : unitBuyPrice * quantityValue;
+    const profit = revenue - purchaseCost;
+
+    return {
+      quantity: quantityValue,
+      isStockStatus,
+      unitSellPrice,
+      unitBuyPrice,
+      revenue,
+      purchaseCost,
+      profit,
+    };
+  }, []);
+
   const toggleCamera = useCallback(() => {
     setCameraActive(prev => !prev);
     setScannerPaused(prev => !prev);
@@ -1126,7 +1158,18 @@ const BarcodeScanner = () => {
     }
 
     setIsProcessing(true);
-    const totalCost = paymentStatus === 'Stock' ? 0 : scannedProduct.itemCost * quantity;
+    const saleUnitPrice = parseFloat(scannedProduct.itemCost) || 0;
+    const purchaseUnitPrice = parseFloat(scannedProduct.purchasingPrice) || 0;
+    const totalCost = paymentStatus === 'Stock' ? 0 : saleUnitPrice * quantity;
+    const profitMetrics = calculateSaleProfit(
+      {
+        quantity,
+        paymentStatus,
+        itemCost: saleUnitPrice,
+        purchasingPrice: purchaseUnitPrice,
+        totalCost,
+      }
+    );
     const scannedBy = name || 'Unknown';
     const customer = customers.find(c => c.id === selectedCustomer);
 
@@ -1149,8 +1192,11 @@ const BarcodeScanner = () => {
       customerName: customer.name,
       quantity: quantity,
       paymentStatus: paymentStatus,
-      itemCost: scannedProduct.itemCost,
+      itemCost: saleUnitPrice,
+      purchasingPrice: purchaseUnitPrice,
       totalCost: totalCost,
+      unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
+      totalProfit: profitMetrics.profit,
       remark: remark,
     };
 
@@ -1175,7 +1221,7 @@ const BarcodeScanner = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [scannedProduct, selectedCustomer, quantity, name, customers, paymentStatus, remark]);
+  }, [scannedProduct, selectedCustomer, quantity, name, customers, paymentStatus, remark, calculateSaleProfit]);
 
   const handlePaymentStatusChange = useCallback((e) => {
     setPaymentStatus(e.target.value);
@@ -1205,12 +1251,16 @@ const BarcodeScanner = () => {
         );
 
         if (itemKey) {
+          const profitMetrics = calculateSaleProfit(item);
           const updatedItemRef = ref(database, `SoldItems/${itemKey}`);
           await update(updatedItemRef, {
-            quantity: item.quantity,
-            totalCost: item.totalCost,
+            quantity: profitMetrics.quantity,
+            totalCost: profitMetrics.revenue,
             paymentStatus: item.paymentStatus,
             remark: item.remark,
+            purchasingPrice: profitMetrics.unitBuyPrice,
+            unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
+            totalProfit: profitMetrics.profit,
           });
 
           setEditingItem(null);
@@ -1222,7 +1272,7 @@ const BarcodeScanner = () => {
       console.error("Error updating item:", error);
       setDialogMessage("Error updating item in the database.");
     }
-  }, []);
+  }, [calculateSaleProfit]);
 
   const handleClosePopup = useCallback(() => {
     setIsPopupOpen(false);
@@ -1239,6 +1289,16 @@ const BarcodeScanner = () => {
   const toggleScannedItems = useCallback(() => {
     setShowScannedItems(prev => !prev);
   }, []);
+
+  const popupProfitMetrics = scannedProduct
+    ? calculateSaleProfit({
+      quantity,
+      paymentStatus,
+      itemCost: scannedProduct.itemCost,
+      purchasingPrice: scannedProduct.purchasingPrice,
+      totalCost: paymentStatus === 'Stock' ? 0 : (parseFloat(scannedProduct.itemCost) || 0) * quantity,
+    })
+    : null;
 
   if (!user) {
     return <div className="loading-message">Please log in to continue...</div>;
@@ -1478,6 +1538,21 @@ const BarcodeScanner = () => {
                       </div>
                     </div>
                   )}
+
+                  {popupProfitMetrics && quantity > 0 && (
+                    <div className="form-group">
+                      <label className="form-label">
+                        <span className="label-icon">📈</span>
+                        Estimated Profit
+                      </label>
+                      <div
+                        className="total-cost-display"
+                        style={{ color: popupProfitMetrics.profit >= 0 ? '#198754' : '#dc3545' }}
+                      >
+                        ${popupProfitMetrics.profit.toFixed(2)}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="payment-section">
@@ -1653,6 +1728,12 @@ const BarcodeScanner = () => {
                       </th>
                       <th>
                         <div className="table-header-cell">
+                          <span className="header-icon">📈</span>
+                          Profit
+                        </div>
+                      </th>
+                      <th>
+                        <div className="table-header-cell">
                           <span className="header-icon">💳</span>
                           Status
                         </div>
@@ -1678,7 +1759,9 @@ const BarcodeScanner = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {scannedItems.map((item, index) => (
+                    {scannedItems.map((item, index) => {
+                      const metrics = calculateSaleProfit(item);
+                      return (
                       <tr key={`${item.barcode}-${item.dateScanned}-${index}`}>
                         <td>
                           <div className="barcode-cell code">{item.barcode}</div>
@@ -1694,6 +1777,14 @@ const BarcodeScanner = () => {
                         </td>
                         <td>
                           <div className="cost-cell">${item.totalCost}</div>
+                        </td>
+                        <td>
+                          <div
+                            className="cost-cell"
+                            style={{ color: metrics.profit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}
+                          >
+                            ${metrics.profit.toFixed(2)}
+                          </div>
                         </td>
                         <td>
                           <div className={`status-cell status-${item.paymentStatus?.toLowerCase()}`}>
@@ -1725,7 +1816,7 @@ const BarcodeScanner = () => {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               ) : (

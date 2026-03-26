@@ -10,6 +10,8 @@ const Archives = () => {
   const [selectedArchive, setSelectedArchive] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailView, setDetailView] = useState('products');
+  const [detailSearchTerm, setDetailSearchTerm] = useState('');
   const [errorMessage, setErrorMessage] = useState(null);
 
   const showError = (msg) => {
@@ -38,6 +40,11 @@ const Archives = () => {
   const historyEntriesCount = (historyObj) => {
     if (!historyObj || typeof historyObj !== 'object') return 0;
     return Object.values(historyObj).reduce((sum, monthData) => sum + objCount(monthData), 0);
+  };
+
+  const matchesSearch = (values, searchText) => {
+    if (!searchText) return true;
+    return values.some((value) => String(value ?? '').toLowerCase().includes(searchText));
   };
 
   const fetchArchives = useCallback(async () => {
@@ -140,6 +147,11 @@ const Archives = () => {
     fetchArchiveDetails(selectedArchiveId);
   }, [selectedArchiveId, fetchArchiveDetails]);
 
+  useEffect(() => {
+    setDetailView('products');
+    setDetailSearchTerm('');
+  }, [selectedArchiveId]);
+
   const stockCount = archives.filter((archive) => archive.type === 'stock').length;
   const productCount = archives.filter((archive) => archive.type === 'product').length;
 
@@ -156,23 +168,289 @@ const Archives = () => {
       );
     }
 
+    const summary = selectedArchive.summary || {};
+    const isStockArchive = selectedArchive.type === 'stock';
+    const searchText = detailSearchTerm.trim().toLowerCase();
+
     const products = Object.entries(selectedArchive.products || {})
       .map(([id, value]) => ({ id, ...value }))
-      .slice(0, 10);
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    if (selectedArchive.type === 'stock') {
-      const summary = selectedArchive.summary || {};
+    const soldItems = isStockArchive
+      ? Object.entries(selectedArchive.soldItems || {})
+        .map(([id, value]) => ({ id, ...value }))
+        .sort((a, b) => new Date(b.dateScanned || 0) - new Date(a.dateScanned || 0))
+      : [];
+
+    const stockChecks = isStockArchive
+      ? Object.entries(selectedArchive.stockChecks || {})
+        .map(([id, value]) => ({ id, ...value }))
+        .sort((a, b) => new Date(b.reconfirmedAt || b.checkedAt || 0) - new Date(a.reconfirmedAt || a.checkedAt || 0))
+      : [];
+
+    const historyEntries = isStockArchive
+      ? Object.entries(selectedArchive.stockCheckHistory || {})
+        .flatMap(([month, monthData]) =>
+          Object.entries(monthData || {}).map(([entryId, entry]) => ({
+            id: `${month}:${entryId}`,
+            month,
+            ...entry,
+          }))
+        )
+        .sort((a, b) => new Date(b.checkedAt || 0) - new Date(a.checkedAt || 0))
+      : [];
+
+    const filteredProducts = products.filter((product) => (
+      matchesSearch(
+        [product.id, product.name, product.productType, product.quantity, product.purchasePrice, product.salePrice],
+        searchText
+      )
+    ));
+
+    const filteredSoldItems = soldItems.filter((item) => (
+      matchesSearch(
+        [item.id, item.barcode, item.productId, item.name, item.productName, item.customerName, item.customer, item.quantity, item.dateScanned],
+        searchText
+      )
+    ));
+
+    const filteredChecks = stockChecks.filter((check) => (
+      matchesSearch(
+        [check.id, check.productName, check.status, check.systemQuantity, check.countedQuantity, check.checkedAt, check.reconfirmedAt],
+        searchText
+      )
+    ));
+
+    const filteredHistoryEntries = historyEntries.filter((entry) => (
+      matchesSearch(
+        [entry.id, entry.month, entry.productId, entry.productName, entry.status, entry.systemQuantity, entry.countedQuantity, entry.checkedAt],
+        searchText
+      )
+    ));
+
+    const viewOptions = isStockArchive
+      ? [
+        { key: 'products', label: `Products (${products.length})` },
+        { key: 'soldItems', label: `Sold Items (${soldItems.length})` },
+        { key: 'stockChecks', label: `Checks (${stockChecks.length})` },
+        { key: 'history', label: `History (${historyEntries.length})` },
+      ]
+      : [{ key: 'products', label: `Products (${products.length})` }];
+
+    const activeView = viewOptions.some((option) => option.key === detailView) ? detailView : 'products';
+    const activeViewLabel = activeView === 'products'
+      ? 'products'
+      : activeView === 'soldItems'
+        ? 'sold items'
+        : activeView === 'stockChecks'
+          ? 'stock checks'
+          : 'history entries';
+
+    const totalRows = activeView === 'products'
+      ? products.length
+      : activeView === 'soldItems'
+        ? soldItems.length
+        : activeView === 'stockChecks'
+          ? stockChecks.length
+          : historyEntries.length;
+
+    const visibleRows = activeView === 'products'
+      ? filteredProducts.length
+      : activeView === 'soldItems'
+        ? filteredSoldItems.length
+        : activeView === 'stockChecks'
+          ? filteredChecks.length
+          : filteredHistoryEntries.length;
+
+    const renderActiveTable = () => {
+      if (activeView === 'products') {
+        if (filteredProducts.length === 0) {
+          return (
+            <div className="empty-table" style={{ padding: 26 }}>
+              <div className="empty-icon">🔎</div>
+              <p>No archived products match this search.</p>
+            </div>
+          );
+        }
+
+        const qtyLabel = isStockArchive ? 'Qty' : 'Qty Before Reset';
+        return (
+          <div className="table-container archive-table-container">
+            <table className="data-table archive-table">
+              <thead>
+                <tr>
+                  <th>Barcode</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th className="text-right">{qtyLabel}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProducts.map((product) => (
+                  <tr key={product.id}>
+                    <td><span className="barcode-cell">{product.id}</span></td>
+                    <td><span className="product-name-cell">{product.name || 'Unnamed'}</span></td>
+                    <td><span className="type-cell">{product.productType || 'General'}</span></td>
+                    <td className="text-right"><span className="quantity-cell">{product.quantity ?? 0}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      if (activeView === 'soldItems') {
+        if (filteredSoldItems.length === 0) {
+          return (
+            <div className="empty-table" style={{ padding: 26 }}>
+              <div className="empty-icon">🔎</div>
+              <p>No archived sold items match this search.</p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="table-container archive-table-container">
+            <table className="data-table archive-table">
+              <thead>
+                <tr>
+                  <th>Sold At</th>
+                  <th>Barcode</th>
+                  <th>Product</th>
+                  <th>Customer</th>
+                  <th className="text-right">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSoldItems.map((item) => (
+                  <tr key={item.id}>
+                    <td><span className="date-cell">{formatDateTime(item.dateScanned)}</span></td>
+                    <td><span className="barcode-cell">{item.barcode || item.productId || 'N/A'}</span></td>
+                    <td><span className="product-name-cell">{item.name || item.productName || 'Unknown Product'}</span></td>
+                    <td><span className="type-cell">{item.customerName || item.customer || '—'}</span></td>
+                    <td className="text-right"><span className="quantity-cell">{parseFloat(item.quantity) || 0}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      if (activeView === 'stockChecks') {
+        if (filteredChecks.length === 0) {
+          return (
+            <div className="empty-table" style={{ padding: 26 }}>
+              <div className="empty-icon">🔎</div>
+              <p>No archived stock checks match this search.</p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="table-container archive-table-container">
+            <table className="data-table archive-table">
+              <thead>
+                <tr>
+                  <th>Checked At</th>
+                  <th>Barcode</th>
+                  <th>Product</th>
+                  <th>Status</th>
+                  <th className="text-right">System Qty</th>
+                  <th className="text-right">Counted Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredChecks.map((check) => (
+                  <tr key={check.id}>
+                    <td><span className="date-cell">{formatDateTime(check.reconfirmedAt || check.checkedAt)}</span></td>
+                    <td><span className="barcode-cell">{check.id}</span></td>
+                    <td><span className="product-name-cell">{check.productName || 'Unnamed'}</span></td>
+                    <td>
+                      {check.status === 'pending' ? (
+                        <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>
+                          Pending
+                        </span>
+                      ) : (
+                        <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>
+                          Accurate
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-right"><span className="quantity-cell">{check.systemQuantity ?? 0}</span></td>
+                    <td className="text-right"><span className="quantity-cell">{check.countedQuantity ?? '—'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      if (filteredHistoryEntries.length === 0) {
+        return (
+          <div className="empty-table" style={{ padding: 26 }}>
+            <div className="empty-icon">🔎</div>
+            <p>No archived history entries match this search.</p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="table-container archive-table-container">
+          <table className="data-table archive-table">
+            <thead>
+              <tr>
+                <th>Checked At</th>
+                <th>Month</th>
+                <th>Barcode</th>
+                <th>Product</th>
+                <th>Status</th>
+                <th className="text-right">System Qty</th>
+                <th className="text-right">Counted Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredHistoryEntries.map((entry) => (
+                <tr key={entry.id}>
+                  <td><span className="date-cell">{formatDateTime(entry.checkedAt)}</span></td>
+                  <td><span className="type-cell">{entry.month}</span></td>
+                  <td><span className="barcode-cell">{entry.productId || 'N/A'}</span></td>
+                  <td><span className="product-name-cell">{entry.productName || 'Unnamed'}</span></td>
+                  <td>
+                    {entry.status === 'accurate' ? (
+                      <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>
+                        Accurate
+                      </span>
+                    ) : (
+                      <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>
+                        Inaccurate
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-right"><span className="quantity-cell">{entry.systemQuantity ?? 0}</span></td>
+                  <td className="text-right"><span className="quantity-cell">{entry.countedQuantity ?? '—'}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    };
+
+    if (isStockArchive) {
       const soldItemsCount = summary.soldItemsArchived ?? objCount(selectedArchive.soldItems);
       const checksCount = objCount(selectedArchive.stockChecks);
       const pendingChecks = Object.values(selectedArchive.stockChecks || {})
         .filter((check) => check?.status === 'pending').length;
       const historyMonths = summary.historyMonthsArchived ?? objCount(selectedArchive.stockCheckHistory);
-      const historyEntries = historyEntriesCount(selectedArchive.stockCheckHistory);
+      const historyCount = historyEntriesCount(selectedArchive.stockCheckHistory);
 
       return (
         <div style={{ padding: 16 }}>
           <h3 style={{ marginTop: 0, marginBottom: 12 }}>Stock Archive Details</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div className="archive-summary-grid">
             <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
               <div style={{ fontSize: 12, color: '#666' }}>Archived At</div>
               <div style={{ fontWeight: 700 }}>{formatDateTime(selectedArchive.archivedAt)}</div>
@@ -195,40 +473,46 @@ const Archives = () => {
             </div>
             <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
               <div style={{ fontSize: 12, color: '#666' }}>History Entries</div>
-              <div style={{ fontWeight: 700 }}>{historyEntries}</div>
+              <div style={{ fontWeight: 700 }}>{historyCount}</div>
             </div>
           </div>
 
-          {products.length > 0 && (
-            <div>
-              <h4 style={{ margin: '0 0 8px' }}>Sample Products</h4>
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Barcode</th>
-                      <th>Name</th>
-                      <th className="text-right">Qty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((product) => (
-                      <tr key={product.id}>
-                        <td><span className="barcode-cell">{product.id}</span></td>
-                        <td><span className="product-name-cell">{product.name || 'Unnamed'}</span></td>
-                        <td className="text-right"><span className="quantity-cell">{product.quantity ?? 0}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="archive-detail-controls">
+            <div className="tab-navigation archive-view-nav">
+              {viewOptions.map((option) => (
+                <button
+                  key={option.key}
+                  onClick={() => setDetailView(option.key)}
+                  className={`tab-button ${activeView === option.key ? 'active' : ''}`}
+                >
+                  <span className="tab-label">{option.label}</span>
+                </button>
+              ))}
             </div>
-          )}
+            <div className="archive-search-box">
+              <div className="search-input-group">
+                <input
+                  type="text"
+                  value={detailSearchTerm}
+                  onChange={(event) => setDetailSearchTerm(event.target.value)}
+                  className="search-input"
+                  placeholder={`Search ${activeViewLabel}...`}
+                />
+                {detailSearchTerm && (
+                  <button className="search-clear" onClick={() => setDetailSearchTerm('')} title="Clear search">
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="archive-search-meta">{visibleRows} of {totalRows} shown</div>
+            </div>
+          </div>
+
+          {renderActiveTable()}
         </div>
       );
     }
 
-    const summary = selectedArchive.summary || {};
     const productsCount = summary.productsArchived ?? objCount(selectedArchive.products);
     const qtyBeforeReset = summary.totalQuantityBeforeReset
       ?? products.reduce((sum, product) => sum + (parseFloat(product.quantity) || 0), 0);
@@ -236,7 +520,7 @@ const Archives = () => {
     return (
       <div style={{ padding: 16 }}>
         <h3 style={{ marginTop: 0, marginBottom: 12 }}>Product Archive Details</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div className="archive-summary-grid">
           <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
             <div style={{ fontSize: 12, color: '#666' }}>Archived At</div>
             <div style={{ fontWeight: 700 }}>{formatDateTime(selectedArchive.archivedAt)}</div>
@@ -251,33 +535,38 @@ const Archives = () => {
           </div>
         </div>
 
-        {products.length > 0 && (
-          <div>
-            <h4 style={{ margin: '0 0 8px' }}>Sample Products</h4>
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Barcode</th>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th className="text-right">Qty Before Reset</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((product) => (
-                    <tr key={product.id}>
-                      <td><span className="barcode-cell">{product.id}</span></td>
-                      <td><span className="product-name-cell">{product.name || 'Unnamed'}</span></td>
-                      <td><span className="type-cell">{product.productType || 'General'}</span></td>
-                      <td className="text-right"><span className="quantity-cell">{product.quantity ?? 0}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <div className="archive-detail-controls">
+          <div className="tab-navigation archive-view-nav">
+            {viewOptions.map((option) => (
+              <button
+                key={option.key}
+                onClick={() => setDetailView(option.key)}
+                className={`tab-button ${activeView === option.key ? 'active' : ''}`}
+              >
+                <span className="tab-label">{option.label}</span>
+              </button>
+            ))}
           </div>
-        )}
+          <div className="archive-search-box">
+            <div className="search-input-group">
+              <input
+                type="text"
+                value={detailSearchTerm}
+                onChange={(event) => setDetailSearchTerm(event.target.value)}
+                className="search-input"
+                placeholder="Search products..."
+              />
+              {detailSearchTerm && (
+                <button className="search-clear" onClick={() => setDetailSearchTerm('')} title="Clear search">
+                  ✕
+                </button>
+              )}
+            </div>
+            <div className="archive-search-meta">{filteredProducts.length} of {products.length} shown</div>
+          </div>
+        </div>
+
+        {renderActiveTable()}
       </div>
     );
   };
@@ -326,14 +615,14 @@ const Archives = () => {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+      <div className="archive-layout">
         <div className="table-section" style={{ marginTop: 0 }}>
           <div className="table-card">
-            <div className="table-container">
+            <div className="table-container archive-table-container">
               {isLoading ? (
                 <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading archives...</div>
               ) : (
-                <table className="data-table">
+                <table className="data-table archive-table">
                   <thead>
                     <tr>
                       <th>Type</th>

@@ -486,7 +486,12 @@ const Transactions = () => {
   const [selectedProduct, setSelectedProduct] = useState('');
   const [products, setProducts] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [filteredTotals, setFilteredTotals] = useState({ totalQuantity: 0, totalCost: 0 });
+  const [filteredTotals, setFilteredTotals] = useState({
+    totalQuantity: 0,
+    totalCost: 0,
+    totalPurchaseCost: 0,
+    totalProfit: 0,
+  });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
 
@@ -527,6 +532,45 @@ const Transactions = () => {
     }
   };
 
+  const toNumber = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
+
+  const getTransactionMetrics = (transaction, overrides = {}) => {
+    const merged = { ...transaction, ...overrides };
+    const quantity = toNumber(merged.quantity);
+    const isStockTransaction = isStockLikeStatus(merged.paymentStatus);
+
+    const productRef = products[merged.barcode] || products[merged.productId] || null;
+    const parsedSell = parseFloat(merged.itemCost);
+    const hasSell = Number.isFinite(parsedSell);
+    const parsedTotal = parseFloat(merged.totalCost);
+    const hasTotal = Number.isFinite(parsedTotal);
+    const parsedBuy = parseFloat(merged.purchasingPrice);
+    const hasBuy = Number.isFinite(parsedBuy);
+
+    const unitSellPrice = hasSell
+      ? parsedSell
+      : (quantity > 0 ? (hasTotal ? parsedTotal / quantity : toNumber(productRef?.itemCost)) : 0);
+    const unitPurchasePrice = hasBuy ? parsedBuy : toNumber(productRef?.purchasingPrice);
+    const revenue = isStockTransaction ? 0 : (hasTotal ? parsedTotal : unitSellPrice * quantity);
+    const purchaseCost = isStockTransaction ? 0 : unitPurchasePrice * quantity;
+    const profit = revenue - purchaseCost;
+
+    return {
+      quantity,
+      isStockTransaction,
+      unitSellPrice,
+      unitPurchasePrice,
+      revenue,
+      purchaseCost,
+      profit,
+    };
+  };
+
   // Reusable data fetching function
   const fetchData = async () => {
     setIsRefreshing(true);
@@ -547,15 +591,32 @@ const Transactions = () => {
         const data = transactionsSnapshot.val();
         const transactionsArray = Object.keys(data).map((key) => {
           const transaction = { id: key, ...data[key] };
+          const productKey = transaction.productId || transaction.barcode;
           
-          if (transaction.productId && productsSnapshot.exists()) {
-            const product = productsSnapshot.val()[transaction.productId];
+          if (productKey && productsSnapshot.exists()) {
+            const product = productsSnapshot.val()[productKey];
             if (product) {
-              transaction.barcode = product.barcode;
+              transaction.barcode = productKey;
               transaction.productName = product.name || 'Unknown Product';
+              transaction.itemCost = Number.isFinite(parseFloat(transaction.itemCost))
+                ? parseFloat(transaction.itemCost)
+                : toNumber(product.itemCost);
+              transaction.purchasingPrice = Number.isFinite(parseFloat(transaction.purchasingPrice))
+                ? parseFloat(transaction.purchasingPrice)
+                : toNumber(product.purchasingPrice);
             }
           } else {
             transaction.productName = transaction.name || 'Unknown Product';
+          }
+
+          if (!transaction.barcode) {
+            transaction.barcode = transaction.productId || transaction.barcode || 'N/A';
+          }
+          if (!Number.isFinite(parseFloat(transaction.itemCost))) {
+            transaction.itemCost = toNumber(transaction.itemCost);
+          }
+          if (!Number.isFinite(parseFloat(transaction.purchasingPrice))) {
+            transaction.purchasingPrice = toNumber(transaction.purchasingPrice);
           }
 
           return transaction;
@@ -584,22 +645,23 @@ const Transactions = () => {
     if (filteredTransactions.length > 0) {
       const totals = filteredTransactions.reduce(
         (acc, transaction) => {
-          const quantity = parseFloat(transaction.quantity) || 0;
-          const cost = parseFloat(transaction.totalCost) || 0;
+          const metrics = getTransactionMetrics(transaction);
           
           return {
-            totalQuantity: acc.totalQuantity + quantity,
-            totalCost: acc.totalCost + cost
+            totalQuantity: acc.totalQuantity + metrics.quantity,
+            totalCost: acc.totalCost + metrics.revenue,
+            totalPurchaseCost: acc.totalPurchaseCost + metrics.purchaseCost,
+            totalProfit: acc.totalProfit + metrics.profit,
           };
         },
-        { totalQuantity: 0, totalCost: 0 }
+        { totalQuantity: 0, totalCost: 0, totalPurchaseCost: 0, totalProfit: 0 }
       );
       
       setFilteredTotals(totals);
     } else {
-      setFilteredTotals({ totalQuantity: 0, totalCost: 0 });
+      setFilteredTotals({ totalQuantity: 0, totalCost: 0, totalPurchaseCost: 0, totalProfit: 0 });
     }
-  }, [selectedMonth, selectedProduct, transactions]);
+  }, [selectedMonth, selectedProduct, transactions, products]);
 
   // Get unique product names from transactions for the filter dropdown
   const getUniqueProductNames = () => {
@@ -716,10 +778,28 @@ const Transactions = () => {
   // Handle saving edited transaction
   const handleSave = async (id) => {
     try {
+      const original = transactions.find((transaction) => transaction.id === id) || {};
+      const parsedQuantity = toNumber(editedValues.quantity);
+      const parsedInputCost = parseFloat(editedValues.totalCost);
+      const hasInputCost = Number.isFinite(parsedInputCost);
+      const unitSellPrice = toNumber(original.itemCost);
+      const stockLike = isStockLikeStatus(original.paymentStatus);
+      const computedTotalCost = stockLike
+        ? 0
+        : (hasInputCost ? parsedInputCost : unitSellPrice * parsedQuantity);
+      const metrics = getTransactionMetrics(original, {
+        quantity: parsedQuantity,
+        totalCost: computedTotalCost,
+        itemCost: unitSellPrice,
+      });
+
       const updates = {
-        quantity: parseFloat(editedValues.quantity) || 0,
-        totalCost: parseFloat(editedValues.totalCost) || 0,
-        dateScanned: new Date(editedValues.dateScanned).toISOString()
+        quantity: parsedQuantity,
+        totalCost: computedTotalCost,
+        dateScanned: new Date(editedValues.dateScanned).toISOString(),
+        purchasingPrice: metrics.unitPurchasePrice,
+        unitProfit: metrics.unitSellPrice - metrics.unitPurchasePrice,
+        totalProfit: metrics.profit,
       };
 
       await update(ref(database, `transactions/${id}`), updates);
@@ -878,6 +958,23 @@ const Transactions = () => {
           </div>
           <div className="summary-card">
             <div className="summary-card-content">
+              <span className="summary-card-label">Total Purchase Cost</span>
+              <span className="summary-card-value">${filteredTotals.totalPurchaseCost.toFixed(2)}</span>
+            </div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-card-content">
+              <span className="summary-card-label">Total Profit</span>
+              <span
+                className="summary-card-value"
+                style={{ color: filteredTotals.totalProfit >= 0 ? '#198754' : '#dc3545' }}
+              >
+                ${filteredTotals.totalProfit.toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-card-content">
               <span className="summary-card-label">Pending</span>
               <span className="summary-card-value">
                 {filteredTransactions.filter(t => t.paymentStatus === 'Pending' || t.paymentStatus === 'Stock').length}
@@ -890,7 +987,7 @@ const Transactions = () => {
       {/* Results Info */}
       {filteredTransactions.length > 0 && (
         <div className="results-info">
-          Showing {filteredTransactions.length} transaction(s)
+          Showing {filteredTransactions.length} transaction(s) • Profit: ${filteredTotals.totalProfit.toFixed(2)}
         </div>
       )}
 
@@ -912,13 +1009,25 @@ const Transactions = () => {
                 <th>Barcode</th>
                 <th>Product</th>
                 <th>Quantity</th>
+                <th>Sell Price</th>
+                <th>Buy Price</th>
                 <th>Total Cost</th>
+                <th>Profit</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-  {filteredTransactions.map((item) => (
+  {filteredTransactions.map((item) => {
+    const editingMetrics = editing === item.id
+      ? getTransactionMetrics(item, {
+        quantity: toNumber(editedValues.quantity ?? item.quantity),
+        totalCost: toNumber(editedValues.totalCost ?? item.totalCost),
+      })
+      : null;
+    const rowMetrics = editingMetrics || getTransactionMetrics(item);
+
+    return (
     <tr key={item.id} className="table-row"> {/* Remove status class */}
       <td className="date-cell">
         {editing === item.id ? (
@@ -956,6 +1065,12 @@ const Transactions = () => {
         )}
       </td>
       <td>
+        <span className="cost-display">${rowMetrics.unitSellPrice.toFixed(2)}</span>
+      </td>
+      <td>
+        <span className="cost-display">${rowMetrics.unitPurchasePrice.toFixed(2)}</span>
+      </td>
+      <td>
         {editing === item.id ? (
           <input
             type="number"
@@ -967,8 +1082,16 @@ const Transactions = () => {
             className="edit-input"
           />
         ) : (
-          <span className="cost-display">${parseFloat(item.totalCost).toFixed(2)}</span>
+          <span className="cost-display">${rowMetrics.revenue.toFixed(2)}</span>
         )}
+      </td>
+      <td>
+        <span
+          className="cost-display"
+          style={{ color: rowMetrics.profit >= 0 ? '#198754' : '#dc3545' }}
+        >
+          ${rowMetrics.profit.toFixed(2)}
+        </span>
       </td>
       <td>
         <span className={`status-badge status-${item.paymentStatus?.toLowerCase()}`}>
@@ -1036,7 +1159,7 @@ const Transactions = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         )}

@@ -45,7 +45,9 @@ const SoldItems = () => {
   const [filteredTotals, setFilteredTotals] = useState({
     totalQuantity: 0,
     totalCost: 0,
-    totalItems: 0
+    totalItems: 0,
+    totalPurchaseCost: 0,
+    totalProfit: 0,
   });
 
   // Format date to DD-MM-YYYY
@@ -144,6 +146,49 @@ const SoldItems = () => {
     });
   };
 
+  const toNumber = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
+
+  const getItemProfitMetrics = (item, overrides = {}) => {
+    const merged = { ...item, ...overrides };
+    const quantity = toNumber(merged.quantity);
+
+    const linkedProduct = products.find((product) => (
+      product.id === merged.barcode || product.id === merged.productId || product.id === merged.id
+    ));
+
+    const parsedItemCost = parseFloat(merged.itemCost);
+    const hasItemCost = Number.isFinite(parsedItemCost);
+    const parsedTotalCost = parseFloat(merged.totalCost);
+    const hasTotalCost = Number.isFinite(parsedTotalCost);
+    const parsedPurchase = parseFloat(merged.purchasingPrice);
+    const hasPurchase = Number.isFinite(parsedPurchase);
+
+    const unitSellPrice = hasItemCost
+      ? parsedItemCost
+      : (quantity > 0 ? (hasTotalCost ? parsedTotalCost / quantity : 0) : 0);
+    const unitPurchasePrice = hasPurchase ? parsedPurchase : toNumber(linkedProduct?.purchasingPrice);
+
+    const revenue = hasTotalCost ? parsedTotalCost : unitSellPrice * quantity;
+    const purchaseCost = unitPurchasePrice * quantity;
+    const profit = unitSellPrice - unitPurchasePrice;
+    const totalProfitAmount = profit * quantity;
+
+    return {
+      quantity,
+      revenue,
+      purchaseCost,
+      profit,
+      totalProfitAmount,
+      unitSellPrice,
+      unitPurchasePrice,
+    };
+  };
+
   // Fetch data
   useEffect(() => {
     const customersRef = ref(database, 'customers');
@@ -205,21 +250,22 @@ const SoldItems = () => {
     if (filteredItems.length > 0) {
       const totals = filteredItems.reduce(
         (acc, item) => {
-          const quantity = parseFloat(item.quantity) || 0;
-          const cost = parseFloat(item.totalCost) || 0;
+          const metrics = getItemProfitMetrics(item);
           return {
-            totalQuantity: acc.totalQuantity + quantity,
-            totalCost: acc.totalCost + cost,
-            totalItems: acc.totalItems + 1
+            totalQuantity: acc.totalQuantity + metrics.quantity,
+            totalCost: acc.totalCost + metrics.revenue,
+            totalItems: acc.totalItems + 1,
+            totalPurchaseCost: acc.totalPurchaseCost + metrics.purchaseCost,
+            totalProfit: acc.totalProfit + metrics.totalProfitAmount,
           };
         },
-        { totalQuantity: 0, totalCost: 0, totalItems: 0 }
+        { totalQuantity: 0, totalCost: 0, totalItems: 0, totalPurchaseCost: 0, totalProfit: 0 }
       );
       setFilteredTotals(totals);
     } else {
-      setFilteredTotals({ totalQuantity: 0, totalCost: 0, totalItems: 0 });
+      setFilteredTotals({ totalQuantity: 0, totalCost: 0, totalItems: 0, totalPurchaseCost: 0, totalProfit: 0 });
     }
-  }, [filteredItems]);
+  }, [filteredItems, products]);
 
   // Apply filters
   useEffect(() => {
@@ -341,17 +387,34 @@ const SoldItems = () => {
     
     // Convert date from local format to ISO string
     const dateToSave = newDate ? new Date(newDate).toISOString() : new Date().toISOString();
+    const parsedQuantity = toNumber(newQuantity);
+    const unitSellPrice = toNumber(editingItem.itemCost);
+    const parsedInputCost = parseFloat(newTotalCost);
+    const hasInputCost = Number.isFinite(parsedInputCost);
+    const stockLike = isStockLikeStatus(newPaymentStatus);
+    const computedTotalCost = stockLike
+      ? 0
+      : (hasInputCost ? parsedInputCost : unitSellPrice * parsedQuantity);
+    const profitMetrics = getItemProfitMetrics(editingItem, {
+      quantity: parsedQuantity,
+      totalCost: computedTotalCost,
+      paymentStatus: newPaymentStatus,
+      itemCost: unitSellPrice,
+    });
     
     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
     try {
       await update(itemRef, {
         remark: newRemark,
-        totalCost: newTotalCost,
+        totalCost: computedTotalCost,
         paymentStatus: newPaymentStatus,
         customerName: newCustomer,
         name: newProductType,
-        quantity: newQuantity,
+        quantity: parsedQuantity,
         dateScanned: dateToSave,
+        purchasingPrice: profitMetrics.unitPurchasePrice,
+        unitProfit: profitMetrics.profit,
+        totalProfit: profitMetrics.totalProfitAmount,
       });
       
       const updatedItems = soldItems.map((item) =>
@@ -359,12 +422,15 @@ const SoldItems = () => {
           ? {
               ...item,
               remark: newRemark,
-              totalCost: newTotalCost,
+              totalCost: computedTotalCost,
               paymentStatus: newPaymentStatus,
               customerName: newCustomer,
               name: newProductType,
-              quantity: newQuantity,
+              quantity: parsedQuantity,
               dateScanned: dateToSave,
+              purchasingPrice: profitMetrics.unitPurchasePrice,
+              unitProfit: profitMetrics.profit,
+              totalProfit: profitMetrics.totalProfitAmount,
             }
           : item
       );
@@ -420,21 +486,26 @@ const SoldItems = () => {
 
     const headers = [
       "Date", "Customer", "Product Type", "Quantity Sold", "Price",
-      "Item Cost", "Employee", "Remarks", "Total Cost", "Payment Status"
+      "Item Cost", "Purchase Price", "Profit", "Employee", "Remarks", "Total Cost", "Payment Status"
     ];
 
-    const rows = filteredItems.map((item) => [
-      formatDateTimeForCSV(item.dateScanned),
-      item.customerName || "N/A",
-      item.name || "N/A",
-      item.quantity || 0,
-      item.price || "N/A",
-      item.itemCost || "N/A",
-      item.scannedBy || "N/A",
-      item.remark || "N/A",
-      item.totalCost || "N/A",
-      item.paymentStatus || "Paid",
-    ]);
+    const rows = filteredItems.map((item) => {
+      const metrics = getItemProfitMetrics(item);
+      return [
+        formatDateTimeForCSV(item.dateScanned),
+        item.customerName || "N/A",
+        item.name || "N/A",
+        metrics.quantity,
+        item.price || "N/A",
+        metrics.unitSellPrice.toFixed(2),
+        metrics.unitPurchasePrice.toFixed(2),
+        metrics.profit.toFixed(2),
+        item.scannedBy || "N/A",
+        item.remark || "N/A",
+        metrics.revenue.toFixed(2),
+        item.paymentStatus || "Paid",
+      ];
+    });
 
     const csvContent =
       "\ufeff" +
@@ -648,6 +719,23 @@ const SoldItems = () => {
           </div>
           <div className="summary-card">
             <div className="summary-card-content">
+              <span className="summary-card-label">Total Purchase Cost</span>
+              <span className="summary-card-value">${filteredTotals.totalPurchaseCost.toFixed(2)}</span>
+            </div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-card-content">
+              <span className="summary-card-label">Total Profit</span>
+              <span
+                className="summary-card-value"
+                style={{ color: filteredTotals.totalProfit >= 0 ? '#198754' : '#dc3545' }}
+              >
+                ${filteredTotals.totalProfit.toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <div className="summary-card">
+            <div className="summary-card-content">
               <span className="summary-card-label">Checked Items</span>
               <span className="summary-card-value">{checkedItems.length}</span>
             </div>
@@ -660,6 +748,7 @@ const SoldItems = () => {
         <div className="results-info">
           Showing {filteredItems.length} sold item(s) • 
           Data range: {formatDate(filteredItems[0]?.dateScanned)} to {formatDate(filteredItems[filteredItems.length - 1]?.dateScanned)} •
+          Total profit: ${filteredTotals.totalProfit.toFixed(2)} •
           {checkedItems.length > 0 && ` ${checkedItems.length} items checked`}
         </div>
       )}
@@ -681,17 +770,30 @@ const SoldItems = () => {
                 <th>Customer</th>
                 <th>Product Type</th>
                 <th>Quantity</th>
-                <th>Item Cost</th>
+                <th>Sell Price</th>
+                <th>Purchasing Price</th>
                 <th>Employee</th>
                 <th>Remarks</th>
                 <th>Total Cost</th>
+                <th>Profit</th>
                 <th>Payment Status</th>
                 <th>Actions</th>
                 <th>Check</th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => (
+              {filteredItems.map((item) => {
+                const liveMetrics = getItemProfitMetrics(item);
+                const editingMetrics = editingItem && editingItem.id === item.id
+                  ? getItemProfitMetrics(item, {
+                    quantity: toNumber(newQuantity),
+                    totalCost: toNumber(newTotalCost),
+                    paymentStatus: newPaymentStatus || item.paymentStatus,
+                  })
+                  : null;
+                const rowMetrics = editingMetrics || liveMetrics;
+
+                return (
                 <tr key={item.id} className={checkedItems.includes(item.id) ? 'checked-row' : ''}>
                   <td className="date-cell">
                     {editingItem && editingItem.id === item.id ? (
@@ -747,7 +849,8 @@ const SoldItems = () => {
                       item.quantity || 0
                     )}
                   </td>
-                  <td>{item.itemCost ? `$${Number(item.itemCost).toFixed(2)}` : 'N/A'}</td>
+                  <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
+                  <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>
                   <td>{item.scannedBy || 'N/A'}</td>
                   <td>
                     {editingItem && editingItem.id === item.id ? (
@@ -770,8 +873,13 @@ const SoldItems = () => {
                         className="edit-input"
                       />
                     ) : (
-                      item.totalCost ? `$${Number(item.totalCost).toFixed(2)}` : 'N/A'
+                      `$${rowMetrics.revenue.toFixed(2)}`
                     )}
+                  </td>
+                  <td>
+                    <span style={{ color: rowMetrics.profit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}>
+                      ${rowMetrics.profit.toFixed(2)}
+                    </span>
                   </td>
                   <td>
                     {editingItem && editingItem.id === item.id ? (
@@ -848,7 +956,7 @@ const SoldItems = () => {
                     </label>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         )}

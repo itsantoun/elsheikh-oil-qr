@@ -57,6 +57,66 @@
 .table-header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .table-stats { font-size: 12.5px; color: var(--text-secondary); }
 
+/* ── Archive Layout ─────────────────────────────── */
+.archive-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.archive-table-container {
+  overflow-x: visible;
+}
+
+.archive-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.archive-table th,
+.archive-table td {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.archive-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.archive-detail-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+
+.archive-view-nav {
+  max-width: 100%;
+}
+
+.archive-search-box {
+  min-width: 260px;
+  max-width: 420px;
+  flex: 1;
+}
+
+.archive-search-box .search-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.archive-search-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
 /* ── Search Card ─────────────────────────────────── */
 .search-section { margin-bottom: 14px; }
 .search-card {
@@ -150,6 +210,8 @@
   .form-grid { grid-template-columns: 1fr; }
   .filters-grid { grid-template-columns: 1fr; }
   .summary-cards { grid-template-columns: repeat(2, 1fr); }
+  .archive-search-box { width: 100%; max-width: none; min-width: 0; }
+  .archive-search-meta { text-align: left; }
   .tab-navigation { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   .data-table { min-width: 600px; }
 }

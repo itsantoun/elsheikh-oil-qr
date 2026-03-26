@@ -1,41 +1,173 @@
+/* ============================================================
+   ELSHEIKH — login.css
+   ============================================================ */
+
+/* ── Page Wrapper ────────────────────────────────── */
+.login-page {
+  min-height: 100vh;
+  background: var(--bg-page);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+}
+
+/* Subtle background pattern */
+.login-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 25% 25%, rgba(31,78,156,0.04) 0%, transparent 60%),
+    radial-gradient(circle at 75% 75%, rgba(22,55,107,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* ── Login Card ──────────────────────────────────── */
 .login-container {
-  margin: 50px auto; /* Center horizontally and add space from top */
+  width: 100%;
+  max-width: 400px;
+  background: var(--white);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-2xl);
+  box-shadow: var(--shadow-lg);
+  padding: 40px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Logo Mark ───────────────────────────────────── */
+.login-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.login-logo-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-lg);
+  background: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(22,55,107,0.25);
+}
+
+/* ── Heading ─────────────────────────────────────── */
+.login-heading {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-heading);
+  letter-spacing: -0.3px;
+  margin-bottom: 6px;
+}
+
+.login-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* ── Form Fields ─────────────────────────────────── */
+.login-form {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 16px;
 }
-  
-  .title {
-    font-size: 24px;
-    margin-bottom: 20px;
-    color: #333;
-  }
-  
-  .input {
-    width: 100%;
-    padding: 12px;
-    margin-bottom: 15px;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-    font-size: 16px;
-    outline: none;
-  }
-  
-  .button {
-    width: 100%;
-    padding: 12px;
-    background-color: #007bff;
-    color: #fff;
-    border: none;
-    border-radius: 5px;
-    font-size: 16px;
-    cursor: pointer;
-    font-weight: bold;
-    margin-top: 10px;
-  }
-  
-  .error {
-    color: #f44336;
-    margin-top: 10px;
-    font-size: 14px;
-  }
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.login-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 13px;
+  background: var(--white);
+  color: var(--text-body);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+
+.input:focus {
+  border-color: var(--brand-mid);
+  box-shadow: var(--shadow-focus);
+}
+
+.input::placeholder { color: var(--text-muted); }
+
+/* ── Submit Button ───────────────────────────────── */
+.button {
+  width: 100%;
+  padding: 11px 20px;
+  background: var(--brand-mid);
+  color: var(--white);
+  border: none;
+  border-radius: var(--r-md);
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t), box-shadow var(--t), transform var(--t);
+  margin-top: 4px;
+  letter-spacing: 0.1px;
+}
+.button:hover {
+  background: var(--brand-hover);
+  box-shadow: 0 4px 14px rgba(31,78,156,0.28);
+}
+.button:active { transform: translateY(1px); }
+
+/* ── Error ───────────────────────────────────────── */
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px 13px;
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: var(--r-md);
+  color: var(--red);
+  font-size: 13.5px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* ── Footer ──────────────────────────────────────── */
+.login-footer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+  text-align: center;
+}
+
+.login-footer-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Responsive ──────────────────────────────────── */
+@media (max-width: 480px) {
+  .login-container { padding: 28px 22px; }
+  .title { font-size: 20px; }
+}

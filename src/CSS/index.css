@@ -1,11 +1,12 @@
 /* ============================================================
-   ELSHEIKH ENTERPRISE — DESIGN SYSTEM (Light)
+   ELSHEIKH ENTERPRISE — SHARED CSS VARIABLES
+   This file is imported once in index.css or App.css only.
+   Do NOT import this in individual component CSS files.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  /* Surfaces */
   --white:           #FFFFFF;
   --bg-page:         #F4F6F9;
   --bg-surface:      #FFFFFF;
@@ -14,18 +15,14 @@
   --bg-hover:        #EDF1F7;
   --bg-active:       #E4EAF3;
 
-  /* Borders */
   --border-light:    #E8ECF2;
   --border-default:  #D4DAE6;
   --border-strong:   #B8C2D4;
 
-  /* Brand */
   --brand:           #1B4B8A;
   --brand-mid:       #2563B0;
   --brand-light:     #EBF2FF;
-  --brand-glow:      rgba(37,99,176,0.12);
 
-  /* Semantic colours */
   --green:           #16A34A;
   --green-bg:        #F0FDF4;
   --green-border:    #BBF7D0;
@@ -39,24 +36,20 @@
   --cyan-bg:         #ECFEFF;
   --cyan-border:     #A5F3FC;
 
-  /* Text */
   --text-heading:    #0F1C2E;
   --text-body:       #374151;
   --text-secondary:  #6B7A99;
   --text-muted:      #9DAABE;
 
-  /* Typography */
   --font:      'Geist', system-ui, sans-serif;
   --font-mono: 'Geist Mono', 'Consolas', monospace;
 
-  /* Radii */
   --r-xs:  4px;
   --r-sm:  6px;
   --r-md:  10px;
   --r-lg:  14px;
   --r-xl:  18px;
 
-  /* Shadows */
   --shadow-xs:    0 1px 2px rgba(15,28,46,0.06);
   --shadow-sm:    0 1px 4px rgba(15,28,46,0.08), 0 0 0 1px rgba(15,28,46,0.04);
   --shadow-md:    0 4px 16px rgba(15,28,46,0.10), 0 1px 4px rgba(15,28,46,0.06);
@@ -68,8 +61,7 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body, #root {
-  height: 100%;
+body {
   background: var(--bg-page);
   color: var(--text-body);
   font-family: var(--font);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ref, get, set, remove, update } from "firebase/database";
+import { ref, get, set, remove } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import * as XLSX from 'xlsx';
@@ -20,6 +20,7 @@ const FetchProducts = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isArchivingProducts, setIsArchivingProducts] = useState(false);
   const [activeTab, setActiveTab] = useState('products');
   const [heldProducts, setHeldProducts] = useState([]);
   const [sortBy, setSortBy] = useState({ field: 'name', order: 'asc' });
@@ -357,6 +358,72 @@ const FetchProducts = () => {
     XLSX.writeFile(workbook, `products_${formatDate(new Date())}.xlsx`);
   };
 
+  const handleArchiveAndResetQuantities = async () => {
+    if (products.length === 0) {
+      setErrorMessage('No products to archive.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Archive all current products and reset all quantities to 0?\n\n' +
+      'Products will stay in the list, only quantity will reset.'
+    );
+    if (!confirmed) return;
+
+    setIsArchivingProducts(true);
+    const archivedAt = new Date().toISOString();
+    const archiveId = archivedAt.replace(/[.:]/g, '-');
+
+    try {
+      const archiveProducts = products.reduce((acc, product) => {
+        const qty = parseFloat(product.quantity) || 0;
+        acc[product.id] = { ...product, quantity: qty };
+        return acc;
+      }, {});
+
+      const resetProducts = products.reduce((acc, product) => {
+        const { id, ...rest } = product;
+        acc[id] = { ...rest, quantity: 0 };
+        return acc;
+      }, {});
+
+      const totalQtyBeforeReset = products.reduce(
+        (sum, product) => sum + (parseFloat(product.quantity) || 0),
+        0
+      );
+
+      await set(ref(database, `productArchives/${archiveId}`), {
+        archivedAt,
+        summary: {
+          productsArchived: products.length,
+          totalQuantityBeforeReset: totalQtyBeforeReset,
+        },
+        products: archiveProducts,
+      });
+
+      await set(ref(database, 'products'), resetProducts);
+
+      const resetList = products.map((product) => ({ ...product, quantity: 0 }));
+      const sortedResetList = sortProducts(resetList, sortBy.field, sortBy.order);
+      setProducts(sortedResetList);
+      setFilteredProducts(sortedResetList);
+
+      setSuccessMessage(`Archived ${products.length} products and reset all quantities to 0.`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error) {
+      console.error('Error archiving products:', error);
+      if (error?.code === 'PERMISSION_DENIED') {
+        setErrorMessage('Permission denied. Add read/write rules for "productArchives".');
+      } else {
+        setErrorMessage('Failed to archive and reset products. Please try again.');
+      }
+      setTimeout(() => setErrorMessage(null), 4000);
+    } finally {
+      setIsArchivingProducts(false);
+    }
+  };
+
   const sortProducts = (products, field, order) => {
     return [...products].sort((a, b) => {
       let aValue = a[field];
@@ -399,6 +466,14 @@ const FetchProducts = () => {
           </div>
         </div>
         <div className="header-right">
+          <button
+            onClick={handleArchiveAndResetQuantities}
+            className="btn-danger"
+            disabled={isRefreshing || isArchivingProducts || products.length === 0}
+            title="Archive all products and reset all quantities to 0 while keeping products"
+          >
+            {isArchivingProducts ? '🗄️ Archiving...' : '🗄️ Archive & Reset Qty'}
+          </button>
           <button 
             onClick={handleRefresh} 
             className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}

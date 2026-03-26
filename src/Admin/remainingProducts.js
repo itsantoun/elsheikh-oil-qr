@@ -1,1321 +1,1036 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ref, get, update, push, set } from 'firebase/database';
 import { database } from '../Auth/firebase';
-import { ref, get, child, push, set, update, remove, query, orderByChild, startAt, endAt } from 'firebase/database';
-import '../CSS/remainingProducts.css';
-import * as XLSX from 'xlsx';
+import { BrowserMultiFormatReader } from '@zxing/library';
+import '../CSS/admin.css';
+
+// ─── Firebase nodes used ──────────────────────────────────────────────────────
+// products/{id}                          — live product data
+// SoldItems/{saleId}                     — live sold items
+// stockChecks/{id}                       — current pending/accurate checks
+// stockCheckHistory/{YYYY-MM}/{pushKey}  — monthly audit history
+// stockArchives/{archiveId}              — archived snapshots before reset
+// ─────────────────────────────────────────────────────────────────────────────
 
 const RemainingProducts = () => {
-  // UI State
-  const [scanStatus, setScanStatus] = useState('Ready to scan');
+  const [products, setProducts]                 = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [pendingChecks, setPendingChecks]       = useState([]);
+  const [searchTerm, setSearchTerm]             = useState('');
+  const [activeTab, setActiveTab]               = useState('check');
+  const [isLoading, setIsLoading]               = useState(false);
+  const [isArchiving, setIsArchiving]           = useState(false);
+
+  const [countedQty, setCountedQty]     = useState({});
+  const [reconfirmQty, setReconfirmQty] = useState({});
+  const [soldTotals, setSoldTotals]     = useState({});
+
+  // Scanner
+  const [scannerOpen, setScannerOpen]     = useState(false);
+  const [scannerPaused, setScannerPaused] = useState(false);
+  const [scanStatus, setScanStatus]       = useState('Align barcode within the frame.');
   const [scannedProduct, setScannedProduct] = useState(null);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [products, setProducts] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState('');
-  const [showScanner, setShowScanner] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [scanQty, setScanQty]             = useState('');
+  const scannerRef    = useRef(null);
+  const codeReaderRef = useRef(null);
+  const scanCoolRef   = useRef(null);
 
-  // Calculation State
-  const [soldCount, setSoldCount] = useState(0);
-  const [uncertainQuantity, setUncertainQuantity] = useState('');
-  
-  // CORRECT: Date Range for Sold Items
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  
-  // Stock Records State
-  const [scannedProductsForCurrentRange, setScannedProductsForCurrentRange] = useState(new Set());
-  const [availableDateRanges, setAvailableDateRanges] = useState([]);
-  const [mostRecentDateRange, setMostRecentDateRange] = useState(null);
-  const [selectedHistoryRange, setSelectedHistoryRange] = useState('');
-  const [stockRecords, setStockRecords] = useState([]);
-  const [statusFilter, setStatusFilter] = useState('All');
-  
-  // Edit State
-  const [editingId, setEditingId] = useState(null);
-  const [editFormData, setEditFormData] = useState({
-    status: '',
-    uncertainQuantity: '',
-    soldCount: '',
-    calculatedRemaining: ''
+  // History
+  const [historyMonth, setHistoryMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
+  const [historyData, setHistoryData]       = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [archivesData, setArchivesData]     = useState([]);
+  const [archivesLoading, setArchivesLoading] = useState(false);
+  const [selectedArchiveId, setSelectedArchiveId] = useState('');
+  const [selectedArchive, setSelectedArchive] = useState(null);
+  const [archiveDetailLoading, setArchiveDetailLoading] = useState(false);
 
-  const scannerRef = useRef(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+  const [errorMessage, setErrorMessage]     = useState(null);
 
-  // ===============================
-  // DATE HANDLING FUNCTIONS - IMPROVED
-  // ===============================
-  
-  const normalizeDate = (dateString, isEndOfDay = false) => {
-    if (!dateString) return null;
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  const showSuccess = (msg) => { setSuccessMessage(msg); setTimeout(() => setSuccessMessage(null), 3000); };
+  const showError   = (msg) => { setErrorMessage(msg);   setTimeout(() => setErrorMessage(null),   3000); };
+
+  const formatDate = (iso) => {
     try {
-      // Parse date string (expecting YYYY-MM-DD)
-      const [year, month, day] = dateString.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      
-      if (isNaN(date.getTime())) return null;
-      
-      if (isEndOfDay) {
-        date.setHours(23, 59, 59, 999);
-      } else {
-        date.setHours(0, 0, 0, 0);
-      }
-      return date;
-    } catch (error) {
-      console.error('Error normalizing date:', error);
-      return null;
-    }
+      const d = new Date(iso);
+      if (isNaN(d)) return 'N/A';
+      const dd   = String(d.getDate()).padStart(2, '0');
+      const mm   = String(d.getMonth() + 1).padStart(2, '0');
+      const hh   = String(d.getHours() % 12 || 12).padStart(2, '0');
+      const min  = String(d.getMinutes()).padStart(2, '0');
+      const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
+      return `${dd}-${mm}-${d.getFullYear()} ${hh}:${min} ${ampm}`;
+    } catch { return 'N/A'; }
   };
 
-  const formatDateForDisplay = (dateString) => {
-    if (!dateString) return '';
+  const currentMonthKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const objCount = (obj) => (obj && typeof obj === 'object' ? Object.keys(obj).length : 0);
+
+  const historyEntriesCount = (historyObj) => {
+    if (!historyObj || typeof historyObj !== 'object') return 0;
+    return Object.values(historyObj).reduce((sum, monthData) => sum + objCount(monthData), 0);
+  };
+
+  // ── History writer ─────────────────────────────────────────────────────────
+
+  const pushHistory = async (productId, productName, systemQty, counted, status) => {
     try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric' 
+      await push(ref(database, `stockCheckHistory/${currentMonthKey()}`), {
+        productId, productName,
+        systemQuantity: systemQty, countedQuantity: counted,
+        status, checkedAt: new Date().toISOString(),
       });
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return 'Invalid Date';
-    }
+    } catch (err) { console.error('History write failed:', err); }
   };
 
-  // ===============================
-  // REFRESH & CLEAR FUNCTIONS
-  // ===============================
-  
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+
+  const fetchData = async () => {
+    setIsLoading(true);
     try {
-      setFromDate('');
-      setToDate('');
-      setSelectedHistoryRange('');
-      setStatusFilter('All');
-      setSelectedProduct('');
-      setScannedProductsForCurrentRange(new Set());
-      setUncertainQuantity('');
-      await fetchProducts();
-      await fetchAvailableDateRanges();
-      await fetchStockRecords();
-      setScannedProduct(null);
-      setShowScanner(false);
-      setShowDropdown(false);
-      setScanStatus('Data refreshed successfully!');
-      setTimeout(() => setScanStatus('Ready to scan'), 2000);
-    } catch (error) {
-      console.error('Error refreshing data:', error);
-      setScanStatus('Error refreshing data');
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+      const [prodSnap, checkSnap, soldSnap] = await Promise.all([
+        get(ref(database, 'products')),
+        get(ref(database, 'stockChecks')),
+        get(ref(database, 'SoldItems')),
+      ]);
 
-  const clearDateFilters = () => {
-    setFromDate('');
-    setToDate('');
-    setSelectedHistoryRange('');
-  };
-
-  // ===============================
-  // DATA FETCHING FUNCTIONS
-  // ===============================
-  
-  const fetchProducts = async () => {
-    const dbRef = ref(database);
-    try {
-      const productsSnapshot = await get(child(dbRef, 'products'));
-      if (productsSnapshot.exists()) {
-        const productsData = productsSnapshot.val();
-        const productsList = Object.keys(productsData).map((barcode) => ({
-          barcode,
-          ...productsData[barcode],
-        }));
-        const sortedProducts = productsList.sort((a, b) => a.name.localeCompare(b.name));
-        setProducts(sortedProducts);
+      if (prodSnap.exists()) {
+        const list = Object.entries(prodSnap.val()).map(([id, v]) => ({ id, ...v }));
+        list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        setProducts(list);
+        setFilteredProducts(list);
       } else {
-        setProducts([]);
+        setProducts([]); setFilteredProducts([]);
       }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      setProducts([]);
-    }
-  };
 
-  const fetchAvailableDateRanges = async () => {
-    const dbRef = ref(database, 'remainingStocks');
-    try {
-      const snapshot = await get(dbRef);
-      if (snapshot.exists()) {
-        const dateRanges = [];
-        let mostRecent = null;
-        let mostRecentTimestamp = 0;
+      // Build lastCheckedAt map { [productId]: Date } from ALL stockChecks (any status)
+      // This is the cutoff — we only count sales AFTER the last check date
+      const lastCheckedAt = {};
+      if (checkSnap.exists()) {
+        const allChecks = Object.entries(checkSnap.val()).map(([id, v]) => ({ id, ...v }));
+        allChecks.forEach(c => {
+          const ts = c.reconfirmedAt || c.checkedAt;
+          if (ts) lastCheckedAt[c.id] = new Date(ts);
+        });
+        setPendingChecks(allChecks.filter(c => c.status === 'pending'));
+      } else {
+        setPendingChecks([]);
+      }
 
-        snapshot.forEach((dateRangeSnapshot) => {
-          const dateRangeKey = dateRangeSnapshot.key;
-          const dateRangeData = dateRangeSnapshot.val();
-          
-          let latestTimestamp = 0;
-          Object.values(dateRangeData).forEach(record => {
-            const timestamp = new Date(record.timestamp || record.dateScanned).getTime();
-            if (timestamp > latestTimestamp) {
-              latestTimestamp = timestamp;
-            }
-          });
-
-          dateRanges.push({
-            key: dateRangeKey,
-            latestTimestamp: latestTimestamp
-          });
-
-          if (latestTimestamp > mostRecentTimestamp) {
-            mostRecentTimestamp = latestTimestamp;
-            mostRecent = {
-              key: dateRangeKey,
-              timestamp: latestTimestamp
-            };
+      // Build { [barcode]: qtySoldSinceLastCheck }
+      // For products never checked, count ALL sold items (no cutoff)
+      if (soldSnap.exists()) {
+        const totals = {};
+        Object.values(soldSnap.val()).forEach(item => {
+          const barcode  = item.barcode;
+          const qty      = parseFloat(item.quantity) || 0;
+          if (!barcode) return;
+          const cutoff   = lastCheckedAt[barcode];
+          const saleDate = new Date(item.dateScanned);
+          // Only count this sale if it happened AFTER the last stock check
+          if (!cutoff || saleDate > cutoff) {
+            totals[barcode] = (totals[barcode] || 0) + qty;
           }
         });
-
-        dateRanges.sort((a, b) => b.latestTimestamp - a.latestTimestamp);
-        setAvailableDateRanges(dateRanges);
-        setMostRecentDateRange(mostRecent);
+        setSoldTotals(totals);
       } else {
-        setAvailableDateRanges([]);
-        setMostRecentDateRange(null);
+        setSoldTotals({});
       }
-    } catch (error) {
-      console.error('Error fetching available date ranges:', error);
-      setAvailableDateRanges([]);
-      setMostRecentDateRange(null);
-    }
+    } catch (err) { console.error(err); showError('Error loading data.'); }
+    finally { setIsLoading(false); }
   };
 
-  const fetchStockRecords = async () => {
-    const dbRef = ref(database, 'remainingStocks');
-    try {
-      const snapshot = await get(dbRef);
-      if (snapshot.exists()) {
-        const records = [];
-        snapshot.forEach((dateRangeSnapshot) => {
-          const dateRangeKey = dateRangeSnapshot.key;
-          const dateRangeData = dateRangeSnapshot.val();
-          Object.keys(dateRangeData).forEach((recordId) => {
-            const record = dateRangeData[recordId];
-            records.push({
-              id: `${dateRangeKey}/${recordId}`,
-              ...record,
-              dateRange: dateRangeKey,
-              timestamp: record.timestamp ? new Date(record.timestamp).toLocaleString() : 'N/A'
-            });
-          });
-        });
-        const sortedRecords = records.sort((a, b) => 
-          new Date(b.timestamp) - new Date(a.timestamp)
-        );
-        setStockRecords(sortedRecords);
-      } else {
-        setStockRecords([]);
-      }
-    } catch (error) {
-      console.error('Error fetching stock records:', error);
-      setStockRecords([]);
-    }
-  };
+  useEffect(() => { fetchData(); }, []);
 
-  // ===============================
-  // CORE CALCULATION FUNCTIONS - FIXED AND IMPROVED
-  // ===============================
-  
-  const getCurrentDateKey = () => {
-    if (fromDate && toDate) {
-      return `${fromDate}_to_${toDate}`;
-    } else if (fromDate) {
-      return `from_${fromDate}`;
-    } else if (toDate) {
-      return `to_${toDate}`;
-    } else {
-      return 'all_time';
-    }
-  };
-
-  // FIXED: Fetch sold items within date range - IMPROVED VERSION
-  const fetchSoldCount = async (productName, productBarcode) => {
-    console.log('🔍 Fetching sold count for:', productName, productBarcode);
-    console.log('📅 Date range:', fromDate, 'to', toDate);
-    
-    if (!fromDate && !toDate) {
-      alert('Please select a date range first to count sold items.');
-      return;
-    }
-
-    const dbRef = ref(database, 'SoldItems');
-    try {
-      // Create date range objects
-      const fromDateObj = normalizeDate(fromDate, false);
-      const toDateObj = normalizeDate(toDate, true);
-      
-      if (!fromDateObj || !toDateObj) {
-        alert('Invalid date range selected.');
-        return;
-      }
-
-      console.log('📊 Date range timestamps:', fromDateObj.getTime(), 'to', toDateObj.getTime());
-      
-      let totalSold = 0;
-      let matchedItems = [];
-      
-      // Get ALL sold items and filter manually for better accuracy
-      const soldItemsSnapshot = await get(dbRef);
-      
-      if (soldItemsSnapshot.exists()) {
-        const soldData = soldItemsSnapshot.val();
-        
-        Object.entries(soldData).forEach(([itemId, item]) => {
-          if (!item || !item.dateScanned) return;
-          
-          // Parse item date
-          const itemDate = new Date(item.dateScanned);
-          if (isNaN(itemDate.getTime())) return;
-          
-          // Check if item is within date range
-          if (itemDate < fromDateObj || itemDate > toDateObj) {
-            return; // Skip items outside date range
-          }
-          
-          // Product matching - STRICT matching
-          let matchesProduct = false;
-          
-          // 1. Check if item has barcode property and it matches
-          if (item.barcode && String(item.barcode).trim() === String(productBarcode).trim()) {
-            matchesProduct = true;
-          }
-          // 2. If no barcode, check product name (case-insensitive, trimmed)
-          else if (item.name && productName) {
-            const itemName = String(item.name).toLowerCase().trim();
-            const prodName = String(productName).toLowerCase().trim();
-            // Use includes instead of exact match to handle variations
-            matchesProduct = itemName.includes(prodName) || prodName.includes(itemName);
-          }
-          
-          if (matchesProduct) {
-            // Parse quantity - handle different formats
-            let quantity = 0;
-            
-            // Try to extract quantity from various possible fields
-            if (item.quantity !== undefined && item.quantity !== null) {
-              const parsed = parseFloat(item.quantity);
-              if (!isNaN(parsed) && parsed >= 0) {
-                quantity = parsed;
-              }
-            } else if (item.totalCost && item.itemCost) {
-              // Try to calculate from cost if quantity not available
-              const totalCost = parseFloat(item.totalCost);
-              const itemCost = parseFloat(item.itemCost);
-              if (!isNaN(totalCost) && !isNaN(itemCost) && itemCost > 0) {
-                quantity = totalCost / itemCost;
-              }
-            }
-            
-            matchedItems.push({
-              id: itemId,
-              date: item.dateScanned,
-              quantity: quantity,
-              name: item.name,
-              barcode: item.barcode,
-              itemCost: item.itemCost,
-              totalCost: item.totalCost
-            });
-            
-            totalSold += quantity;
-          }
-        });
-
-        console.log(`📊 Found ${matchedItems.length} matching sold items`);
-        console.log(`📊 Total quantity sold in period: ${totalSold}`);
-        
-        // Log for debugging
-        if (matchedItems.length > 0) {
-          console.log('📋 Matched items summary:');
-          matchedItems.forEach((item, index) => {
-            console.log(`  ${index + 1}. ${item.name} - Qty: ${item.quantity} - Date: ${item.date}`);
-          });
-        }
-        
-        setSoldCount(totalSold);
-      } else {
-        console.log('📊 No sold items found in database');
-        setSoldCount(0);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching sold count:', error);
-      alert('Error fetching sold items: ' + error.message);
-      setSoldCount(0);
-    }
-  };
-
-  const checkIfProductAlreadyScanned = async (barcode) => {
-    const dateKey = getCurrentDateKey();
-    const dbRef = ref(database, `remainingStocks/${dateKey}`);
-    try {
-      const snapshot = await get(dbRef);
-      if (snapshot.exists()) {
-        const stockData = snapshot.val();
-        return Object.values(stockData).some(item => item.barcode === barcode);
-      }
-      return false;
-    } catch (error) {
-      console.error('Error checking if product already scanned:', error);
-      return false;
-    }
-  };
-
-  const fetchProductDetails = async (barcode) => {
-    // Validate date range is selected
-    if (!fromDate && !toDate) {
-      alert('Please select a date range first to count sold items.');
-      return;
-    }
-
-    // First check if product is already scanned for current date range
-    const isAlreadyScanned = await checkIfProductAlreadyScanned(barcode);
-    
-    if (isAlreadyScanned) {
-      setScanStatus('Item already scanned for this date range!');
-      setTimeout(() => setScanStatus('Align barcode within frame'), 3000);
-      return;
-    }
-
-    const dbRef = ref(database);
-    try {
-      const productSnapshot = await get(child(dbRef, `products/${barcode}`));
-      if (productSnapshot.exists()) {
-        const product = productSnapshot.val();
-        const productData = {
-          barcode,
-          name: product.name,
-          itemCost: product.itemCost,
-          productType: product.productType,
-          quantity: parseFloat(product.quantity) || 0,
-        };
-        setScannedProduct(productData);
-        
-        // Show loading message
-        setScanStatus('Calculating sold items...');
-        
-        await fetchSoldCount(product.name, barcode);
-        
-        // After fetching sold count, update status
-        setTimeout(() => {
-          setScanStatus(`Found ${soldCount} sold items in selected period`);
-        }, 500);
-        
-        setIsPopupOpen(true);
-      } else {
-        setScanStatus('Product not found in database');
-        setTimeout(() => setScanStatus('Ready to scan'), 3000);
-      }
-    } catch (error) {
-      console.error('Error fetching product details:', error);
-      setScanStatus('Error retrieving product information');
-      setTimeout(() => setScanStatus('Ready to scan'), 3000);
-    }
-  };
-
-  // ===============================
-  // SAVE & UPDATE FUNCTIONS - IMPROVED
-  // ===============================
-  
-  const saveRemainingStock = async (status, uncertainQuantity = null) => {
-    try {
-      // Validate date range
-      if (!fromDate && !toDate) {
-        alert('Cannot save stock check without date range.');
-        return false;
-      }
-
-      // Validate sold count was actually fetched
-      if (soldCount === null || soldCount === undefined) {
-        alert('Sold count not calculated. Please try scanning again.');
-        return false;
-      }
-
-      const dateKey = getCurrentDateKey();
-      
-      // Calculate remaining quantity with validation
-      let remainingQuantity;
-      if (status === 'CONFIRMED') {
-        remainingQuantity = Math.max(0, scannedProduct.quantity - soldCount);
-        
-        // Check if calculation makes sense
-        if (soldCount > scannedProduct.quantity * 2) {
-          const confirm = window.confirm(
-            `Warning: Sold count (${soldCount}) is more than double current stock (${scannedProduct.quantity}).\n` +
-            `This might indicate incorrect data. Proceed anyway?`
-          );
-          if (!confirm) return false;
-        }
-      } else {
-        const uncertainQty = parseFloat(uncertainQuantity);
-        if (isNaN(uncertainQty) || uncertainQty < 0) {
-          alert('Please enter a valid positive quantity for uncertain count.');
-          return false;
-        }
-        remainingQuantity = uncertainQty;
-      }
-
-      const dbRef = ref(database, `remainingStocks/${dateKey}`);
-      const newStockRef = push(dbRef);
-      const currentTimestamp = new Date().toISOString();
-      
-      const stockData = {
-        barcode: scannedProduct.barcode,
-        name: scannedProduct.name,
-        productType: scannedProduct.productType,
-        itemCost: scannedProduct.itemCost,
-        initialQuantity: scannedProduct.quantity,
-        soldCount: soldCount,
-        calculatedRemaining: remainingQuantity,
-        status: status,
-        timestamp: currentTimestamp,
-        dateScanned: currentTimestamp,
-        dateRangeInfo: {
-          fromDate: fromDate,
-          toDate: toDate,
-          dateKey: dateKey
-        },
-        ...(status === 'NOT_CONFIRMED' && { 
-          uncertainQuantity: parseFloat(uncertainQuantity) || 0 
-        }),
-      };
-
-      await set(newStockRef, stockData);
-      
-      // Update product quantity if confirmed
-      if (status === 'CONFIRMED') {
-        const productRef = ref(database, `products/${scannedProduct.barcode}`);
-        await update(productRef, { 
-          quantity: remainingQuantity
-        });
-      }
-      
-      // Update local state
-      setScannedProductsForCurrentRange(prev => new Set([...prev, scannedProduct.barcode]));
-      await fetchStockRecords(); // Refresh records
-      
-      alert(`Stock check saved successfully!\n\n` +
-            `Product: ${scannedProduct.name}\n` +
-            `Current Stock: ${scannedProduct.quantity}\n` +
-            `Sold in period: ${soldCount}\n` +
-            `Calculated Remaining: ${remainingQuantity}\n` +
-            `Date Range: ${formatDateForDisplay(fromDate)} to ${formatDateForDisplay(toDate)}`);
-      return true;
-    } catch (error) {
-      console.error('❌ Error saving remaining stock:', error);
-      alert(`Error saving: ${error.message}`);
-      return false;
-    }
-  };
-
-  const loadScannedProductsForCurrentRange = async () => {
-    const dateKey = getCurrentDateKey();
-    const dbRef = ref(database, `remainingStocks/${dateKey}`);
-    try {
-      const snapshot = await get(dbRef);
-      if (snapshot.exists()) {
-        const stockData = snapshot.val();
-        const scannedBarcodes = Object.values(stockData).map(item => item.barcode);
-        setScannedProductsForCurrentRange(new Set(scannedBarcodes));
-      } else {
-        setScannedProductsForCurrentRange(new Set());
-      }
-    } catch (error) {
-      console.error('Error loading scanned products:', error);
-      setScannedProductsForCurrentRange(new Set());
-    }
-  };
-
-  // ===============================
-  // EDIT FUNCTIONS
-  // ===============================
-  
-  const handleEditClick = (record) => {
-    setEditingId(record.id);
-    setEditFormData({
-      status: record.status,
-      uncertainQuantity: record.uncertainQuantity || '',
-      soldCount: record.soldCount,
-      calculatedRemaining: record.calculatedRemaining,
-      originalQuantity: record.initialQuantity
-    });
-  };
-
-  const handleEditFormChange = (e) => {
-    const { name, value } = e.target;
-    setEditFormData({
-      ...editFormData,
-      [name]: value
-    });
-  };
-
-  const handleCancelClick = () => {
-    setEditingId(null);
-  };
-
-  const handleSaveClick = async () => {
-    try {
-      const recordRef = ref(database, `remainingStocks/${editingId}`);
-      const record = stockRecords.find(r => r.id === editingId);
-      if (!record) throw new Error('Record not found');
-
-      const updateData = {
-        status: editFormData.status,
-        soldCount: parseInt(editFormData.soldCount) || 0,
-        calculatedRemaining: parseInt(editFormData.calculatedRemaining) || 0
-      };
-
-      const productRef = ref(database, `products/${record.barcode}`);
-
-      if (editFormData.status === 'CONFIRMED') {
-        let newQuantity = record.status === 'NOT_CONFIRMED' 
-          ? parseInt(editFormData.uncertainQuantity) || 0 
-          : updateData.calculatedRemaining;
-
-        await update(productRef, { quantity: newQuantity });
-        updateData.calculatedRemaining = newQuantity;
-        updateData.uncertainQuantity = null;
-      } else if (editFormData.status === 'NOT_CONFIRMED') {
-        if (record.status === 'CONFIRMED') {
-          await update(productRef, { quantity: editFormData.originalQuantity });
-        }
-        updateData.uncertainQuantity = parseInt(editFormData.uncertainQuantity) || 0;
-      }
-
-      await update(recordRef, updateData);
-      setEditingId(null);
-      await fetchStockRecords(); // Refresh after update
-      alert('Record updated successfully!');
-    } catch (error) {
-      console.error('Error updating record:', error);
-      alert('Failed to update record: ' + error.message);
-    }
-  };
-
-  const handleDeleteClick = async (recordId) => {
-    if (window.confirm('Are you sure you want to delete this record? This action cannot be undone.')) {
-      try {
-        const recordRef = ref(database, `remainingStocks/${recordId}`);
-        await remove(recordRef);
-        await fetchStockRecords(); // Refresh after delete
-        alert('Record deleted successfully!');
-      } catch (error) {
-        console.error('Error deleting record:', error);
-        alert('Failed to delete record: ' + error.message);
-      }
-    }
-  };
-
-  // ===============================
-  // EXPORT FUNCTIONS
-  // ===============================
-  
-  const exportToExcel = () => {
-    const recordsToExport = filteredRecords.filter(record => {
-      if (!fromDate && !toDate) return true;
-      const recordDate = new Date(record.timestamp || record.dateScanned);
-      const from = fromDate ? new Date(fromDate) : null;
-      const to = toDate ? new Date(toDate) : null;
-      if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
-      if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
-      return true;
-    });
-
-    if (recordsToExport.length === 0) {
-      alert('No records to export for the selected filters.');
-      return;
-    }
-
-    const excelData = recordsToExport.map(record => ({
-      'Product Name': record.name,
-      'Barcode': record.barcode,
-      'Product Type': record.productType,
-      'Item Cost': record.itemCost,
-      'Initial Quantity': record.initialQuantity,
-      'Sold Count': record.soldCount,
-      'Calculated Remaining': record.calculatedRemaining,
-      'Status': record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed',
-      'Uncertain Quantity': record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A',
-      'Date Scanned': record.timestamp || 'N/A',
-      'Stock Check Date Range': record.dateRangeInfo?.fromDate && record.dateRangeInfo?.toDate 
-        ? `${record.dateRangeInfo.fromDate} to ${record.dateRangeInfo.toDate}`
-        : 'N/A'
-    }));
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    XLSX.utils.book_append_sheet(wb, ws, 'Stock Records');
-
-    let filename = 'stock_records';
-    if (fromDate && toDate) filename += `_${fromDate}_to_${toDate}`;
-    else if (fromDate) filename += `_from_${fromDate}`;
-    else if (toDate) filename += `_to_${toDate}`;
-    if (statusFilter !== 'All') filename += `_${statusFilter.toLowerCase().replace(' ', '_')}`;
-    filename += '.xlsx';
-
-    XLSX.writeFile(wb, filename);
-  };
-
-  // ===============================
-  // FORMATTING FUNCTIONS
-  // ===============================
-  
-  const formatDateRangeKey = (key) => {
-    if (key === 'all_time') return 'All Time';
-    if (key.startsWith('from_')) {
-      const fromDate = key.replace('from_', '');
-      return `From ${formatDateForDisplay(fromDate)}`;
-    }
-    if (key.startsWith('to_')) {
-      const toDate = key.replace('to_', '');
-      return `Up to ${formatDateForDisplay(toDate)}`;
-    }
-    if (key.includes('_to_')) {
-      const [from, to] = key.split('_to_');
-      return `${formatDateForDisplay(from)} to ${formatDateForDisplay(to)}`;
-    }
-    return key;
-  };
-
-  const handleHistoryRangeSelect = (rangeKey) => {
-    setSelectedHistoryRange(rangeKey);
-    if (rangeKey === 'all_time') {
-      setFromDate('');
-      setToDate('');
-    } else if (rangeKey.startsWith('from_')) {
-      const fromDateVal = rangeKey.replace('from_', '');
-      setFromDate(fromDateVal);
-      setToDate('');
-    } else if (rangeKey.startsWith('to_')) {
-      const toDateVal = rangeKey.replace('to_', '');
-      setFromDate('');
-      setToDate(toDateVal);
-    } else if (rangeKey.includes('_to_')) {
-      const [from, to] = rangeKey.split('_to_');
-      setFromDate(from);
-      setToDate(to);
-    }
-  };
-
-  // ===============================
-  // USE EFFECTS
-  // ===============================
-  
   useEffect(() => {
-    fetchProducts();
-    fetchAvailableDateRanges();
-    fetchStockRecords();
+    if (!searchTerm.trim()) { setFilteredProducts(products); return; }
+    const t = searchTerm.toLowerCase();
+    setFilteredProducts(products.filter(p =>
+      p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
+    ));
+  }, [searchTerm, products]);
+
+  // ── History fetch ──────────────────────────────────────────────────────────
+
+  const fetchHistory = useCallback(async (month) => {
+    setHistoryLoading(true);
+    try {
+      const snap = await get(ref(database, `stockCheckHistory/${month}`));
+      if (snap.exists()) {
+        setHistoryData(
+          Object.entries(snap.val())
+            .map(([key, v]) => ({ key, ...v }))
+            .sort((a, b) => new Date(b.checkedAt) - new Date(a.checkedAt))
+        );
+      } else { setHistoryData([]); }
+    } catch (err) { console.error(err); showError('Failed to load history.'); }
+    finally { setHistoryLoading(false); }
   }, []);
 
   useEffect(() => {
-    loadScannedProductsForCurrentRange();
-  }, [fromDate, toDate]);
+    if (activeTab === 'history') fetchHistory(historyMonth);
+  }, [activeTab, historyMonth, fetchHistory]);
+
+  const fetchArchives = useCallback(async () => {
+    setArchivesLoading(true);
+    try {
+      const snap = await get(ref(database, 'stockArchives'));
+      if (!snap.exists()) {
+        setArchivesData([]);
+        setSelectedArchive(null);
+        setSelectedArchiveId('');
+        return;
+      }
+
+      const list = Object.entries(snap.val())
+        .map(([key, value]) => ({
+          key,
+          archivedAt: value.archivedAt || key,
+          summary: value.summary || {},
+        }))
+        .sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
+
+      setArchivesData(list);
+      if (list.length > 0) {
+        setSelectedArchiveId((prev) => (
+          prev && list.some((archive) => archive.key === prev) ? prev : list[0].key
+        ));
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Failed to load archives.');
+    } finally {
+      setArchivesLoading(false);
+    }
+  }, []);
+
+  const fetchArchiveDetails = useCallback(async (archiveId) => {
+    if (!archiveId) { setSelectedArchive(null); return; }
+    setArchiveDetailLoading(true);
+    try {
+      const snap = await get(ref(database, `stockArchives/${archiveId}`));
+      if (snap.exists()) {
+        setSelectedArchive({ key: archiveId, ...snap.val() });
+      } else {
+        setSelectedArchive(null);
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Failed to load archive details.');
+    } finally {
+      setArchiveDetailLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (showScanner) {
-      const codeReader = new BrowserMultiFormatReader();
-      const videoElement = scannerRef.current;
+    if (activeTab === 'archives') fetchArchives();
+  }, [activeTab, fetchArchives]);
 
-      codeReader
-        .decodeFromVideoDevice(null, videoElement, (result, error) => {
-          if (result) {
-            setScanStatus('Barcode detected! Processing...');
-            fetchProductDetails(result.text);
-          } else if (error && !error.message.includes('NotFoundException')) {
-            setScanStatus('Align barcode within frame');
-          }
-        }, {
-          tryHarder: true,
-          constraints: {
-            video: {
-              facingMode: 'environment',
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-          },
-        })
-        .catch((err) => console.error('Camera initialization failed:', err));
+  useEffect(() => {
+    if (activeTab === 'archives') fetchArchiveDetails(selectedArchiveId);
+  }, [activeTab, selectedArchiveId, fetchArchiveDetails]);
 
-      return () => {
-        codeReader.reset();
-      };
+  // ── Scanner camera lifecycle ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!scannerOpen || scannerPaused) return;
+
+    const codeReader = new BrowserMultiFormatReader();
+    codeReaderRef.current = codeReader;
+
+    codeReader.decodeFromVideoDevice(null, scannerRef.current, (result) => {
+      if (!result) return;
+      if (scanCoolRef.current) return;
+      scanCoolRef.current = setTimeout(() => { scanCoolRef.current = null; }, 2500);
+
+      const barcode = result.getText();
+      const found = products.find(p => p.id === barcode);
+      if (found) {
+        setScannerPaused(true);
+        setScannedProduct(found);
+        setScanQty('');
+        setScanStatus(`Found: ${found.name}`);
+      } else {
+        setScanStatus(`Barcode "${barcode}" not found in products.`);
+        setTimeout(() => setScanStatus('Align barcode within the frame.'), 2500);
+      }
+    }, { tryHarder: false, constraints: { video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } } } })
+    .catch(err => { console.error('Camera init failed:', err); setScanStatus('Camera failed. Check permissions.'); });
+
+    return () => {
+      if (scanCoolRef.current) { clearTimeout(scanCoolRef.current); scanCoolRef.current = null; }
+      if (codeReaderRef.current) { codeReaderRef.current.reset(); codeReaderRef.current = null; }
+    };
+  }, [scannerOpen, scannerPaused, products]);
+
+  useEffect(() => {
+    if (!scannerOpen) {
+      if (scanCoolRef.current) { clearTimeout(scanCoolRef.current); scanCoolRef.current = null; }
+      if (codeReaderRef.current) { codeReaderRef.current.reset(); codeReaderRef.current = null; }
+      setScannerPaused(false); setScannedProduct(null); setScanQty('');
+      setScanStatus('Align barcode within the frame.');
     }
-  }, [showScanner]);
+  }, [scannerOpen]);
 
-  // ===============================
-  // FILTERS & CALCULATIONS
-  // ===============================
-  
-  const filteredRecords = stockRecords.filter(record => {
-    if (statusFilter === 'All') return true;
-    if (statusFilter === 'Confirmed') return record.status === 'CONFIRMED';
-    if (statusFilter === 'Not Confirmed') return record.status === 'NOT_CONFIRMED';
-    return true;
-  });
+  // ── Actions: scan modal ────────────────────────────────────────────────────
 
-  const availableProducts = products.filter(product => 
-    !scannedProductsForCurrentRange.has(product.barcode)
-  );
+  const handleScanAccurate = async () => {
+    const counted = parseFloat(scanQty);
+    if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
+    try {
+      await update(ref(database, `products/${scannedProduct.id}`), { quantity: counted });
+      await update(ref(database, `stockChecks/${scannedProduct.id}`), {
+        productName: scannedProduct.name, systemQuantity: scannedProduct.quantity,
+        countedQuantity: counted, status: 'accurate', checkedAt: new Date().toISOString(),
+      });
+      await pushHistory(scannedProduct.id, scannedProduct.name, scannedProduct.quantity, counted, 'accurate');
+      setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
+      showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
+      setScannedProduct(null); setScanQty(''); setScannerPaused(false);
+      setScanStatus('Align barcode within the frame.');
+    } catch (err) { console.error(err); showError('Failed to update.'); }
+  };
 
-  // ===============================
-  // RENDER
-  // ===============================
-  
-  return (
-    <div className="admin-container">
-      {/* Page Header */}
-      <div className="page-header">
-        <h1 className="page-title">Stock Management</h1>
-        <p className="page-subtitle">Track and manage product inventory</p>
-      </div>
+  const handleScanInaccurate = async () => {
+    const counted = parseFloat(scanQty);
+    if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
+    try {
+      const checkData = {
+        productName: scannedProduct.name, systemQuantity: scannedProduct.quantity,
+        countedQuantity: counted, status: 'pending', checkedAt: new Date().toISOString(),
+      };
+      await update(ref(database, `stockChecks/${scannedProduct.id}`), checkData);
+      await pushHistory(scannedProduct.id, scannedProduct.name, scannedProduct.quantity, counted, 'inaccurate');
+      setPendingChecks(prev => {
+        const exists = prev.find(c => c.id === scannedProduct.id);
+        if (exists) return prev.map(c => c.id === scannedProduct.id ? { id: scannedProduct.id, ...checkData } : c);
+        return [...prev, { id: scannedProduct.id, ...checkData }];
+      });
+      showSuccess(`"${scannedProduct.name}" flagged for reconfirmation.`);
+      setScannedProduct(null); setScanQty(''); setScannerPaused(false);
+      setScanStatus('Align barcode within the frame.');
+    } catch (err) { console.error(err); showError('Failed to save.'); }
+  };
 
-      {/* Main Actions Card */}
-      <div className="actions-card">
-        <div className="card-header">
-          <h2 className="card-title">
-            <span className="card-icon">📊</span>
-            Stock Management Tools
-          </h2>
-          <div className="card-actions">
-            <button 
-              onClick={handleRefresh}
-              className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh'}
-            </button>
-            <button onClick={exportToExcel} className="btn-primary">
-              <span className="button-icon">📊</span>
-              Export Excel
-            </button>
-          </div>
-        </div>
+  // ── Actions: table ─────────────────────────────────────────────────────────
 
-        {/* CORRECTED: Date Range Selection for Sold Items */}
-        <div className="date-selection-section">
-          <h3 className="section-title">Select Date Range for Sold Items</h3>
-          <p className="section-subtitle">
-            Choose the period to count sold items from SoldItems collection
-          </p>
-          
-          <div className="date-inputs">
-            <div className="date-input-group">
-              <label className="date-label">From Date</label>
-              <input 
-                type="date" 
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="date-input"
-                max={toDate || new Date().toISOString().split('T')[0]}
-              />
-            </div>
-            <div className="date-input-group">
-              <label className="date-label">To Date</label>
-              <input 
-                type="date" 
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="date-input"
-                min={fromDate}
-                max={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-          </div>
+  const handleAccurate = async (product) => {
+    const counted = parseFloat(countedQty[product.id]);
+    if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
+    try {
+      await update(ref(database, `products/${product.id}`), { quantity: counted });
+      await update(ref(database, `stockChecks/${product.id}`), {
+        productName: product.name, systemQuantity: product.quantity,
+        countedQuantity: counted, status: 'accurate', checkedAt: new Date().toISOString(),
+      });
+      await pushHistory(product.id, product.name, product.quantity, counted, 'accurate');
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: counted } : p));
+      setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      showSuccess(`✓ "${product.name}" updated to ${counted}.`);
+    } catch (err) { console.error(err); showError('Failed to update stock.'); }
+  };
 
-          {(fromDate || toDate) && (
-            <div className="current-range-display">
-              <span className="range-label">Counting sold items from:</span>
-              <span className="range-value">
-                {fromDate ? formatDateForDisplay(fromDate) : 'Beginning'} to {toDate ? formatDateForDisplay(toDate) : 'Today'}
-              </span>
-              <button onClick={clearDateFilters} className="clear-range-btn">
-                ✕ Clear
-              </button>
+  const handleInaccurate = async (product) => {
+    const counted = parseFloat(countedQty[product.id]);
+    if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
+    try {
+      const checkData = {
+        productName: product.name, systemQuantity: product.quantity,
+        countedQuantity: counted, status: 'pending', checkedAt: new Date().toISOString(),
+      };
+      await update(ref(database, `stockChecks/${product.id}`), checkData);
+      await pushHistory(product.id, product.name, product.quantity, counted, 'inaccurate');
+      setPendingChecks(prev => {
+        const exists = prev.find(c => c.id === product.id);
+        if (exists) return prev.map(c => c.id === product.id ? { id: product.id, ...checkData } : c);
+        return [...prev, { id: product.id, ...checkData }];
+      });
+      setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      showSuccess(`"${product.name}" flagged for reconfirmation.`);
+    } catch (err) { console.error(err); showError('Failed to save check.'); }
+  };
+
+  // ── Actions: pending ───────────────────────────────────────────────────────
+
+  const handleReconfirmAccurate = async (check) => {
+    const newQty = parseFloat(reconfirmQty[check.id]);
+    const qty = isNaN(newQty) ? check.countedQuantity : newQty;
+    try {
+      await update(ref(database, `products/${check.id}`), { quantity: qty });
+      await update(ref(database, `stockChecks/${check.id}`), { countedQuantity: qty, status: 'accurate', reconfirmedAt: new Date().toISOString() });
+      await pushHistory(check.id, check.productName, check.systemQuantity, qty, 'accurate');
+      setProducts(prev => prev.map(p => p.id === check.id ? { ...p, quantity: qty } : p));
+      setPendingChecks(prev => prev.filter(c => c.id !== check.id));
+      setReconfirmQty(prev => { const n = { ...prev }; delete n[check.id]; return n; });
+      showSuccess(`✓ "${check.productName}" confirmed — updated to ${qty}.`);
+    } catch (err) { console.error(err); showError('Failed to reconfirm.'); }
+  };
+
+  const handleReconfirmInaccurate = async (check) => {
+    const newQty = parseFloat(reconfirmQty[check.id]);
+    const qty = isNaN(newQty) ? check.countedQuantity : newQty;
+    try {
+      await update(ref(database, `stockChecks/${check.id}`), { countedQuantity: qty, status: 'pending', checkedAt: new Date().toISOString() });
+      await pushHistory(check.id, check.productName, check.systemQuantity, qty, 'inaccurate');
+      setPendingChecks(prev => prev.map(c => c.id === check.id ? { ...c, countedQuantity: qty, checkedAt: new Date().toISOString() } : c));
+      setReconfirmQty(prev => { const n = { ...prev }; delete n[check.id]; return n; });
+      showSuccess(`"${check.productName}" remains flagged for review.`);
+    } catch (err) { console.error(err); showError('Failed to update.'); }
+  };
+
+  // ── Actions: archive all stock and reset ──────────────────────────────────
+
+  const handleArchiveAllStock = async () => {
+    if (products.length === 0) { showError('No products available to archive.'); return; }
+
+    const confirmed = window.confirm(
+      'Archive all current stock data + all Sold Items and start fresh?\n\n' +
+      'This keeps product quantities unchanged, stores snapshots in "stockArchives", and clears live SoldItems + stock check history.'
+    );
+    if (!confirmed) return;
+
+    setIsArchiving(true);
+    const archivedAt = new Date().toISOString();
+    const archiveId = archivedAt.replace(/[.:]/g, '-');
+
+    try {
+      const [checksSnap, historySnap, soldSnap] = await Promise.all([
+        get(ref(database, 'stockChecks')),
+        get(ref(database, 'stockCheckHistory')),
+        get(ref(database, 'SoldItems')),
+      ]);
+
+      const productSnapshot = products.reduce((acc, product) => {
+        acc[product.id] = { ...product };
+        return acc;
+      }, {});
+
+      await set(ref(database, `stockArchives/${archiveId}`), {
+        archivedAt,
+        summary: {
+          productsArchived: products.length,
+          soldItemsArchived: soldSnap.exists() ? Object.keys(soldSnap.val()).length : 0,
+          pendingChecksArchived: pendingChecks.length,
+          historyMonthsArchived: historySnap.exists() ? Object.keys(historySnap.val()).length : 0,
+        },
+        products: productSnapshot,
+        soldItems: soldSnap.exists() ? soldSnap.val() : {},
+        stockChecks: checksSnap.exists() ? checksSnap.val() : {},
+        stockCheckHistory: historySnap.exists() ? historySnap.val() : {},
+      });
+
+      const resetChecks = {};
+      products.forEach((product) => {
+        const currentQty = parseFloat(product.quantity) || 0;
+        resetChecks[product.id] = {
+          productName: product.name || '',
+          systemQuantity: currentQty,
+          countedQuantity: currentQty,
+          status: 'accurate',
+          checkedAt: archivedAt,
+          resetFromArchive: archiveId,
+        };
+      });
+
+      await Promise.all([
+        set(ref(database, 'stockCheckHistory'), null),
+        set(ref(database, 'SoldItems'), null),
+        set(ref(database, 'stockChecks'), resetChecks),
+      ]);
+
+      setPendingChecks([]);
+      setCountedQty({});
+      setReconfirmQty({});
+      setSoldTotals({});
+      setHistoryData([]);
+      if (activeTab === 'archives') fetchArchives();
+
+      showSuccess(`Archived stock + sold data for ${products.length} products and started fresh. Product quantities were not changed.`);
+    } catch (err) {
+      console.error(err);
+      if (err?.code === 'PERMISSION_DENIED') {
+        showError('Permission denied. Add read/write rules for "stockArchives".');
+      } else {
+        showError('Failed to archive stock. Please try again.');
+      }
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  // ── Render: Check tab ──────────────────────────────────────────────────────
+
+  const renderCheckTab = () => (
+    <div>
+      <div className="header-section">
+        <div className="header-left">
+          <h2 className="section-title">Stock Checker</h2>
+          <div className="stats-badge">{filteredProducts.length} Products</div>
+          {pendingChecks.length > 0 && (
+            <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404', marginLeft: 8 }}>
+              {pendingChecks.length} Pending
             </div>
           )}
-
-          {(!fromDate && !toDate) && (
-            <div className="date-range-warning">
-              <span className="warning-icon">⚠️</span>
-              <span className="warning-text">Please select a date range to start stock check</span>
-            </div>
-          )}
         </div>
-
-        <div className="action-buttons-grid">
+        <div className="header-right" style={{ display: 'flex', gap: 8 }}>
           <button
-            className="action-card"
-            onClick={() => {
-              if (!fromDate && !toDate) {
-                alert('Please select a date range first to count sold items.');
-                return;
-              }
-              setShowScanner(true);
-              setShowDropdown(false);
-              setScanStatus('Align barcode within frame');
-            }}
-            disabled={!fromDate && !toDate}
+            onClick={handleArchiveAllStock}
+            className="btn-danger"
+            disabled={isArchiving || isLoading || products.length === 0}
+            title="Archive old stock + SoldItems data and reset tracking without changing product quantities"
           >
-            <div className="action-card-icon">📷</div>
-            <div className="action-card-content">
-              <h3 className="action-card-title">Scan Barcode</h3>
-              <p className="action-card-description">Count sold items from {fromDate || '?'} to {toDate || '?'}</p>
-            </div>
+            {isArchiving ? '🗄️ Archiving...' : '🗄️ Archive Stock + Sales Data'}
           </button>
-
-          <button
-            className="action-card"
-            onClick={() => {
-              if (!fromDate && !toDate) {
-                alert('Please select a date range first to count sold items.');
-                return;
-              }
-              setShowDropdown(true);
-              setShowScanner(false);
-              setScanStatus('Select a product from dropdown');
-            }}
-            disabled={!fromDate && !toDate}
-          >
-            <div className="action-card-icon">🔍</div>
-            <div className="action-card-content">
-              <h3 className="action-card-title">Search Product</h3>
-              <p className="action-card-description">Count sold items from {fromDate || '?'} to {toDate || '?'}</p>
-            </div>
+          <button onClick={() => setScannerOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            📷 Scan Barcode
+          </button>
+          <button onClick={fetchData} className={`btn-secondary ${isLoading ? 'refreshing' : ''}`} disabled={isLoading}>
+            {isLoading ? '🔄 Loading...' : '🔄 Refresh'}
           </button>
         </div>
-
-        {/* Scanner Section */}
-        {showScanner && (
-          <div className="scanner-section">
-            <div className="scanner-container">
-              <video ref={scannerRef} className="scanner-video"></video>
-              <div className="scanner-overlay">
-                <div className="scanner-frame"></div>
-                <p className={`scanner-status ${scanStatus.includes('already scanned') ? 'error' : ''}`}>
-                  {scanStatus}
-                </p>
-              </div>
-            </div>
-            <button 
-              onClick={() => setShowScanner(false)}
-              className="btn-secondary btn-small"
-            >
-              ✕ Close Scanner
-            </button>
-          </div>
-        )}
-
-        {/* Product Selection Dropdown */}
-        {showDropdown && (
-          <div className="product-selector-card">
-            <div className="selector-header">
-              <h3 className="selector-title">Select Product</h3>
-              <span className="selector-count">
-                {availableProducts.length} products available for this date range
-              </span>
-            </div>
-            <select 
-              value={selectedProduct} 
-              onChange={(e) => {
-                setSelectedProduct(e.target.value);
-                if (e.target.value) fetchProductDetails(e.target.value);
-              }}
-              className="product-select"
-            >
-              <option value="">Choose a product...</option>
-              {availableProducts.map((product) => (
-                <option key={product.barcode} value={product.barcode}>
-                  {product.name} ({product.barcode}) - Stock: {product.quantity}
-                </option>
-              ))}
-            </select>
-            {availableProducts.length === 0 && (
-              <div className="selector-empty">
-                <span className="empty-icon">📦</span>
-                <p>All products already checked for {fromDate} to {toDate}</p>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Filters Card */}
-      <div className="filters-card">
-        <div className="filters-grid">
-          {/* Status Filter */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <span className="filter-icon">📊</span>
-              Filter by Status
-            </label>
-            <select 
-              value={statusFilter} 
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="status-select"
-            >
-              <option value="All">All Status</option>
-              <option value="Confirmed">Confirmed Only</option>
-              <option value="Not Confirmed">Uncertain Only</option>
-            </select>
-          </div>
-
-          {/* History Selector */}
-          <div className="filter-group">
-            <label className="filter-label">
-              <span className="filter-icon">📋</span>
-              Stock Check History
-            </label>
-            <select
-              value={selectedHistoryRange}
-              onChange={(e) => handleHistoryRangeSelect(e.target.value)}
-              className="history-select"
-            >
-              <option value="">Select a date range...</option>
-              {availableDateRanges.map((range) => (
-                <option key={range.key} value={range.key}>
-                  {formatDateRangeKey(range.key)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Most Recent Stock Check */}
-        {mostRecentDateRange && (
-          <div className="recent-stock-info">
-            <div className="recent-icon">⏱️</div>
-            <div className="recent-content">
-              <div className="recent-title">Most Recent Stock Check</div>
-              <div className="recent-details">
-                {formatDateRangeKey(mostRecentDateRange.key)} • {new Date(mostRecentDateRange.timestamp).toLocaleDateString()}
-              </div>
-            </div>
-          </div>
-        )}
+      <div style={{ margin: '12px 0' }}>
+        <input
+          type="text"
+          placeholder="🔍 Search by name, barcode or type..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
+        />
       </div>
 
-      {/* Product Modal */}
-      {isPopupOpen && scannedProduct && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3 className="modal-title">
-                <span className="modal-product-icon">📦</span>
-                {scannedProduct.name}
-              </h3>
-              <button
-                onClick={() => {
-                  setIsPopupOpen(false);
-                  setSoldCount(0);
-                  setUncertainQuantity('');
-                }}
-                className="modal-close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="modal-content">
-              {/* Date Range Info */}
-              <div className="date-range-info">
-                <span className="info-label">Counting sold items from:</span>
-                <span className="info-value">
-                  {formatDateForDisplay(fromDate)} to {formatDateForDisplay(toDate)}
-                </span>
-              </div>
-
-              <div className="product-details-grid">
-                <div className="product-detail">
-                  <span className="detail-label">Barcode</span>
-                  <span className="detail-value barcode">{scannedProduct.barcode}</span>
-                </div>
-                <div className="product-detail">
-                  <span className="detail-label">Current Stock</span>
-                  <span className="detail-value quantity">{scannedProduct.quantity}</span>
-                </div>
-                <div className="product-detail">
-                  <span className="detail-label">Sold in Period</span>
-                  <span className="detail-value sold">{soldCount}</span>
-                </div>
-                <div className="product-detail">
-                  <span className="detail-label">Calculated Remaining</span>
-                  <span className="detail-value remaining">
-                    {Math.max(0, scannedProduct.quantity - soldCount)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="calculation-explanation">
-                <p className="explanation-text">
-                  <strong>Calculation:</strong> {scannedProduct.quantity} (Current Stock) - {soldCount} (Sold from {formatDateForDisplay(fromDate)} to {formatDateForDisplay(toDate)}) = {Math.max(0, scannedProduct.quantity - soldCount)} (Remaining)
-                </p>
-              </div>
-
-              <div className="product-actions">
-                <button
-                  onClick={async () => {
-                    const confirmed = window.confirm(
-                      `Confirm remaining quantity: ${Math.max(0, scannedProduct.quantity - soldCount)}\n\nThis will:\n1. Update product stock to ${Math.max(0, scannedProduct.quantity - soldCount)}\n2. Save stock check for ${formatDateForDisplay(fromDate)} to ${formatDateForDisplay(toDate)}`
-                    );
-                    if (confirmed) {
-                      const saved = await saveRemainingStock('CONFIRMED');
-                      if (saved) {
-                        setIsPopupOpen(false);
-                        setSoldCount(0);
-                        setSelectedProduct('');
-                        setUncertainQuantity('');
-                      }
-                    }
-                  }}
-                  className="btn-success"
-                >
-                  <span className="button-icon">✅</span>
-                  Confirm & Update Stock
-                </button>
-
-                <div className="uncertain-section">
-                  <div className="uncertain-input-group">
-                    <input
-                      type="number"
-                      value={uncertainQuantity}
-                      onChange={(e) => setUncertainQuantity(e.target.value)}
-                      placeholder="If uncertain, enter actual count..."
-                      className="uncertain-input"
-                      min="0"
-                      step="0.01"
-                    />
-                    <button
-                      onClick={async () => {
-                        if (!uncertainQuantity || isNaN(uncertainQuantity) || uncertainQuantity < 0) {
-                          alert('Please enter a valid positive quantity');
-                          return;
-                        }
-                        const confirmed = window.confirm(
-                          `Save as uncertain quantity: ${uncertainQuantity}\n\nThis will save the stock check without updating product stock.\nDate Range: ${formatDateForDisplay(fromDate)} to ${formatDateForDisplay(toDate)}`
-                        );
-                        if (confirmed) {
-                          const saved = await saveRemainingStock('NOT_CONFIRMED', uncertainQuantity);
-                          if (saved) {
-                            setIsPopupOpen(false);
-                            setSoldCount(0);
-                            setUncertainQuantity('');
-                            setSelectedProduct('');
-                          }
-                        }
-                      }}
-                      className="btn-warning"
-                    >
-                      <span className="button-icon">❓</span>
-                      Save Uncertain Count
-                    </button>
-                  </div>
-                  <p className="uncertain-note">
-                    <small>Use this if physical count differs from calculated value</small>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Stock Records Table */}
-      <div className="table-card">
-        <div className="table-header">
-          <div className="table-header-left">
-            <h2 className="table-title">
-              <span className="table-icon">📋</span>
-              Stock Records
-            </h2>
-            <div className="table-stats">
-              {filteredRecords.length} records • 
-              {statusFilter === 'All' ? ' All status' : ` ${statusFilter}`}
-            </div>
-          </div>
-          <div className="table-header-right">
-            <button onClick={clearDateFilters} className="btn-secondary btn-small">
-              ✕ Clear Date Filters
-            </button>
-          </div>
-        </div>
-
-        <div className="table-container">
-          {filteredRecords.length === 0 ? (
-            <div className="empty-table">
-              <div className="empty-icon">📊</div>
-              <p className="empty-title">No stock records found</p>
-              <p className="empty-description">
-                {fromDate || toDate 
-                  ? `No records for selected date range${fromDate ? ` from ${formatDateForDisplay(fromDate)}` : ''}${toDate ? ` to ${formatDateForDisplay(toDate)}` : ''}`
-                  : 'Select a date range and scan products to create stock records'}
-              </p>
-            </div>
-          ) : (
+      <div className="table-section">
+        <div className="table-card">
+          <div className="table-container">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Product</th>
                   <th>Barcode</th>
-                  <th>Initial Qty</th>
-                  <th>Sold</th>
-                  <th>Remaining</th>
+                  <th>Product Name</th>
+                  <th>Type</th>
+                  <th className="text-right">Current Stock</th>
+                  <th className="text-right" title="Sold since last stock check">Sold Since Check</th>
+                  <th className="text-right">Expected Remaining</th>
+                  <th className="text-right">Counted Qty</th>
                   <th>Status</th>
-                  <th>Uncertain Qty</th>
-                  <th>Date Scanned</th>
-                  <th>Date Range</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords
-                  .filter(record => {
-                    if (!fromDate && !toDate) return true;
-                    const recordDate = new Date(record.timestamp || record.dateScanned);
-                    const from = fromDate ? new Date(fromDate) : null;
-                    const to = toDate ? new Date(toDate) : null;
-                    if (from && recordDate < from.setHours(0, 0, 0, 0)) return false;
-                    if (to && recordDate > new Date(to.setHours(23, 59, 59, 999))) return false;
-                    return true;
-                  })
-                  .map((record) => (
-                    <tr key={record.id} className={editingId === record.id ? 'editing-row' : ''}>
-                      <td>
-                        <div className="product-cell">
-                          <span className="product-name">{record.name}</span>
-                          <span className="product-type">{record.productType}</span>
-                        </div>
+                {filteredProducts.map(product => {
+                  const isPending        = pendingChecks.some(c => c.id === product.id);
+                  const inputVal         = countedQty[product.id] ?? '';
+                  const totalSold        = soldTotals[product.id] || 0;
+                  const currentStock     = product.quantity;
+                  const expectedRemaining = currentStock - totalSold;
+                  const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
+                  return (
+                    <tr key={product.id} style={isPending ? { backgroundColor: '#fffbeb' } : {}}>
+                      <td><span className="barcode-cell">{product.id}</span></td>
+                      <td><span className="product-name-cell">{product.name}</span></td>
+                      <td><span className="type-cell">{product.productType}</span></td>
+                      <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
+                      <td className="text-right">
+                        <span className="quantity-cell" style={{ color: totalSold > 0 ? '#dc3545' : '#6c757d' }}>{totalSold}</span>
                       </td>
-                      <td>
-                        <span className="barcode-cell">{record.barcode}</span>
-                      </td>
-                      <td>
-                        <span className="quantity-cell">{record.initialQuantity}</span>
-                      </td>
-                      
-                      {editingId === record.id ? (
-                        <>
-                          <td>
-                            <input
-                              type="number"
-                              name="soldCount"
-                              value={editFormData.soldCount}
-                              onChange={handleEditFormChange}
-                              className="edit-input"
-                              min="0"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              name="calculatedRemaining"
-                              value={editFormData.calculatedRemaining}
-                              onChange={handleEditFormChange}
-                              className="edit-input"
-                              min="0"
-                            />
-                          </td>
-                          <td>
-                            <select
-                              name="status"
-                              value={editFormData.status}
-                              onChange={handleEditFormChange}
-                              className="edit-select"
-                            >
-                              <option value="CONFIRMED">Confirmed</option>
-                              <option value="NOT_CONFIRMED">Not Confirmed</option>
-                            </select>
-                          </td>
-                          <td>
-                            {editFormData.status === 'NOT_CONFIRMED' ? (
-                              <input
-                                type="number"
-                                name="uncertainQuantity"
-                                value={editFormData.uncertainQuantity}
-                                onChange={handleEditFormChange}
-                                className="edit-input"
-                                min="0"
-                              />
-                            ) : (
-                              'N/A'
-                            )}
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td>
-                            <span className="sold-cell">{record.soldCount}</span>
-                          </td>
-                          <td>
-                            <span className="remaining-cell">{record.calculatedRemaining}</span>
-                          </td>
-                          <td>
-                            <span className={`status-badge ${record.status === 'CONFIRMED' ? 'confirmed' : 'not-confirmed'}`}>
-                              {record.status === 'CONFIRMED' ? 'Confirmed' : 'Not Confirmed'}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="uncertain-cell">
-                              {record.status === 'NOT_CONFIRMED' ? record.uncertainQuantity : 'N/A'}
-                            </span>
-                          </td>
-                        </>
-                      )}
-                      
-                      <td>
-                        <span className="date-cell">{record.timestamp || 'N/A'}</span>
-                      </td>
-                      
-                      <td>
-                        <span className="date-range-cell">
-                          {record.dateRangeInfo?.fromDate && record.dateRangeInfo?.toDate 
-                            ? `${formatDateForDisplay(record.dateRangeInfo.fromDate)} to ${formatDateForDisplay(record.dateRangeInfo.toDate)}`
-                            : 'N/A'}
+                      <td className="text-right">
+                        <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
+                          {expectedRemaining}
                         </span>
                       </td>
-                      
+                      <td className="text-right">
+                        <input
+                          type="number" min="0" placeholder="Enter count" value={inputVal}
+                          onChange={e => setCountedQty(prev => ({ ...prev, [product.id]: e.target.value }))}
+                          className="edit-input"
+                          style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
+                        />
+                        {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
+                      </td>
+                      <td>
+                        {isPending
+                          ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>⚠️ Pending</span>
+                          : <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>✓ OK</span>}
+                      </td>
                       <td>
                         <div className="action-buttons">
-                          {editingId === record.id ? (
-                            <>
-                              <button onClick={handleSaveClick} className="btn-small btn-success">
-                                💾 Save
-                              </button>
-                              <button onClick={handleCancelClick} className="btn-small btn-secondary">
-                                ✕ Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button onClick={() => handleEditClick(record)} className="btn-small btn-primary">
-                                ✏️ Edit
-                              </button>
-                              <button onClick={() => handleDeleteClick(record.id)} className="btn-small btn-danger">
-                                🗑️ Delete
-                              </button>
-                            </>
-                          )}
+                          <button className="btn-small btn-success" onClick={() => handleAccurate(product)}>✅ Accurate</button>
+                          <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}>❌ Inaccurate</button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+          {filteredProducts.length === 0 && !isLoading && (
+            <div className="empty-table">
+              <div className="empty-icon">📦</div>
+              <p>No products found{searchTerm ? ` for "${searchTerm}"` : ''}</p>
+            </div>
           )}
         </div>
       </div>
+    </div>
+  );
+
+  // ── Render: Pending tab ────────────────────────────────────────────────────
+
+  const renderPendingTab = () => (
+    <div>
+      <div className="header-section">
+        <div className="header-left">
+          <h2 className="section-title">Pending Reconfirmations</h2>
+          <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404' }}>{pendingChecks.length} Flagged</div>
+        </div>
+        <div className="header-right">
+          <button onClick={fetchData} className="btn-secondary" disabled={isLoading}>{isLoading ? '🔄 Loading...' : '🔄 Refresh'}</button>
+        </div>
+      </div>
+      <div className="table-section">
+        <div className="table-card">
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Barcode</th>
+                  <th>Product Name</th>
+                  <th className="text-right">System Qty</th>
+                  <th className="text-right">Last Count</th>
+                  <th className="text-right">Difference</th>
+                  <th>Flagged At</th>
+                  <th className="text-right">Re-count Qty</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingChecks.map(check => {
+                  const diff       = check.countedQuantity - check.systemQuantity;
+                  const reInputVal = reconfirmQty[check.id] ?? '';
+                  return (
+                    <tr key={check.id} style={{ backgroundColor: '#fffbeb' }}>
+                      <td><span className="barcode-cell">{check.id}</span></td>
+                      <td><span className="product-name-cell">{check.productName}</span></td>
+                      <td className="text-right"><span className="quantity-cell">{check.systemQuantity}</span></td>
+                      <td className="text-right"><span className="quantity-cell">{check.countedQuantity}</span></td>
+                      <td className="text-right">
+                        <span style={{ color: diff < 0 ? '#dc3545' : diff > 0 ? '#198754' : '#6c757d', fontWeight: 600 }}>{diff > 0 ? '+' : ''}{diff}</span>
+                      </td>
+                      <td><span className="date-cell">{formatDate(check.checkedAt)}</span></td>
+                      <td className="text-right">
+                        <input
+                          type="number" min="0" placeholder={String(check.countedQuantity)} value={reInputVal}
+                          onChange={e => setReconfirmQty(prev => ({ ...prev, [check.id]: e.target.value }))}
+                          className="edit-input" style={{ width: 90 }}
+                        />
+                      </td>
+                      <td>
+                        <div className="action-buttons">
+                          <button className="btn-small btn-success" onClick={() => handleReconfirmAccurate(check)}>✅ Confirm</button>
+                          <button className="btn-small btn-warning" onClick={() => handleReconfirmInaccurate(check)}>🔄 Still Unsure</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {pendingChecks.length === 0 && (
+            <div className="empty-table">
+              <div className="empty-icon">✅</div>
+              <p>No pending reconfirmations — all checks cleared!</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Render: History tab ────────────────────────────────────────────────────
+
+  const renderHistoryTab = () => {
+    const accurate   = historyData.filter(h => h.status === 'accurate').length;
+    const inaccurate = historyData.filter(h => h.status === 'inaccurate').length;
+    return (
+      <div>
+        <div className="header-section">
+          <div className="header-left">
+            <h2 className="section-title">Stock Check History</h2>
+            <div className="stats-badge">{historyData.length} Records</div>
+          </div>
+          <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontWeight: 600, fontSize: 14 }}>Month:</label>
+            <input
+              type="month" value={historyMonth}
+              onChange={e => setHistoryMonth(e.target.value)}
+              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14 }}
+            />
+            <button onClick={() => fetchHistory(historyMonth)} className="btn-secondary" disabled={historyLoading}>
+              {historyLoading ? '🔄' : '🔄 Load'}
+            </button>
+          </div>
+        </div>
+
+        {historyData.length > 0 && (
+          <div style={{ display: 'flex', gap: 12, margin: '12px 0' }}>
+            <div style={{ flex: 1, background: '#e8f5e9', borderRadius: 10, padding: '14px 18px', borderLeft: '4px solid #28a745' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a7a2e' }}>{accurate}</div>
+              <div style={{ fontSize: 13, color: '#555' }}>✅ Accurate checks</div>
+            </div>
+            <div style={{ flex: 1, background: '#fff3cd', borderRadius: 10, padding: '14px 18px', borderLeft: '4px solid #ffc107' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#856404' }}>{inaccurate}</div>
+              <div style={{ fontSize: 13, color: '#555' }}>⚠️ Flagged as inaccurate</div>
+            </div>
+            <div style={{ flex: 1, background: '#e7f1ff', borderRadius: 10, padding: '14px 18px', borderLeft: '4px solid #0d6efd' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#0a58ca' }}>{historyData.length}</div>
+              <div style={{ fontSize: 13, color: '#555' }}>📋 Total checks</div>
+            </div>
+          </div>
+        )}
+
+        <div className="table-section">
+          <div className="table-card">
+            <div className="table-container">
+              {historyLoading ? (
+                <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading history...</div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Barcode</th>
+                      <th className="text-right">System Qty</th>
+                      <th className="text-right">Counted Qty</th>
+                      <th className="text-right">Difference</th>
+                      <th>Result</th>
+                      <th>Checked At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyData.map(entry => {
+                      const diff = entry.countedQuantity - entry.systemQuantity;
+                      return (
+                        <tr key={entry.key}>
+                          <td><span className="product-name-cell">{entry.productName}</span></td>
+                          <td><span className="barcode-cell">{entry.productId}</span></td>
+                          <td className="text-right"><span className="quantity-cell">{entry.systemQuantity}</span></td>
+                          <td className="text-right"><span className="quantity-cell">{entry.countedQuantity}</span></td>
+                          <td className="text-right">
+                            <span style={{ color: diff < 0 ? '#dc3545' : diff > 0 ? '#198754' : '#6c757d', fontWeight: 600 }}>{diff > 0 ? '+' : ''}{diff}</span>
+                          </td>
+                          <td>
+                            {entry.status === 'accurate'
+                              ? <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>✅ Accurate</span>
+                              : <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>⚠️ Inaccurate</span>}
+                          </td>
+                          <td><span className="date-cell">{formatDate(entry.checkedAt)}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {!historyLoading && historyData.length === 0 && (
+              <div className="empty-table">
+                <div className="empty-icon">📅</div>
+                <p>No stock checks recorded for {historyMonth}.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Render: Archives tab ───────────────────────────────────────────────────
+
+  const renderArchivesTab = () => {
+    const selectedSummary = selectedArchive?.summary || {};
+    const selectedProductsCount = selectedArchive
+      ? (selectedSummary.productsArchived ?? objCount(selectedArchive.products))
+      : 0;
+    const selectedSoldItemsCount = selectedArchive
+      ? (selectedSummary.soldItemsArchived ?? objCount(selectedArchive.soldItems))
+      : 0;
+    const selectedChecksCount = selectedArchive ? objCount(selectedArchive.stockChecks) : 0;
+    const selectedPendingChecks = selectedArchive
+      ? (selectedSummary.pendingChecksArchived
+        ?? Object.values(selectedArchive.stockChecks || {}).filter(c => c?.status === 'pending').length)
+      : 0;
+    const selectedHistoryMonths = selectedArchive
+      ? (selectedSummary.historyMonthsArchived ?? objCount(selectedArchive.stockCheckHistory))
+      : 0;
+    const selectedHistoryEntries = selectedArchive
+      ? historyEntriesCount(selectedArchive.stockCheckHistory)
+      : 0;
+
+    const sampleProducts = selectedArchive
+      ? Object.entries(selectedArchive.products || {})
+        .slice(0, 8)
+        .map(([id, value]) => ({ id, ...value }))
+      : [];
+
+    return (
+      <div>
+        <div className="header-section">
+          <div className="header-left">
+            <h2 className="section-title">Archived Snapshots</h2>
+            <div className="stats-badge">{archivesData.length} Archives</div>
+          </div>
+          <div className="header-right">
+            <button onClick={fetchArchives} className="btn-secondary" disabled={archivesLoading}>
+              {archivesLoading ? '🔄 Loading...' : '🔄 Refresh'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+          <div className="table-section" style={{ marginTop: 0 }}>
+            <div className="table-card">
+              <div className="table-container">
+                {archivesLoading ? (
+                  <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading archives...</div>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Archived At</th>
+                        <th className="text-right">Products</th>
+                        <th className="text-right">Sold Items</th>
+                        <th className="text-right">Pending Checks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archivesData.map((archive) => (
+                        <tr
+                          key={archive.key}
+                          onClick={() => setSelectedArchiveId(archive.key)}
+                          style={{
+                            cursor: 'pointer',
+                            backgroundColor: selectedArchiveId === archive.key ? '#e7f1ff' : undefined,
+                          }}
+                        >
+                          <td><span className="date-cell">{formatDate(archive.archivedAt)}</span></td>
+                          <td className="text-right"><span className="quantity-cell">{archive.summary?.productsArchived ?? '—'}</span></td>
+                          <td className="text-right"><span className="quantity-cell">{archive.summary?.soldItemsArchived ?? '—'}</span></td>
+                          <td className="text-right"><span className="quantity-cell">{archive.summary?.pendingChecksArchived ?? '—'}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              {!archivesLoading && archivesData.length === 0 && (
+                <div className="empty-table">
+                  <div className="empty-icon">🗄️</div>
+                  <p>No archives found yet.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="table-section" style={{ marginTop: 0 }}>
+            <div className="table-card">
+              {archiveDetailLoading ? (
+                <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading archive details...</div>
+              ) : !selectedArchive ? (
+                <div className="empty-table">
+                  <div className="empty-icon">📂</div>
+                  <p>Select an archive to view details.</p>
+                </div>
+              ) : (
+                <div style={{ padding: 16 }}>
+                  <h3 style={{ marginTop: 0, marginBottom: 12 }}>Archive Details</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, color: '#666' }}>Archived At</div>
+                      <div style={{ fontWeight: 700 }}>{formatDate(selectedArchive.archivedAt)}</div>
+                    </div>
+                    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, color: '#666' }}>Products</div>
+                      <div style={{ fontWeight: 700 }}>{selectedProductsCount}</div>
+                    </div>
+                    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, color: '#666' }}>Sold Items</div>
+                      <div style={{ fontWeight: 700 }}>{selectedSoldItemsCount}</div>
+                    </div>
+                    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, color: '#666' }}>Stock Checks</div>
+                      <div style={{ fontWeight: 700 }}>{selectedChecksCount} total / {selectedPendingChecks} pending</div>
+                    </div>
+                    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, color: '#666' }}>History Months</div>
+                      <div style={{ fontWeight: 700 }}>{selectedHistoryMonths}</div>
+                    </div>
+                    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 12, color: '#666' }}>History Entries</div>
+                      <div style={{ fontWeight: 700 }}>{selectedHistoryEntries}</div>
+                    </div>
+                  </div>
+
+                  {sampleProducts.length > 0 && (
+                    <div>
+                      <h4 style={{ margin: '0 0 8px' }}>Sample Products In Archive</h4>
+                      <div className="table-container">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Barcode</th>
+                              <th>Name</th>
+                              <th className="text-right">Qty</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sampleProducts.map((p) => (
+                              <tr key={p.id}>
+                                <td><span className="barcode-cell">{p.id}</span></td>
+                                <td><span className="product-name-cell">{p.name || 'Unnamed'}</span></td>
+                                <td className="text-right"><span className="quantity-cell">{p.quantity ?? 0}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Render: Scanner modal ──────────────────────────────────────────────────
+
+  const renderScannerModal = () => (
+    <div className="modal-overlay">
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">📷 Scan Product Barcode</h3>
+          <button className="modal-close" onClick={() => setScannerOpen(false)}>✕</button>
+        </div>
+
+        <div className="modal-content">
+          {!scannedProduct && (
+            <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 12 }}>
+              <video ref={scannerRef} style={{ width: '100%', display: 'block' }} />
+              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', top: '25%', left: '15%', width: 28, height: 28, borderTop: '3px solid #28a745', borderLeft: '3px solid #28a745' }} />
+                <div style={{ position: 'absolute', top: '25%', right: '15%', width: 28, height: 28, borderTop: '3px solid #28a745', borderRight: '3px solid #28a745' }} />
+                <div style={{ position: 'absolute', bottom: '25%', left: '15%', width: 28, height: 28, borderBottom: '3px solid #28a745', borderLeft: '3px solid #28a745' }} />
+                <div style={{ position: 'absolute', bottom: '25%', right: '15%', width: 28, height: 28, borderBottom: '3px solid #28a745', borderRight: '3px solid #28a745' }} />
+              </div>
+            </div>
+          )}
+
+          <p style={{ textAlign: 'center', fontSize: 13, color: '#666', margin: '0 0 12px' }}>{scanStatus}</p>
+
+          {scannedProduct && (
+            <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 16, border: '1px solid #dee2e6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{scannedProduct.name}</div>
+                  <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{scannedProduct.id}</div>
+                  <div style={{ fontSize: 12, color: '#888' }}>{scannedProduct.productType}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 12, color: '#888' }}>System Qty</div>
+                  <div style={{ fontWeight: 700, fontSize: 22 }}>{scannedProduct.quantity}</div>
+                </div>
+              </div>
+
+              <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                Counted Quantity <span style={{ color: '#dc3545' }}>*</span>
+              </label>
+              <input
+                type="number" min="0" autoFocus
+                value={scanQty}
+                onChange={e => setScanQty(e.target.value)}
+                placeholder="Enter physical count..."
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' }}
+              />
+
+              {scanQty !== '' && !isNaN(parseFloat(scanQty)) && (
+                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: parseFloat(scanQty) === scannedProduct.quantity ? '#198754' : '#dc3545' }}>
+                  {parseFloat(scanQty) === scannedProduct.quantity
+                    ? '✓ Matches system quantity'
+                    : `Δ ${(parseFloat(scanQty) - scannedProduct.quantity).toFixed(0)} from system quantity`}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate}>✅ Accurate</button>
+                <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate}>❌ Inaccurate</button>
+              </div>
+
+              <button
+                onClick={() => { setScannedProduct(null); setScanQty(''); setScannerPaused(false); setScanStatus('Align barcode within the frame.'); }}
+                style={{ marginTop: 8, width: '100%', padding: '6px 0', background: 'none', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#666' }}
+              >
+                ↩ Scan a different product
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={() => setScannerOpen(false)}>Close Scanner</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Main ───────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="admin-container">
+      <div className="page-header">
+        <h1 className="page-title">Stock Checker</h1>
+        <p className="page-subtitle">Scan barcodes, count stock, archive old data, and review history</p>
+      </div>
+
+      {successMessage && <div className="success-message"><span className="message-icon">✓</span>{successMessage}</div>}
+      {errorMessage   && <div className="error-message"><span className="message-icon">⚠️</span>{errorMessage}</div>}
+
+      <div className="tab-navigation">
+        <button onClick={() => setActiveTab('check')}   className={`tab-button ${activeTab === 'check'   ? 'active' : ''}`}>
+          <span className="tab-icon">🔍</span><span className="tab-label">Check Stock ({products.length})</span>
+        </button>
+        <button onClick={() => setActiveTab('pending')} className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}>
+          <span className="tab-icon">⚠️</span><span className="tab-label">Pending ({pendingChecks.length})</span>
+        </button>
+        <button onClick={() => setActiveTab('history')} className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}>
+          <span className="tab-icon">📅</span><span className="tab-label">History</span>
+        </button>
+        <button onClick={() => setActiveTab('archives')} className={`tab-button ${activeTab === 'archives' ? 'active' : ''}`}>
+          <span className="tab-icon">🗄️</span><span className="tab-label">Archives ({archivesData.length})</span>
+        </button>
+      </div>
+
+      <div className="tab-content">
+        {activeTab === 'check'   && renderCheckTab()}
+        {activeTab === 'pending' && renderPendingTab()}
+        {activeTab === 'history' && renderHistoryTab()}
+        {activeTab === 'archives' && renderArchivesTab()}
+      </div>
+
+      {scannerOpen && renderScannerModal()}
     </div>
   );
 };

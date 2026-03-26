@@ -6,64 +6,59 @@ import ItemsSold from './soldItems';
 import AddCustomer from './addCustomer';
 import RemainingProducts from './remainingProducts';
 import Transactions from './transactions';
-import { UserContext } from '../Auth/userContext'; // Import UserContext
+import Archives from './archives';
+import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
 import { signOut } from 'firebase/auth';
 
 const Admin = () => {
-  const { user,setUser } = useContext(UserContext); // Access the context
-  const [activeSection, setActiveSection] = useState('addUsers'); // Moved useState to the top
+  const { user, setUser } = useContext(UserContext);
+  const [activeSection, setActiveSection] = useState('addUsers');
+
   useEffect(() => {
     if (!user || user.email !== 'doris@elsheikh.lb') {
-
       window.location.href = '/';
     }
   }, [user]);
 
-
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      setUser({ email: '', name: '' }); // Reset user context
+      setUser({ email: '', name: '' });
     } catch (error) {
       console.error('Error signing out:', error);
     }
   };
 
   if (!user || user.email !== 'doris@elsheikh.lb') {
-    return null; // Prevent rendering until redirection
+    return null;
   }
 
   const renderSection = () => {
     switch (activeSection) {
-      case 'addUsers':
-        return <AddUsers />;
-      case 'addProducts':
-        return <FetchProducts />;
-        case 'holdProducts':
-        return <FetchProducts />;
-      case 'itemsSold':
-        return <ItemsSold />;
-      case 'addCustomer':
-        return <AddCustomer />;
-      case 'stock':
-          return <RemainingProducts />;
-      case 'transactions':
-            return <Transactions />;
-      default:
-        return <AddUsers />;
+      case 'addUsers':     return <AddUsers />;
+      case 'addProducts':  return <FetchProducts />;
+      case 'holdProducts': return <FetchProducts />;
+      case 'itemsSold':    return <ItemsSold />;
+      case 'addCustomer':  return <AddCustomer />;
+      case 'stock':        return <RemainingProducts />;
+      case 'transactions': return <Transactions />;
+      case 'archives':     return <Archives />;
+      default:             return <AddUsers />;
     }
   };
 
   return (
     <div className="admin-container">
-      
-      <Navbar onNavigate={setActiveSection} />
-      <button onClick={handleLogout} className="logout-button">
-          Logout
-        </button>
-      <div className="admin-content">{renderSection()}</div>
+      <Navbar
+        onNavigate={setActiveSection}
+        activePage={activeSection}
+        onLogout={handleLogout}
+      />
+      <div className="admin-content">
+        {renderSection()}
+      </div>
     </div>
   );
 };

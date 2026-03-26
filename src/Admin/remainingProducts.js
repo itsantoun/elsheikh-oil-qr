@@ -777,10 +777,16 @@ const RemainingProducts = () => {
       ? historyEntriesCount(selectedArchive.stockCheckHistory)
       : 0;
 
-    const sampleProducts = selectedArchive
+    const archivedProducts = selectedArchive
       ? Object.entries(selectedArchive.products || {})
-        .slice(0, 8)
         .map(([id, value]) => ({ id, ...value }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      : [];
+
+    const archivedSoldItems = selectedArchive
+      ? Object.entries(selectedArchive.soldItems || {})
+        .map(([id, value]) => ({ id, ...value }))
+        .sort((a, b) => new Date(b.dateScanned || 0) - new Date(a.dateScanned || 0))
       : [];
 
     return (
@@ -881,23 +887,25 @@ const RemainingProducts = () => {
                     </div>
                   </div>
 
-                  {sampleProducts.length > 0 && (
-                    <div>
-                      <h4 style={{ margin: '0 0 8px' }}>Sample Products In Archive</h4>
+                  {archivedProducts.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <h4 style={{ margin: '0 0 8px' }}>Archived Products ({archivedProducts.length})</h4>
                       <div className="table-container">
                         <table className="data-table">
                           <thead>
                             <tr>
                               <th>Barcode</th>
                               <th>Name</th>
+                              <th>Type</th>
                               <th className="text-right">Qty</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {sampleProducts.map((p) => (
+                            {archivedProducts.map((p) => (
                               <tr key={p.id}>
                                 <td><span className="barcode-cell">{p.id}</span></td>
                                 <td><span className="product-name-cell">{p.name || 'Unnamed'}</span></td>
+                                <td><span className="type-cell">{p.productType || 'General'}</span></td>
                                 <td className="text-right"><span className="quantity-cell">{p.quantity ?? 0}</span></td>
                               </tr>
                             ))}
@@ -906,6 +914,38 @@ const RemainingProducts = () => {
                       </div>
                     </div>
                   )}
+
+                  <div style={{ marginTop: 12 }}>
+                    <h4 style={{ margin: '0 0 8px' }}>Archived Sold Items ({archivedSoldItems.length})</h4>
+                    {archivedSoldItems.length > 0 ? (
+                      <div className="table-container">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Sold At</th>
+                              <th>Barcode</th>
+                              <th>Product</th>
+                              <th>Customer</th>
+                              <th className="text-right">Qty</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archivedSoldItems.map((item) => (
+                              <tr key={item.id}>
+                                <td><span className="date-cell">{formatDate(item.dateScanned)}</span></td>
+                                <td><span className="barcode-cell">{item.barcode || item.productId || 'N/A'}</span></td>
+                                <td><span className="product-name-cell">{item.name || item.productName || 'Unknown Product'}</span></td>
+                                <td><span className="type-cell">{item.customerName || item.customer || '—'}</span></td>
+                                <td className="text-right"><span className="quantity-cell">{parseFloat(item.quantity) || 0}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#666', fontSize: 13 }}>No sold items in this archive.</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

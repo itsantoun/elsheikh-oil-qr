@@ -556,17 +556,19 @@ const Transactions = () => {
       ? parsedSell
       : (quantity > 0 ? (hasTotal ? parsedTotal / quantity : toNumber(productRef?.itemCost)) : 0);
     const unitPurchasePrice = hasBuy ? parsedBuy : toNumber(productRef?.purchasingPrice);
-    const revenue = isStockTransaction ? 0 : (hasTotal ? parsedTotal : unitSellPrice * quantity);
-    const purchaseCost = isStockTransaction ? 0 : unitPurchasePrice * quantity;
-    const profit = revenue - purchaseCost;
+    const totalSellPrice = isStockTransaction ? 0 : unitSellPrice * quantity;
+    const totalPurchasingPrice = isStockTransaction ? 0 : unitPurchasePrice * quantity;
+    const profit = totalSellPrice - totalPurchasingPrice;
 
     return {
       quantity,
       isStockTransaction,
       unitSellPrice,
       unitPurchasePrice,
-      revenue,
-      purchaseCost,
+      revenue: totalSellPrice,
+      purchaseCost: totalPurchasingPrice,
+      totalSellPrice,
+      totalPurchasingPrice,
       profit,
     };
   };
@@ -770,7 +772,6 @@ const Transactions = () => {
     setEditing(transaction.id);
     setEditedValues({
       quantity: transaction.quantity,
-      totalCost: transaction.totalCost,
       dateScanned: transaction.dateScanned.slice(0, 16) // For datetime-local input
     });
   };
@@ -780,13 +781,11 @@ const Transactions = () => {
     try {
       const original = transactions.find((transaction) => transaction.id === id) || {};
       const parsedQuantity = toNumber(editedValues.quantity);
-      const parsedInputCost = parseFloat(editedValues.totalCost);
-      const hasInputCost = Number.isFinite(parsedInputCost);
       const unitSellPrice = toNumber(original.itemCost);
       const stockLike = isStockLikeStatus(original.paymentStatus);
       const computedTotalCost = stockLike
         ? 0
-        : (hasInputCost ? parsedInputCost : unitSellPrice * parsedQuantity);
+        : unitSellPrice * parsedQuantity;
       const metrics = getTransactionMetrics(original, {
         quantity: parsedQuantity,
         totalCost: computedTotalCost,
@@ -938,27 +937,15 @@ const Transactions = () => {
       {/* Summary Cards */}
       {filteredTransactions.length > 0 && (
         <div className="summary-cards">
-          <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Total Transactions</span>
-              <span className="summary-card-value">{filteredTransactions.length}</span>
-            </div>
-          </div>
-          <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Total Quantity</span>
-              <span className="summary-card-value">{filteredTotals.totalQuantity.toFixed(2)}</span>
-            </div>
-          </div>
           <div className="summary-card highlight">
             <div className="summary-card-content">
-              <span className="summary-card-label">Total Value</span>
+              <span className="summary-card-label">Total Sell Price</span>
               <span className="summary-card-value">${filteredTotals.totalCost.toFixed(2)}</span>
             </div>
           </div>
           <div className="summary-card">
             <div className="summary-card-content">
-              <span className="summary-card-label">Total Purchase Cost</span>
+              <span className="summary-card-label">Total Purchasing Cost</span>
               <span className="summary-card-value">${filteredTotals.totalPurchaseCost.toFixed(2)}</span>
             </div>
           </div>
@@ -1011,7 +998,7 @@ const Transactions = () => {
                 <th>Quantity</th>
                 <th>Sell Price</th>
                 <th>Purchasing Price</th>
-                <th>Total Cost</th>
+                <th>Total Sell Price</th>
                 <th>Profit</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -1022,7 +1009,6 @@ const Transactions = () => {
     const editingMetrics = editing === item.id
       ? getTransactionMetrics(item, {
         quantity: toNumber(editedValues.quantity ?? item.quantity),
-        totalCost: toNumber(editedValues.totalCost ?? item.totalCost),
       })
       : null;
     const rowMetrics = editingMetrics || getTransactionMetrics(item);
@@ -1071,19 +1057,7 @@ const Transactions = () => {
         <span className="cost-display">${rowMetrics.unitPurchasePrice.toFixed(2)}</span>
       </td>
       <td>
-        {editing === item.id ? (
-          <input
-            type="number"
-            step="0.01"
-            value={editedValues.totalCost ?? item.totalCost}
-            onChange={(e) =>
-              setEditedValues({ ...editedValues, totalCost: e.target.value })
-            }
-            className="edit-input"
-          />
-        ) : (
-          <span className="cost-display">${rowMetrics.revenue.toFixed(2)}</span>
-        )}
+        <span className="cost-display">${rowMetrics.totalSellPrice.toFixed(2)}</span>
       </td>
       <td>
         <span
@@ -1181,7 +1155,7 @@ const Transactions = () => {
                 <div className="delete-preview">
                   <p><strong>Product:</strong> {transactions.find(t => t.id === itemToDelete).productName}</p>
                   <p><strong>Date:</strong> {formatDateTime(transactions.find(t => t.id === itemToDelete).dateScanned)}</p>
-                  <p><strong>Amount:</strong> ${parseFloat(transactions.find(t => t.id === itemToDelete).totalCost).toFixed(2)}</p>
+                  <p><strong>Amount:</strong> ${getTransactionMetrics(transactions.find(t => t.id === itemToDelete)).totalSellPrice.toFixed(2)}</p>
                 </div>
               )}
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, set, get, update, remove, onValue } from 'firebase/database';
+import { ref, set, get, update, onValue } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
@@ -43,14 +43,6 @@ const SoldItems = () => {
   const [showMissingItemsModal, setShowMissingItemsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   
-  const [filteredTotals, setFilteredTotals] = useState({
-    totalQuantity: 0,
-    totalCost: 0,
-    totalItems: 0,
-    totalPurchaseCost: 0,
-    totalProfit: 0,
-  });
-
   // Format date to DD-MM-YYYY
   const formatDate = (dateString) => {
     try {
@@ -190,6 +182,32 @@ const SoldItems = () => {
     };
   };
 
+  const calculateTotals = (items) => {
+    if (!items.length) {
+      return {
+        totalQuantity: 0,
+        totalCost: 0,
+        totalItems: 0,
+        totalPurchaseCost: 0,
+        totalProfit: 0,
+      };
+    }
+
+    return items.reduce(
+      (acc, item) => {
+        const metrics = getItemProfitMetrics(item);
+        return {
+          totalQuantity: acc.totalQuantity + metrics.quantity,
+          totalCost: acc.totalCost + metrics.revenue,
+          totalItems: acc.totalItems + 1,
+          totalPurchaseCost: acc.totalPurchaseCost + metrics.purchaseCost,
+          totalProfit: acc.totalProfit + metrics.totalProfitAmount,
+        };
+      },
+      { totalQuantity: 0, totalCost: 0, totalItems: 0, totalPurchaseCost: 0, totalProfit: 0 }
+    );
+  };
+
   // Fetch data
   useEffect(() => {
     const customersRef = ref(database, 'customers');
@@ -245,28 +263,6 @@ const SoldItems = () => {
       unsubscribeProducts();
     };
   }, []);
-
-  // Calculate totals
-  useEffect(() => {
-    if (filteredItems.length > 0) {
-      const totals = filteredItems.reduce(
-        (acc, item) => {
-          const metrics = getItemProfitMetrics(item);
-          return {
-            totalQuantity: acc.totalQuantity + metrics.quantity,
-            totalCost: acc.totalCost + metrics.revenue,
-            totalItems: acc.totalItems + 1,
-            totalPurchaseCost: acc.totalPurchaseCost + metrics.purchaseCost,
-            totalProfit: acc.totalProfit + metrics.totalProfitAmount,
-          };
-        },
-        { totalQuantity: 0, totalCost: 0, totalItems: 0, totalPurchaseCost: 0, totalProfit: 0 }
-      );
-      setFilteredTotals(totals);
-    } else {
-      setFilteredTotals({ totalQuantity: 0, totalCost: 0, totalItems: 0, totalPurchaseCost: 0, totalProfit: 0 });
-    }
-  }, [filteredItems, products]);
 
   // Apply filters
   useEffect(() => {
@@ -454,10 +450,35 @@ const SoldItems = () => {
   // Delete functions
   const handleDelete = async (itemId) => {
     try {
-      const itemRef = ref(database, `SoldItems/${itemId}`);
-      await remove(itemRef);
-      setSoldItems(soldItems.filter((item) => item.id !== itemId));
-      setFilteredItems(filteredItems.filter((item) => item.id !== itemId));
+      const itemToDelete = soldItems.find((item) => item.id === itemId);
+      const updates = {
+        [`SoldItems/${itemId}`]: null,
+      };
+
+      if (itemToDelete) {
+        const isRefundable = !isStockLikeStatus(itemToDelete.paymentStatus);
+        const productKey = itemToDelete.barcode || itemToDelete.productId || null;
+        const refundQuantity = toNumber(itemToDelete.quantity);
+
+        if (isRefundable && productKey && refundQuantity > 0) {
+          const productRef = ref(database, `products/${productKey}`);
+          const productSnapshot = await get(productRef);
+
+          if (productSnapshot.exists()) {
+            const currentQuantity = toNumber(productSnapshot.val().quantity);
+            updates[`products/${productKey}/quantity`] = currentQuantity + refundQuantity;
+          }
+        }
+      }
+
+      await update(ref(database), updates);
+      setSoldItems(prev => prev.filter((item) => item.id !== itemId));
+      setFilteredItems(prev => prev.filter((item) => item.id !== itemId));
+      setCheckedItems((prev) => {
+        const nextCheckedItems = prev.filter((id) => id !== itemId);
+        localStorage.setItem('checkedSoldItems', JSON.stringify(nextCheckedItems));
+        return nextCheckedItems;
+      });
       setShowConfirmation(false);
     } catch (error) {
       console.error('Error deleting item:', error);
@@ -535,6 +556,11 @@ const SoldItems = () => {
     const [year, month, day] = dateFilter.split('-');
     return `${day}-${month}-${year}`;
   };
+
+  const filteredTotals = calculateTotals(filteredItems);
+  const profitSummaryLabel = monthFilter
+    ? `${formatMonthDisplay(parseInt(monthFilter, 10))} Profit`
+    : 'Filtered Profit';
 
   return (
     <div className="sold-items-container">
@@ -681,7 +707,7 @@ const SoldItems = () => {
             )}
             {monthFilter && (
               <span className="filter-tag">
-                Month: {formatMonthDisplay(parseInt(monthFilter))}
+                Month: {formatMonthDisplay(parseInt(monthFilter, 10))}
                 <button onClick={() => setMonthFilter('')}>×</button>
               </span>
             )}
@@ -730,7 +756,7 @@ const SoldItems = () => {
           </div>
           <div className="summary-card">
             <div className="summary-card-content">
-              <span className="summary-card-label">Total Profit</span>
+              <span className="summary-card-label">{profitSummaryLabel}</span>
               <span
                 className="summary-card-value"
                 style={{ color: filteredTotals.totalProfit >= 0 ? '#198754' : '#dc3545' }}
@@ -739,12 +765,12 @@ const SoldItems = () => {
               </span>
             </div>
           </div>
-          <div className="summary-card">
+          {/* <div className="summary-card">
             <div className="summary-card-content">
               <span className="summary-card-label">Checked Items</span>
               <span className="summary-card-value">{checkedItems.length}</span>
             </div>
-          </div>
+          </div> */}
         </div>
       )}
 
@@ -753,7 +779,7 @@ const SoldItems = () => {
         <div className="results-info">
           Showing {filteredItems.length} sold item(s) • 
           Data range: {formatDate(filteredItems[0]?.dateScanned)} to {formatDate(filteredItems[filteredItems.length - 1]?.dateScanned)} •
-          Total profit: ${filteredTotals.totalProfit.toFixed(2)} •
+          Filtered profit: ${filteredTotals.totalProfit.toFixed(2)} •
           {checkedItems.length > 0 && ` ${checkedItems.length} items checked`}
         </div>
       )}
@@ -965,7 +991,7 @@ const SoldItems = () => {
                           Edit
                         </button>
                         <button className="btn-small btn-danger" onClick={() => handleDeleteConfirmation(item.id)}>
-                          Delete
+                          Delete/Refund
                         </button>
                       </div>
                     )}

@@ -42,6 +42,7 @@ const SoldItems = () => {
   
   const [showMissingItemsModal, setShowMissingItemsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Format date to DD-MM-YYYY
   const formatDate = (dateString) => {
@@ -503,6 +504,72 @@ const SoldItems = () => {
     setItemIdToDelete(null);
   };
 
+  // Refresh data from database
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const customersRef = ref(database, 'customers');
+      const soldItemsRef = ref(database, 'SoldItems');
+      const productsRef = ref(database, 'products');
+
+      // Fetch all data in parallel
+      const [customersSnapshot, soldItemsSnapshot, productsSnapshot] = await Promise.all([
+        get(customersRef),
+        get(soldItemsRef),
+        get(productsRef)
+      ]);
+
+      // Update customers
+      let customerList = [];
+      if (customersSnapshot.exists()) {
+        const customersData = customersSnapshot.val();
+        customerList = Object.keys(customersData).map((key) => ({
+          id: key,
+          name: customersData[key].name,
+          nameArabic: customersData[key].nameArabic,
+        }));
+      }
+      setCustomers(customerList);
+
+      // Update sold items
+      if (soldItemsSnapshot.exists()) {
+        const soldData = soldItemsSnapshot.val();
+        const soldItemList = Object.keys(soldData).map((key) => ({
+          id: key,
+          ...soldData[key],
+          customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+                      soldData[key].customerName,
+        }));
+        const sortedItems = sortItemsByDate(soldItemList);
+        setSoldItems(sortedItems);
+        setFilteredItems(sortedItems);
+      } else {
+        setSoldItems([]);
+        setFilteredItems([]);
+      }
+
+      // Update products
+      if (productsSnapshot.exists()) {
+        const productsData = productsSnapshot.val();
+        const productList = Object.keys(productsData).map((key) => ({
+          id: key,
+          barcode: key,
+          ...productsData[key],
+        }));
+        productList.sort((a, b) => a.name.localeCompare(b.name));
+        setProducts(productList);
+      }
+
+      setErrorMessage(null);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      setErrorMessage('Failed to refresh data.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Export to CSV
   const exportToCSV = () => {
     if (filteredItems.length === 0) {
@@ -673,6 +740,13 @@ const SoldItems = () => {
             onClick={() => setShowMissingItemsModal(true)}
           >
             Add Missing Items
+          </button>
+          <button 
+            className="btn-secondary" 
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? '⟳ Refreshing...' : '⟳ Refresh Data'}
           </button>
         </div>
       </div>

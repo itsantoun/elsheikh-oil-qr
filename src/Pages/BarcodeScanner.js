@@ -802,6 +802,7 @@ const BarcodeScanner = () => {
   const scannerRef = React.useRef(null);
   const codeReaderRef = React.useRef(null);
   const scanTimeoutRef = React.useRef(null);
+  const lastScannedRef = React.useRef(null);
   const authInstance = getAuth();
   const [user, setUser] = useState(null);
 
@@ -907,18 +908,16 @@ const BarcodeScanner = () => {
           videoElement, 
           (result, error) => {
             if (result && !isScanning && !scannerPaused) {
-              if (scanTimeoutRef.current) return;
+              const now = Date.now();
+              if (lastScannedRef.current === result.text && now - (lastScannedRef.lastTime || 0) < 500) {
+                return;
+              }
               
-              scanTimeoutRef.current = setTimeout(() => {
-                scanTimeoutRef.current = null;
-              }, 2000);
+              lastScannedRef.current = result.text;
+              lastScannedRef.lastTime = now;
               
               setScanStatus('Barcode detected! Processing...');
               fetchProductDetails(result.text);
-            } else if (error && !isScanning && !scannerPaused) {
-              if (scanStatus !== 'Align the barcode and hold steady.') {
-                setScanStatus('Align the barcode and hold steady.');
-              }
             }
           }, 
           {
@@ -926,9 +925,9 @@ const BarcodeScanner = () => {
             constraints: {
               video: {
                 facingMode: 'environment',
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                frameRate: { ideal: 15 },
+                width: { ideal: 1280 },
+                height: { ideal: 960 },
+                frameRate: { ideal: 30 },
               },
             },
           }
@@ -944,10 +943,6 @@ const BarcodeScanner = () => {
     setupCamera();
 
     return () => {
-      if (scanTimeoutRef.current) {
-        clearTimeout(scanTimeoutRef.current);
-        scanTimeoutRef.current = null;
-      }
       if (codeReaderRef.current) {
         codeReaderRef.current.reset();
         codeReaderRef.current = null;
@@ -1068,8 +1063,6 @@ const BarcodeScanner = () => {
   }, []);
 
   const fetchProductDetails = useCallback(async (barcode) => {
-    if (isScanning || isProcessing || scannerPaused) return;
-    
     setIsScanning(true);
     setIsProcessing(true);
     setScanStatus('Processing barcode...');
@@ -1087,18 +1080,19 @@ const BarcodeScanner = () => {
       } else {
         setDialogMessage("Product not found.");
         setScanStatus('Product not found. Try again.');
-        setTimeout(() => setScanStatus('Align the barcode within the frame.'), 2000);
+        setTimeout(() => setScanStatus('Align the barcode within the frame.'), 800);
+        setIsScanning(false);
+        setIsProcessing(false);
       }
     } catch (error) {
       console.error('Error fetching product:', error);
       setDialogMessage("Error retrieving product information.");
       setScanStatus('Error occurred. Try again.');
-      setTimeout(() => setScanStatus('Align the barcode within the frame.'), 2000);
-    } finally {
+      setTimeout(() => setScanStatus('Align the barcode within the frame.'), 800);
+      setIsScanning(false);
       setIsProcessing(false);
-      setTimeout(() => setIsScanning(false), 3000);
     }
-  }, [isScanning, isProcessing, scannerPaused]);
+  }, []);
 
   // Fix for quantity input issue
   const handleQuantityChange = useCallback((e) => {
@@ -1214,12 +1208,14 @@ const BarcodeScanner = () => {
       setRemark('');
       setScanStatus('Item saved! Ready for next scan.');
       setScannerPaused(false);
-      setTimeout(() => setScanStatus('Align the barcode within the frame.'), 2000);
+      setIsScanning(false);
+      setIsProcessing(false);
+      setTimeout(() => setScanStatus('Align the barcode within the frame.'), 500);
     } catch (error) {
       console.error("Error saving scanned item:", error);
       setDialogMessage("Error saving item to the database.");
-    } finally {
       setIsProcessing(false);
+      setIsScanning(false);
     }
   }, [scannedProduct, selectedCustomer, quantity, name, customers, paymentStatus, remark, calculateSaleProfit]);
 

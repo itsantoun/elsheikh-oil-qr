@@ -91,7 +91,7 @@ const navItems = [
   { id: 'itemsSold',    Icon: IconBarChart,   label: 'Items Sold'   },
   { id: 'addCustomer',  Icon: IconUser,       label: 'Customers'    },
   { id: 'stock',        Icon: IconArchive,    label: 'Stock'        },
-  { id: 'archives',     Icon: IconDashboard,  label: 'Archives'     },
+  // { id: 'archives',     Icon: IconDashboard,  label: 'Archives'     },
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────

@@ -32,13 +32,35 @@ const FetchProducts = () => {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const getProfitMetrics = (product) => {
-    const sellingPrice = toNumber(product?.itemCost);
-    const purchasingPrice = toNumber(product?.purchasingPrice);
-    const quantity = toNumber(product?.quantity);
-    const unitProfit = sellingPrice - purchasingPrice;
+  const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
+
+  const getProfitMetrics = (product, overrides = {}) => {
+    const merged = { ...product, ...overrides };
+    const quantity = toNumber(merged.quantity);
+    const isStockProduct = isStockLikeStatus(merged.paymentStatus);
+
+    const parsedSell = parseFloat(merged.itemCost);
+    const hasSell = Number.isFinite(parsedSell);
+    const parsedBuy = parseFloat(merged.purchasingPrice);
+    const hasBuy = Number.isFinite(parsedBuy);
+
+    const unitSellPrice = hasSell ? parsedSell : 0;
+    const unitPurchasePrice = hasBuy ? parsedBuy : 0;
+    const totalRevenue = isStockProduct ? 0 : unitSellPrice * quantity;
+    const totalPurchaseCost = isStockProduct ? 0 : unitPurchasePrice * quantity;
+    const unitProfit = unitSellPrice - unitPurchasePrice;
     const totalProfit = unitProfit * quantity;
-    return { unitProfit, totalProfit };
+
+    return {
+      quantity,
+      isStockProduct,
+      unitSellPrice,
+      unitPurchasePrice,
+      revenue: totalRevenue,
+      purchaseCost: totalPurchaseCost,
+      unitProfit,
+      totalProfit,
+    };
   };
 
   // Format date to DD-MM-YYYY

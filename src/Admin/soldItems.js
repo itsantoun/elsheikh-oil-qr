@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, set, get, update, onValue } from 'firebase/database';
+import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
@@ -42,6 +42,12 @@ const SoldItems = () => {
   
   const [showMissingItemsModal, setShowMissingItemsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [missingItemCustomerId, setMissingItemCustomerId] = useState('');
+  const [missingItemDate, setMissingItemDate] = useState('');
+  const [missingItemQuantity, setMissingItemQuantity] = useState('1');
+  const [missingItemPaymentStatus, setMissingItemPaymentStatus] = useState('Unpaid');
+  const [missingItemRemark, setMissingItemRemark] = useState('');
+  const [isSavingMissingItem, setIsSavingMissingItem] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Format date to DD-MM-YYYY
@@ -624,6 +630,148 @@ const SoldItems = () => {
     return `${day}-${month}-${year}`;
   };
 
+  const getTodayDateForInput = () => formatDateForInput(new Date().toISOString());
+
+  const resetMissingItemForm = () => {
+    setSelectedProduct(null);
+    setMissingItemCustomerId('');
+    setMissingItemDate(getTodayDateForInput());
+    setMissingItemQuantity('1');
+    setMissingItemPaymentStatus('Unpaid');
+    setMissingItemRemark('');
+  };
+
+  const openMissingItemsModal = () => {
+    resetMissingItemForm();
+    setShowMissingItemsModal(true);
+  };
+
+  const closeMissingItemsModal = () => {
+    setShowMissingItemsModal(false);
+    resetMissingItemForm();
+  };
+
+  const convertDateInputToISO = (value) => {
+    if (!value) return new Date().toISOString();
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return new Date().toISOString();
+    const localDateAtNoon = new Date(year, month - 1, day, 12, 0, 0, 0);
+    return localDateAtNoon.toISOString();
+  };
+
+  const handleMissingProductChange = (productId) => {
+    const product = products.find((item) => item.id === productId) || null;
+    setSelectedProduct(product);
+  };
+
+  const saveMissingItem = async () => {
+    if (!selectedProduct) {
+      setErrorMessage('Please select a product.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    if (!missingItemCustomerId) {
+      setErrorMessage('Please select a customer.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    const quantityValue = toNumber(missingItemQuantity);
+    if (quantityValue <= 0) {
+      setErrorMessage('Quantity must be greater than 0.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    const selectedCustomer = customers.find((customer) => customer.id === missingItemCustomerId);
+    if (!selectedCustomer) {
+      setErrorMessage('Selected customer is no longer available.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    setIsSavingMissingItem(true);
+
+    const paymentStatusValue = missingItemPaymentStatus || 'Unpaid';
+    const sellPriceValue = toNumber(selectedProduct.itemCost);
+    const purchasingPriceValue = toNumber(selectedProduct.purchasingPrice);
+    const totalCostValue = isStockLikeStatus(paymentStatusValue)
+      ? 0
+      : sellPriceValue * quantityValue;
+    const profitMetrics = getItemProfitMetrics(
+      {
+        barcode: selectedProduct.barcode,
+        productId: selectedProduct.id,
+      },
+      {
+        quantity: quantityValue,
+        paymentStatus: paymentStatusValue,
+        itemCost: sellPriceValue,
+        purchasingPrice: purchasingPriceValue,
+        totalCost: totalCostValue,
+      }
+    );
+
+    const customerNameForStorage = selectedCustomer.nameArabic || selectedCustomer.name || 'Unknown';
+    const customerNameForDisplay = selectedCustomer.name || selectedCustomer.nameArabic || 'Unknown';
+    const dateScannedValue = convertDateInputToISO(missingItemDate);
+    const scannedByValue = user?.name || user?.displayName || user?.email || 'Unknown';
+
+    const newItem = {
+      barcode: selectedProduct.barcode || selectedProduct.id,
+      productId: selectedProduct.id,
+      name: selectedProduct.name || 'Unknown Product',
+      category: selectedProduct.category || 'Unknown',
+      price: toNumber(selectedProduct.price),
+      dateScanned: dateScannedValue,
+      scannedBy: scannedByValue,
+      customerName: customerNameForStorage,
+      quantity: quantityValue,
+      paymentStatus: paymentStatusValue,
+      itemCost: sellPriceValue,
+      purchasingPrice: purchasingPriceValue,
+      totalCost: totalCostValue,
+      unitProfit: profitMetrics.profit,
+      totalProfit: profitMetrics.totalProfitAmount,
+      remark: missingItemRemark,
+    };
+
+    try {
+      const createdRef = await push(ref(database, 'SoldItems'), newItem);
+      const newItemForList = {
+        id: createdRef.key,
+        ...newItem,
+        customerName: customerNameForDisplay,
+      };
+      const updatedItems = sortItemsByDate([...soldItems, newItemForList]);
+      setSoldItems(updatedItems);
+      closeMissingItemsModal();
+      setErrorMessage(null);
+    } catch (error) {
+      console.error('Error adding missing item:', error);
+      setErrorMessage('Failed to add missing item.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    } finally {
+      setIsSavingMissingItem(false);
+    }
+  };
+
+  const missingItemQuantityValue = toNumber(missingItemQuantity);
+  const missingItemSellPriceValue = selectedProduct ? toNumber(selectedProduct.itemCost) : 0;
+  const missingItemPurchasingPriceValue = selectedProduct ? toNumber(selectedProduct.purchasingPrice) : 0;
+  const missingItemTotalCost = isStockLikeStatus(missingItemPaymentStatus)
+    ? 0
+    : missingItemSellPriceValue * missingItemQuantityValue;
+  const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
+  const canSaveMissingItem = Boolean(
+    selectedProduct &&
+    missingItemCustomerId &&
+    missingItemDate &&
+    missingItemQuantityValue > 0 &&
+    !isSavingMissingItem
+  );
+
   const filteredTotals = calculateTotals(filteredItems);
   const profitSummaryLabel = monthFilter
     ? `${formatMonthDisplay(parseInt(monthFilter, 10))} Profit`
@@ -737,7 +885,7 @@ const SoldItems = () => {
           </button>
           <button 
             className="btn-secondary" 
-            onClick={() => setShowMissingItemsModal(true)}
+            onClick={openMissingItemsModal}
           >
             Add Missing Items
           </button>
@@ -1096,48 +1244,130 @@ const SoldItems = () => {
           <div className="modal">
             <div className="modal-header">
               <h3>Add Missing Item</h3>
-              <button className="modal-close" onClick={() => setShowMissingItemsModal(false)}>
+              <button className="modal-close" onClick={closeMissingItemsModal}>
                 ×
               </button>
             </div>
             <div className="modal-content">
               <div className="product-selection">
-                <select
-                  value={selectedProduct?.id || ''}
-                  onChange={(e) => {
-                    const productId = e.target.value;
-                    const product = products.find(p => p.id === productId);
-                    setSelectedProduct(product);
-                  }}
-                  className="product-select"
-                >
-                  <option value="">Select a Product</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} - {product.barcode}
-                    </option>
-                  ))}
-                </select>
+                <div className="form-group">
+                  <label className="form-label">Product</label>
+                  <select
+                    value={selectedProduct?.id || ''}
+                    onChange={(e) => handleMissingProductChange(e.target.value)}
+                    className="product-select"
+                    disabled={isSavingMissingItem}
+                  >
+                    <option value="">Select a Product</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} - {product.barcode}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {selectedProduct && (
-                  <div className="barcode-section">
-                    <h4>{selectedProduct.name}</h4>
-                    <div className="barcode-container">
-                      <Barcode 
-                        value={selectedProduct.barcode} 
-                        format="CODE128"
-                        width={2}
-                        height={100}
-                        displayValue={false}
+                  <>
+                    <div className="barcode-section">
+                      <h4>{selectedProduct.name}</h4>
+                      <div className="barcode-container">
+                        <Barcode 
+                          value={selectedProduct.barcode} 
+                          format="CODE128"
+                          width={2}
+                          height={100}
+                          displayValue={false}
+                        />
+                      </div>
+                      <p className="barcode-number">{selectedProduct.barcode}</p>
+                    </div>
+
+                    <div className="missing-item-form-grid">
+                      <div className="form-group">
+                        <label className="form-label">Customer</label>
+                        <select
+                          value={missingItemCustomerId}
+                          onChange={(e) => setMissingItemCustomerId(e.target.value)}
+                          className="form-select"
+                          disabled={isSavingMissingItem}
+                        >
+                          <option value="">Select Customer</option>
+                          {customers.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Date</label>
+                        <input
+                          type="date"
+                          value={missingItemDate}
+                          onChange={(e) => setMissingItemDate(e.target.value)}
+                          className="form-input"
+                          disabled={isSavingMissingItem}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Quantity</label>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={missingItemQuantity}
+                          onChange={(e) => setMissingItemQuantity(e.target.value)}
+                          className="form-input"
+                          disabled={isSavingMissingItem}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Payment Status</label>
+                        <select
+                          value={missingItemPaymentStatus}
+                          onChange={(e) => setMissingItemPaymentStatus(e.target.value)}
+                          className="form-select"
+                          disabled={isSavingMissingItem}
+                        >
+                          <option value="Paid">Paid</option>
+                          <option value="Unpaid">Unpaid</option>
+                          <option value="Stock">Stock</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Remark</label>
+                      <textarea
+                        value={missingItemRemark}
+                        onChange={(e) => setMissingItemRemark(e.target.value)}
+                        className="form-textarea"
+                        rows="3"
+                        disabled={isSavingMissingItem}
                       />
                     </div>
-                    <p className="barcode-number">{selectedProduct.barcode}</p>
-                  </div>
+
+                    <div className="missing-item-summary">
+                      <span>Unit Sell: ${missingItemSellPriceValue.toFixed(2)}</span>
+                      <span>Unit Purchase: ${missingItemPurchasingPriceValue.toFixed(2)}</span>
+                      <span>Total Cost: ${missingItemTotalCost.toFixed(2)}</span>
+                      <span style={{ color: missingItemTotalProfit >= 0 ? '#198754' : '#dc3545' }}>
+                        Total Profit: ${missingItemTotalProfit.toFixed(2)}
+                      </span>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowMissingItemsModal(false)}>
+              <button className="btn-primary" onClick={saveMissingItem} disabled={!canSaveMissingItem}>
+                {isSavingMissingItem ? 'Saving...' : 'Save Missing Item'}
+              </button>
+              <button className="btn-secondary" onClick={closeMissingItemsModal} disabled={isSavingMissingItem}>
                 Close
               </button>
             </div>

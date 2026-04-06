@@ -803,6 +803,9 @@ const BarcodeScanner = () => {
   const codeReaderRef = React.useRef(null);
   const scanTimeoutRef = React.useRef(null);
   const lastScannedRef = React.useRef(null);
+  const isScanningRef = React.useRef(false);
+  const isProcessingRef = React.useRef(false);
+  const scannerPausedRef = React.useRef(false);
   const authInstance = getAuth();
   const [user, setUser] = useState(null);
 
@@ -907,17 +910,24 @@ const BarcodeScanner = () => {
           null, 
           videoElement, 
           (result, error) => {
-            if (result && !isScanning && !scannerPaused) {
+            if (result) {
+              const barcode = String(result.text || '').trim();
+              if (!barcode) return;
+              if (isScanningRef.current || isProcessingRef.current || scannerPausedRef.current) return;
+
               const now = Date.now();
-              if (lastScannedRef.current === result.text && now - (lastScannedRef.lastTime || 0) < 500) {
+              if (lastScannedRef.current === barcode && now - (lastScannedRef.lastTime || 0) < 1200) {
                 return;
               }
               
-              lastScannedRef.current = result.text;
+              lastScannedRef.current = barcode;
               lastScannedRef.lastTime = now;
-              
+              isScanningRef.current = true;
+              isProcessingRef.current = true;
+              setIsScanning(true);
+              setIsProcessing(true);
               setScanStatus('Barcode detected! Processing...');
-              fetchProductDetails(result.text);
+              fetchProductDetails(barcode);
             }
           }, 
           {
@@ -925,9 +935,9 @@ const BarcodeScanner = () => {
             constraints: {
               video: {
                 facingMode: 'environment',
-                width: { ideal: 1280 },
-                height: { ideal: 960 },
-                frameRate: { ideal: 30 },
+                width: { ideal: 960 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 24 },
               },
             },
           }
@@ -943,12 +953,28 @@ const BarcodeScanner = () => {
     setupCamera();
 
     return () => {
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+      }
       if (codeReaderRef.current) {
         codeReaderRef.current.reset();
         codeReaderRef.current = null;
       }
     };
-  }, [user, name, customersLoaded, isScanning, cameraActive, scannerPaused]);
+  }, [user, name, customersLoaded, cameraActive]);
+
+  useEffect(() => {
+    isScanningRef.current = isScanning;
+  }, [isScanning]);
+
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
+
+  useEffect(() => {
+    scannerPausedRef.current = scannerPaused;
+  }, [scannerPaused]);
 
   // Scanned items listener
   useEffect(() => {
@@ -1077,6 +1103,8 @@ const BarcodeScanner = () => {
         setIsPopupOpen(true);
         setScanStatus('Product found! Fill in the details.');
         setScannerPaused(true);
+        setIsScanning(false);
+        setIsProcessing(false);
       } else {
         setDialogMessage("Product not found.");
         setScanStatus('Product not found. Try again.');
@@ -1280,6 +1308,8 @@ const BarcodeScanner = () => {
     setRemark('');
     setScanStatus('Align the barcode within the frame.');
     setScannerPaused(false);
+    setIsScanning(false);
+    setIsProcessing(false);
   }, []);
 
   const toggleScannedItems = useCallback(() => {

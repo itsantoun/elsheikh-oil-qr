@@ -537,6 +537,17 @@ const Transactions = () => {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
+  const asCleanString = (value) => String(value ?? '').trim();
+
+  const pickFirstNonEmpty = (...values) => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return '';
+  };
+
   const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
 
   const getTransactionMetrics = (transaction, overrides = {}) => {
@@ -585,30 +596,65 @@ const Transactions = () => {
         get(transactionsRef)
       ]);
 
+      const productsData = productsSnapshot.exists() ? productsSnapshot.val() : {};
+
       if (productsSnapshot.exists()) {
-        setProducts(productsSnapshot.val());
+        setProducts(productsData);
+      } else {
+        setProducts({});
       }
 
       if (transactionsSnapshot.exists()) {
         const data = transactionsSnapshot.val();
         const transactionsArray = Object.keys(data).map((key) => {
           const transaction = { id: key, ...data[key] };
-          const productKey = transaction.productId || transaction.barcode;
-          
-          if (productKey && productsSnapshot.exists()) {
-            const product = productsSnapshot.val()[productKey];
-            if (product) {
-              transaction.barcode = productKey;
-              transaction.productName = product.name || 'Unknown Product';
-              transaction.itemCost = Number.isFinite(parseFloat(transaction.itemCost))
-                ? parseFloat(transaction.itemCost)
-                : toNumber(product.itemCost);
-              transaction.purchasingPrice = Number.isFinite(parseFloat(transaction.purchasingPrice))
-                ? parseFloat(transaction.purchasingPrice)
-                : toNumber(product.purchasingPrice);
+
+          const candidateKeys = [
+            asCleanString(transaction.productId),
+            asCleanString(transaction.barcode),
+          ].filter(Boolean);
+
+          let matchedKey = '';
+          let matchedProduct = null;
+
+          for (const candidate of candidateKeys) {
+            if (productsData[candidate]) {
+              matchedKey = candidate;
+              matchedProduct = productsData[candidate];
+              break;
             }
+          }
+
+          if (!matchedProduct && candidateKeys.length) {
+            for (const [productKey, productValue] of Object.entries(productsData)) {
+              const productBarcode = asCleanString(productValue?.barcode || productKey);
+              if (candidateKeys.includes(productBarcode)) {
+                matchedKey = productKey;
+                matchedProduct = productValue;
+                break;
+              }
+            }
+          }
+
+          const fallbackName = pickFirstNonEmpty(
+            transaction.productName,
+            transaction.name
+          ) || 'Unknown Product';
+
+          if (matchedProduct) {
+            transaction.productName = pickFirstNonEmpty(matchedProduct.name, fallbackName) || 'Unknown Product';
+            transaction.barcode = asCleanString(
+              matchedProduct.barcode || matchedKey || transaction.barcode || transaction.productId
+            ) || 'N/A';
+            transaction.itemCost = Number.isFinite(parseFloat(transaction.itemCost))
+              ? parseFloat(transaction.itemCost)
+              : toNumber(matchedProduct.itemCost);
+            transaction.purchasingPrice = Number.isFinite(parseFloat(transaction.purchasingPrice))
+              ? parseFloat(transaction.purchasingPrice)
+              : toNumber(matchedProduct.purchasingPrice);
           } else {
-            transaction.productName = transaction.name || 'Unknown Product';
+            transaction.productName = fallbackName;
+            transaction.barcode = asCleanString(transaction.barcode || transaction.productId) || 'N/A';
           }
 
           if (!transaction.barcode) {

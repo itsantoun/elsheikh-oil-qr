@@ -25,6 +25,7 @@ const RemainingProducts = () => {
   const [countedQty, setCountedQty]     = useState({});
   const [reconfirmQty, setReconfirmQty] = useState({});
   const [soldTotals, setSoldTotals]     = useState({});
+  const [soldOverrides, setSoldOverrides] = useState({});
 
   // Scanner
   const [scannerOpen, setScannerOpen]     = useState(false);
@@ -108,10 +109,11 @@ const RemainingProducts = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [prodSnap, checkSnap, soldSnap] = await Promise.all([
+      const [prodSnap, checkSnap, soldSnap, overridesSnap] = await Promise.all([
         get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'SoldItems')),
+        get(ref(database, 'soldTotalsOverrides')),
       ]);
 
       if (prodSnap.exists()) {
@@ -155,6 +157,10 @@ const RemainingProducts = () => {
         setSoldTotals(totals);
       } else {
         setSoldTotals({});
+      }
+
+      if (overridesSnap.exists()) {
+        setSoldOverrides(overridesSnap.val());
       }
     } catch (err) { console.error(err); showError('Error loading data.'); }
     finally { setIsLoading(false); }
@@ -599,7 +605,8 @@ const RemainingProducts = () => {
                 {filteredProducts.map(product => {
                   const isPending        = pendingChecks.some(c => c.id === product.id);
                   const inputVal         = countedQty[product.id] ?? '';
-                  const totalSold        = soldTotals[product.id] || 0;
+                  const hasOverride      = soldOverrides[product.id] !== undefined && soldOverrides[product.id] !== '';
+                  const totalSold        = hasOverride ? parseFloat(soldOverrides[product.id]) || 0 : soldTotals[product.id] || 0;
                   const currentStock     = product.quantity;
                   const expectedRemaining = currentStock - totalSold;
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;

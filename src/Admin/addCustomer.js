@@ -208,6 +208,14 @@ import { database } from '../Auth/firebase';
 import { ref, get, set, update, remove, push } from 'firebase/database';
 import '../CSS/addCustomer.css';
 
+const sortByName = (a, b) => {
+  const nameA = (a.name || '').trim().toLowerCase();
+  const nameB = (b.name || '').trim().toLowerCase();
+  if (nameA < nameB) return -1;
+  if (nameA > nameB) return 1;
+  return 0;
+};
+
 const AddCustomer = () => {
   const [customers, setCustomers] = useState([]);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -236,6 +244,7 @@ const AddCustomer = () => {
           name: data[key].name,
           nameArabic: data[key].nameArabic || '',
         }));
+        customerList.sort((a, b) => sortByName(a, b));
         setCustomers(customerList);
       } else {
         setCustomers([]);
@@ -265,10 +274,10 @@ const AddCustomer = () => {
         nameArabic: newCustomerNameArabic.trim() 
       });
 
-      setCustomers((prev) => [
-        ...prev,
-        { id: newCustomerRef.key, name: newCustomerName.trim(), nameArabic: newCustomerNameArabic.trim() },
-      ]);
+      setCustomers((prev) => {
+        const updated = [...prev, { id: newCustomerRef.key, name: newCustomerName.trim(), nameArabic: newCustomerNameArabic.trim() }];
+        return updated.sort((a, b) => sortByName(a, b));
+      });
       setNewCustomerName('');
       setNewCustomerNameArabic('');
       setSuccessMessage('Customer added successfully!');
@@ -302,11 +311,12 @@ const AddCustomer = () => {
         nameArabic: editNameArabic.trim() 
       });
 
-      setCustomers((prev) =>
-        prev.map((customer) =>
+      setCustomers((prev) => {
+        const updated = prev.map((customer) =>
           customer.id === id ? { ...customer, name: editName.trim(), nameArabic: editNameArabic.trim() } : customer
-        )
-      );
+        );
+        return updated.sort((a, b) => sortByName(a, b));
+      });
 
       setEditingCustomer(null);
       setSuccessMessage('Customer updated successfully!');
@@ -360,15 +370,16 @@ const AddCustomer = () => {
   };
 
   // Filter customers based on search term
-  const filteredCustomers = customers.filter(customer => {
-    if (!searchTerm.trim()) return true;
-    
-    const term = searchTerm.toLowerCase();
-    return (
-      customer.name?.toLowerCase().includes(term) ||
-      customer.nameArabic?.toLowerCase().includes(term)
-    );
-  });
+  const filteredCustomers = customers
+    .filter(customer => {
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        customer.name?.toLowerCase().includes(term) ||
+        customer.nameArabic?.toLowerCase().includes(term)
+      );
+    })
+    .sort((a, b) => sortByName(a, b));
 
   return (
     <div className="admin-container">

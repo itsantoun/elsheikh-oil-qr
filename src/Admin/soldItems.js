@@ -5,6 +5,14 @@ import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
 
+const sortByName = (a, b) => {
+  const nameA = (a.name || '').trim().toLowerCase();
+  const nameB = (b.name || '').trim().toLowerCase();
+  if (nameA < nameB) return -1;
+  if (nameA > nameB) return 1;
+  return 0;
+};
+
 const SoldItems = () => {
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
@@ -231,6 +239,7 @@ const SoldItems = () => {
             name: customersData[key].name,
             nameArabic: customersData[key].nameArabic,
           }));
+          customerList.sort((a, b) => sortByName(a, b));
         }
         setCustomers(customerList);
 
@@ -534,6 +543,7 @@ const SoldItems = () => {
           name: customersData[key].name,
           nameArabic: customersData[key].nameArabic,
         }));
+        customerList.sort((a, b) => sortByName(a, b));
       }
       setCustomers(customerList);
 
@@ -746,6 +756,24 @@ const SoldItems = () => {
       };
       const updatedItems = sortItemsByDate([...soldItems, newItemForList]);
       setSoldItems(updatedItems);
+
+      // If stock, also create a transaction (new purchase)
+      if (isStockLikeStatus(paymentStatusValue)) {
+        const transaction = {
+          barcode: selectedProduct.barcode || selectedProduct.id,
+          productId: selectedProduct.id,
+          name: selectedProduct.name || 'Unknown Product',
+          quantity: quantityValue,
+          dateScanned: dateScannedValue,
+          paymentStatus: 'Pending',
+          itemCost: sellPriceValue,
+          purchasingPrice: purchasingPriceValue,
+          totalCost: purchasingPriceValue * quantityValue,
+          scannedBy: scannedByValue,
+        };
+        await push(ref(database, 'transactions'), transaction);
+      }
+
       closeMissingItemsModal();
       setErrorMessage(null);
     } catch (error) {

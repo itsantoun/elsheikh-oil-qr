@@ -642,6 +642,7 @@ const Transactions = () => {
           ) || 'Unknown Product';
 
           if (matchedProduct) {
+            transaction.productKey = matchedKey;
             transaction.productName = pickFirstNonEmpty(matchedProduct.name, fallbackName) || 'Unknown Product';
             transaction.barcode = asCleanString(
               matchedProduct.barcode || matchedKey || transaction.barcode || transaction.productId
@@ -744,7 +745,7 @@ const Transactions = () => {
   const filteredTransactions = filterTransactions();
 
   // Handle confirm transaction
-  const handleConfirm = async (id, barcode, transactionQuantity) => {
+  const handleConfirm = async (id, productKey, transactionQuantity) => {
     try {
       setTransactions(prev =>
         prev.map(t => t.id === id ? { ...t, paymentStatus: 'Confirmed' } : t)
@@ -752,18 +753,13 @@ const Transactions = () => {
 
       const updates = {};
       updates[`transactions/${id}/paymentStatus`] = 'Confirmed';
-      
-      if (barcode) {
-        const productRef = ref(database, `products/${barcode}`);
-        const productSnapshot = await get(productRef);
-        
+
+      if (productKey) {
+        const productSnapshot = await get(ref(database, `products/${productKey}`));
         if (productSnapshot.exists()) {
-          const productData = productSnapshot.val();
-          const currentQuantity = parseFloat(productData.quantity) || 0;
+          const currentQuantity = parseFloat(productSnapshot.val().quantity) || 0;
           const confirmedQuantity = parseFloat(transactionQuantity) || 0;
-          const newQuantity = currentQuantity + confirmedQuantity;
-          
-          updates[`products/${barcode}/quantity`] = newQuantity;
+          updates[`products/${productKey}/quantity`] = currentQuantity + confirmedQuantity;
         }
       }
 
@@ -777,7 +773,7 @@ const Transactions = () => {
   };
 
   // Handle unconfirm transaction
-  const handleUnconfirm = async (id, barcode, transactionQuantity) => {
+  const handleUnconfirm = async (id, productKey, transactionQuantity) => {
     try {
       setTransactions(prev =>
         prev.map(t => t.id === id ? { ...t, paymentStatus: 'Pending' } : t)
@@ -785,19 +781,15 @@ const Transactions = () => {
 
       const updates = {};
       updates[`transactions/${id}/paymentStatus`] = 'Pending';
-      
-      if (barcode) {
-        const productRef = ref(database, `products/${barcode}`);
-        const productSnapshot = await get(productRef);
-        
+
+      if (productKey) {
+        const productSnapshot = await get(ref(database, `products/${productKey}`));
         if (productSnapshot.exists()) {
-          const productData = productSnapshot.val();
-          const currentQuantity = parseFloat(productData.quantity) || 0;
+          const currentQuantity = parseFloat(productSnapshot.val().quantity) || 0;
           const unconfirmedQuantity = parseFloat(transactionQuantity) || 0;
           const newQuantity = currentQuantity - unconfirmedQuantity;
-          
           if (newQuantity >= 0) {
-            updates[`products/${barcode}/quantity`] = newQuantity;
+            updates[`products/${productKey}/quantity`] = newQuantity;
           } else {
             throw new Error('Quantity cannot be negative');
           }
@@ -1122,7 +1114,7 @@ const Transactions = () => {
                     <div className="action-buttons">
                       {(item.paymentStatus === 'Pending' || item.paymentStatus === 'Stock') && (
                         <button
-                          onClick={() => handleConfirm(item.id, item.barcode, item.quantity)}
+                          onClick={() => handleConfirm(item.id, item.productKey, item.quantity)}
                           className="btn-small btn-success"
                           title="Confirm Transaction"
                         >
@@ -1132,7 +1124,7 @@ const Transactions = () => {
 
                       {item.paymentStatus === 'Confirmed' && (
                         <button
-                          onClick={() => handleUnconfirm(item.id, item.barcode, item.quantity)}
+                          onClick={() => handleUnconfirm(item.id, item.productKey, item.quantity)}
                           className="btn-small btn-warning"
                           title="Unconfirm Transaction"
                         >

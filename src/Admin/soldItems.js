@@ -681,12 +681,6 @@ const SoldItems = () => {
       return;
     }
 
-    if (!missingItemCustomerId) {
-      setErrorMessage('Please select a customer.');
-      setTimeout(() => setErrorMessage(null), 3000);
-      return;
-    }
-
     const quantityValue = toNumber(missingItemQuantity);
     if (quantityValue <= 0) {
       setErrorMessage('Quantity must be greater than 0.');
@@ -694,8 +688,21 @@ const SoldItems = () => {
       return;
     }
 
-    const selectedCustomer = customers.find((customer) => customer.id === missingItemCustomerId);
-    if (!selectedCustomer) {
+    const paymentStatusValue = missingItemPaymentStatus || 'Unpaid';
+    const isStock = isStockLikeStatus(paymentStatusValue);
+
+    // Customer only required for Paid / Unpaid sales — not for stock purchases
+    if (!isStock && !missingItemCustomerId) {
+      setErrorMessage('Please select a customer.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    const selectedCustomer = !isStock
+      ? customers.find((customer) => customer.id === missingItemCustomerId)
+      : null;
+
+    if (!isStock && !selectedCustomer) {
       setErrorMessage('Selected customer is no longer available.');
       setTimeout(() => setErrorMessage(null), 3000);
       return;
@@ -703,62 +710,14 @@ const SoldItems = () => {
 
     setIsSavingMissingItem(true);
 
-    const paymentStatusValue = missingItemPaymentStatus || 'Unpaid';
     const sellPriceValue = toNumber(selectedProduct.itemCost);
     const purchasingPriceValue = toNumber(selectedProduct.purchasingPrice);
-    const totalCostValue = isStockLikeStatus(paymentStatusValue)
-      ? 0
-      : sellPriceValue * quantityValue;
-    const profitMetrics = getItemProfitMetrics(
-      {
-        barcode: selectedProduct.barcode,
-        productId: selectedProduct.id,
-      },
-      {
-        quantity: quantityValue,
-        paymentStatus: paymentStatusValue,
-        itemCost: sellPriceValue,
-        purchasingPrice: purchasingPriceValue,
-        totalCost: totalCostValue,
-      }
-    );
-
-    const customerNameForStorage = selectedCustomer.nameArabic || selectedCustomer.name || 'Unknown';
-    const customerNameForDisplay = selectedCustomer.name || selectedCustomer.nameArabic || 'Unknown';
     const dateScannedValue = convertDateInputToISO(missingItemDate);
     const scannedByValue = user?.name || user?.displayName || user?.email || 'Unknown';
 
-    const newItem = {
-      barcode: selectedProduct.barcode || selectedProduct.id,
-      productId: selectedProduct.id,
-      name: selectedProduct.name || 'Unknown Product',
-      category: selectedProduct.category || 'Unknown',
-      price: toNumber(selectedProduct.price),
-      dateScanned: dateScannedValue,
-      scannedBy: scannedByValue,
-      customerName: customerNameForStorage,
-      quantity: quantityValue,
-      paymentStatus: paymentStatusValue,
-      itemCost: sellPriceValue,
-      purchasingPrice: purchasingPriceValue,
-      totalCost: totalCostValue,
-      unitProfit: profitMetrics.profit,
-      totalProfit: profitMetrics.totalProfitAmount,
-      remark: missingItemRemark,
-    };
-
     try {
-      const createdRef = await push(ref(database, 'SoldItems'), newItem);
-      const newItemForList = {
-        id: createdRef.key,
-        ...newItem,
-        customerName: customerNameForDisplay,
-      };
-      const updatedItems = sortItemsByDate([...soldItems, newItemForList]);
-      setSoldItems(updatedItems);
-
-      // If stock, also create a transaction (new purchase)
-      if (isStockLikeStatus(paymentStatusValue)) {
+      if (isStock) {
+        // Stock = new purchase → save to Transactions only
         const transaction = {
           barcode: selectedProduct.barcode || selectedProduct.id,
           productId: selectedProduct.id,
@@ -770,8 +729,52 @@ const SoldItems = () => {
           purchasingPrice: purchasingPriceValue,
           totalCost: purchasingPriceValue * quantityValue,
           scannedBy: scannedByValue,
+          remark: missingItemRemark,
         };
         await push(ref(database, 'transactions'), transaction);
+      } else {
+        // Paid / Unpaid → save to SoldItems as usual
+        const totalCostValue = sellPriceValue * quantityValue;
+        const profitMetrics = getItemProfitMetrics(
+          { barcode: selectedProduct.barcode, productId: selectedProduct.id },
+          {
+            quantity: quantityValue,
+            paymentStatus: paymentStatusValue,
+            itemCost: sellPriceValue,
+            purchasingPrice: purchasingPriceValue,
+            totalCost: totalCostValue,
+          }
+        );
+        const customerNameForStorage = selectedCustomer.nameArabic || selectedCustomer.name || 'Unknown';
+        const customerNameForDisplay = selectedCustomer.name || selectedCustomer.nameArabic || 'Unknown';
+
+        const newItem = {
+          barcode: selectedProduct.barcode || selectedProduct.id,
+          productId: selectedProduct.id,
+          name: selectedProduct.name || 'Unknown Product',
+          category: selectedProduct.category || 'Unknown',
+          price: toNumber(selectedProduct.price),
+          dateScanned: dateScannedValue,
+          scannedBy: scannedByValue,
+          customerName: customerNameForStorage,
+          quantity: quantityValue,
+          paymentStatus: paymentStatusValue,
+          itemCost: sellPriceValue,
+          purchasingPrice: purchasingPriceValue,
+          totalCost: totalCostValue,
+          unitProfit: profitMetrics.profit,
+          totalProfit: profitMetrics.totalProfitAmount,
+          remark: missingItemRemark,
+        };
+
+        const createdRef = await push(ref(database, 'SoldItems'), newItem);
+        const newItemForList = {
+          id: createdRef.key,
+          ...newItem,
+          customerName: customerNameForDisplay,
+        };
+        const updatedItems = sortItemsByDate([...soldItems, newItemForList]);
+        setSoldItems(updatedItems);
       }
 
       closeMissingItemsModal();
@@ -794,7 +797,7 @@ const SoldItems = () => {
   const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
   const canSaveMissingItem = Boolean(
     selectedProduct &&
-    missingItemCustomerId &&
+    (isStockLikeStatus(missingItemPaymentStatus) || missingItemCustomerId) &&
     missingItemDate &&
     missingItemQuantityValue > 0 &&
     !isSavingMissingItem

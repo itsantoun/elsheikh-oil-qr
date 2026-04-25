@@ -170,6 +170,7 @@ import { database, auth } from '../Auth/firebase';
 import { ref, get, set, remove } from 'firebase/database';
 import { createUserWithEmailAndPassword, deleteUser, signInWithEmailAndPassword } from 'firebase/auth';
 import '../CSS/addUser.css';
+import { IconCheck, IconAlertTriangle, IconUser, IconUsers, IconEye, IconEyeOff, IconPlus, IconRefresh, IconMail, IconLock, IconSettings, IconTrash, IconX } from '../utils/icons';
 
 const AddUser = () => {
   const [email, setEmail] = useState('');
@@ -284,13 +285,13 @@ const AddUser = () => {
       {/* Messages */}
       {successMessage && (
         <div className="success-message">
-          <span className="message-icon">✓</span>
+          <span className="message-icon"><IconCheck /></span>
           <span className="message-text">{successMessage}</span>
         </div>
       )}
       {errorMessage && (
         <div className="error-message">
-          <span className="message-icon">⚠️</span>
+          <span className="message-icon"><IconAlertTriangle /></span>
           <span className="message-text">{errorMessage}</span>
         </div>
       )}
@@ -299,7 +300,7 @@ const AddUser = () => {
       <div className="form-card">
         <div className="form-header">
           <h2 className="form-title">
-            <span className="form-icon">👤</span>
+            <span className="form-icon"><IconUser /></span>
             Add New User
           </h2>
           <div className="form-stats">
@@ -355,7 +356,7 @@ const AddUser = () => {
                 className="password-toggle-btn"
                 title={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? "👁️" : "👁️‍🗨️"}
+                {showPassword ? <IconEye /> : <IconEyeOff />}
               </button>
             </div>
             <div className="password-hint">Must be at least 6 characters</div>
@@ -364,7 +365,7 @@ const AddUser = () => {
 
         <div className="form-actions">
           <button onClick={handleAddUser} className="btn-primary">
-            <span className="button-icon">➕</span>
+            <span className="button-icon"><IconPlus /></span>
             Add User
           </button>
         </div>
@@ -374,7 +375,7 @@ const AddUser = () => {
       <div className="table-card">
         <div className="table-header">
           <h2 className="table-title">
-            <span className="table-icon">👥</span>
+            <span className="table-icon"><IconUsers /></span>
             User List
           </h2>
           <div className="table-actions">
@@ -383,12 +384,12 @@ const AddUser = () => {
               className="btn-secondary"
             >
               <span className="button-icon">
-                {showPasswordsInTable ? "👁️" : "👁️‍🗨️"}
+                {showPasswordsInTable ? <IconEye /> : <IconEyeOff />}
               </span>
               {showPasswordsInTable ? "Hide Passwords" : "Show Passwords"}
             </button>
             <button onClick={() => window.location.reload()} className="btn-secondary">
-              <span className="button-icon">🔄</span>
+              <span className="button-icon"><IconRefresh /></span>
               Refresh
             </button>
           </div>
@@ -400,25 +401,25 @@ const AddUser = () => {
               <tr>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">👤</span>
+                    <span className="header-icon"><IconUser /></span>
                     Name
                   </div>
                 </th>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">📧</span>
+                    <span className="header-icon"><IconMail /></span>
                     Email
                   </div>
                 </th>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">🔐</span>
+                    <span className="header-icon"><IconLock /></span>
                     Password
                   </div>
                 </th>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">⚙️</span>
+                    <span className="header-icon"><IconSettings /></span>
                     Actions
                   </div>
                 </th>
@@ -440,7 +441,7 @@ const AddUser = () => {
                   </td>
                   <td>
                     <div className="email-cell">
-                      <span className="email-icon">✉️</span>
+                      <span className="email-icon"><IconMail /></span>
                       <span className="email-text">{user.email || 'N/A'}</span>
                     </div>
                   </td>
@@ -459,7 +460,7 @@ const AddUser = () => {
                       onClick={() => handleDeleteUser(user.id)}
                       className="btn-danger btn-small"
                     >
-                      <span className="button-icon">🗑️</span>
+                      <span className="button-icon"><IconTrash /></span>
                       Delete
                     </button>
                   </td>
@@ -470,7 +471,7 @@ const AddUser = () => {
 
           {users.length === 0 && (
             <div className="empty-state">
-              <div className="empty-icon">👥</div>
+              <div className="empty-icon"><IconUsers /></div>
               <p className="empty-text">No users found. Add your first user above.</p>
             </div>
           )}

@@ -477,6 +477,7 @@ import React, { useEffect, useState } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, update, remove } from 'firebase/database';
 import '../CSS/transactions.css';
+import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, IconTrash, IconBarChart, IconAlertTriangle } from '../utils/icons';
 
 const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
@@ -909,12 +910,7 @@ const Transactions = () => {
             className={`refresh-button ${isRefreshing ? 'refreshing' : ''}`}
             disabled={isRefreshing}
           >
-            {isRefreshing ? (
-              <>
-                <span className="spinner"></span>
-                Refreshing...
-              </>
-            ) : 'Refresh Data'}
+            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
           </button>
         </div>
       </div>
@@ -963,13 +959,13 @@ const Transactions = () => {
               {selectedMonth && (
                 <span className="filter-tag">
                   Month: {getMonthName(parseInt(selectedMonth))}
-                  <button onClick={() => setSelectedMonth('')}>×</button>
+                  <button onClick={() => setSelectedMonth('')}><IconX /></button>
                 </span>
               )}
               {selectedProduct && (
                 <span className="filter-tag">
                   Product: {selectedProduct}
-                  <button onClick={() => setSelectedProduct('')}>×</button>
+                  <button onClick={() => setSelectedProduct('')}><IconX /></button>
                 </span>
               )}
             </div>
@@ -1025,7 +1021,7 @@ const Transactions = () => {
       <div className="table-container">
         {filteredTransactions.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📊</div>
+            <div className="empty-state-icon"><IconBarChart /></div>
             <p>No transactions found for the selected filters.</p>
             <button className="btn-secondary" onClick={clearFilters}>
               Clear Filters
@@ -1123,7 +1119,7 @@ const Transactions = () => {
                           className="btn-small btn-success"
                           title="Confirm Transaction"
                         >
-                          ✓
+                          <IconCheck />
                         </button>
                       )}
 
@@ -1133,25 +1129,25 @@ const Transactions = () => {
                           className="btn-small btn-warning"
                           title="Unconfirm Transaction"
                         >
-                          ↩
+                          <IconCornerUpLeft />
                         </button>
                       )}
 
                       {editing === item.id ? (
                         <>
-                          <button 
-                            onClick={() => handleSave(item.id)} 
+                          <button
+                            onClick={() => handleSave(item.id)}
                             className="btn-small btn-success"
                             title="Save Changes"
                           >
-                            💾
+                            <IconSave />
                           </button>
-                          <button 
-                            onClick={handleCancel} 
+                          <button
+                            onClick={handleCancel}
                             className="btn-small btn-secondary"
                             title="Cancel Edit"
                           >
-                            ✕
+                            <IconX />
                           </button>
                         </>
                       ) : (
@@ -1161,7 +1157,7 @@ const Transactions = () => {
                             className="btn-small btn-primary"
                             title="Edit Transaction"
                           >
-                            ✏️
+                            <IconEdit />
                           </button>
                         )
                       )}
@@ -1171,7 +1167,7 @@ const Transactions = () => {
                         className="btn-small btn-danger"
                         title="Delete Transaction"
                       >
-                        🗑️
+                        <IconTrash />
                       </button>
                     </div>
                   </td>
@@ -1189,7 +1185,7 @@ const Transactions = () => {
             <div className="modal-header">
               <h3>Confirm Deletion</h3>
               <button className="modal-close" onClick={() => setShowDeleteConfirm(false)}>
-                ×
+                <IconX />
               </button>
             </div>
             <div className="modal-content">

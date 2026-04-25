@@ -3,6 +3,11 @@ import { ref, get, update, push, set, remove } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import '../CSS/admin.css';
+import {
+  IconRefresh, IconSearch, IconPackage, IconAlertTriangle, IconCheck, IconX,
+  IconXCircle, IconPause, IconCamera, IconArchive, IconCalendar, IconFolderOpen,
+  IconClipboard, IconArrowUp, IconArrowDown, IconCheckCircle, IconCornerUpLeft,
+} from '../utils/icons';
 
 // ─── Firebase nodes used ──────────────────────────────────────────────────────
 // products/{id}                          — live product data
@@ -37,12 +42,12 @@ const RemainingProducts = () => {
   const scanCoolRef   = useRef(null);
 
   // History
-  const [historyMonth, setHistoryMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [historyData, setHistoryData]       = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearch, setHistorySearch]               = useState('');
+  const [historySelectedProduct, setHistorySelectedProduct] = useState(null);
+  const [productHistoryEntries, setProductHistoryEntries]   = useState([]);
+  const [productHistoryLoading, setProductHistoryLoading]   = useState(false);
+  const [historyDateFrom, setHistoryDateFrom]               = useState('');
+  const [historyDateTo, setHistoryDateTo]                   = useState('');
   const [archivesData, setArchivesData]     = useState([]);
   const [archivesLoading, setArchivesLoading] = useState(false);
   const [selectedArchiveId, setSelectedArchiveId] = useState('');
@@ -178,24 +183,48 @@ const RemainingProducts = () => {
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
-  const fetchHistory = useCallback(async (month) => {
-    setHistoryLoading(true);
+  const fetchProductHistory = useCallback(async (product) => {
+    setProductHistoryLoading(true);
+    setProductHistoryEntries([]);
     try {
-      const snap = await get(ref(database, `stockCheckHistory/${month}`));
-      if (snap.exists()) {
-        setHistoryData(
-          Object.entries(snap.val())
-            .map(([key, v]) => ({ key, ...v }))
-            .sort((a, b) => new Date(b.checkedAt) - new Date(a.checkedAt))
-        );
-      } else { setHistoryData([]); }
-    } catch (err) { console.error(err); showError('Failed to load history.'); }
-    finally { setHistoryLoading(false); }
+      const [soldSnap, txSnap] = await Promise.all([
+        get(ref(database, 'SoldItems')),
+        get(ref(database, 'transactions')),
+      ]);
+      const entries = [];
+      if (soldSnap.exists()) {
+        Object.values(soldSnap.val()).forEach(item => {
+          if (item.barcode === product.id || item.productId === product.id) {
+            entries.push({
+              date: item.dateScanned,
+              type: 'Sale',
+              qty: -(parseFloat(item.quantity) || 0),
+              customer: item.customerName || '—',
+              remark: item.remark || '—',
+              paymentStatus: item.paymentStatus,
+            });
+          }
+        });
+      }
+      if (txSnap.exists()) {
+        Object.values(txSnap.val()).forEach(tx => {
+          if (tx.barcode === product.id || tx.productId === product.id) {
+            entries.push({
+              date: tx.dateScanned,
+              type: 'Stock In',
+              qty: +(parseFloat(tx.quantity) || 0),
+              customer: '—',
+              remark: tx.remark || '—',
+              paymentStatus: tx.paymentStatus,
+            });
+          }
+        });
+      }
+      entries.sort((a, b) => new Date(b.date) - new Date(a.date));
+      setProductHistoryEntries(entries);
+    } catch (err) { console.error(err); showError('Failed to load product history.'); }
+    finally { setProductHistoryLoading(false); }
   }, []);
-
-  useEffect(() => {
-    if (activeTab === 'history') fetchHistory(historyMonth);
-  }, [activeTab, historyMonth, fetchHistory]);
 
   const fetchArchives = useCallback(async () => {
     setArchivesLoading(true);
@@ -499,7 +528,9 @@ const RemainingProducts = () => {
       setCountedQty({});
       setReconfirmQty({});
       setSoldTotals({});
-      setHistoryData([]);
+      setProductHistoryEntries([]);
+      setHistorySelectedProduct(null);
+      setHistorySearch('');
       if (activeTab === 'archives') fetchArchives();
 
       showSuccess(`Archived stock data and reset quantities to 0 for ${allProducts.length} products. Remaining stock list is now cleared.`);
@@ -544,7 +575,6 @@ const RemainingProducts = () => {
       await fetchData();
       setCountedQty({});
       setReconfirmQty({});
-      if (activeTab === 'history') fetchHistory(historyMonth);
       if (activeTab === 'archives') fetchArchives();
 
       showSuccess(`Archive restored successfully (${objCount(selectedArchive.products)} products).`);
@@ -581,13 +611,13 @@ const RemainingProducts = () => {
             disabled={isArchiving || isRestoring || isLoading || products.length === 0}
             title="Archive data, keep products, reset product quantities to 0, and clear sold/check history data"
           >
-            {isArchiving ? '🗄️ Archiving...' : '🗄️ Archive & Reset Qty'}
+            <IconArchive /> {isArchiving ? 'Archiving...' : 'Archive & Reset Qty'}
           </button>
           <button onClick={() => setScannerOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            📷 Scan Barcode
+            <IconCamera /> Scan Barcode
           </button>
           <button onClick={fetchData} className={`btn-secondary ${isLoading ? 'refreshing' : ''}`} disabled={isLoading}>
-            {isLoading ? '🔄 Loading...' : '🔄 Refresh'}
+            <IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -595,7 +625,7 @@ const RemainingProducts = () => {
       <div style={{ margin: '12px 0' }}>
         <input
           type="text"
-          placeholder="🔍 Search by name, barcode or type..."
+          placeholder="Search by name, barcode or type..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
@@ -652,14 +682,14 @@ const RemainingProducts = () => {
                       </td>
                       <td>
                         {isPending
-                          ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>⚠️ Pending</span>
-                          : <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>✓ OK</span>}
+                          ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconAlertTriangle /> Pending</span>
+                          : <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconCheck /> OK</span>}
                       </td>
                       <td>
                         <div className="action-buttons">
-                          <button className="btn-small btn-success" onClick={() => handleAccurate(product)}>✅ Accurate</button>
-                          <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}>❌ Inaccurate</button>
-                          <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}>⏸️ Hold</button>
+                          <button className="btn-small btn-success" onClick={() => handleAccurate(product)}><IconCheck /> Accurate</button>
+                          <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}><IconXCircle /> Inaccurate</button>
+                          <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
                         </div>
                       </td>
                     </tr>
@@ -670,7 +700,7 @@ const RemainingProducts = () => {
           </div>
           {filteredProducts.length === 0 && !isLoading && (
             <div className="empty-table">
-              <div className="empty-icon">📦</div>
+              <div className="empty-icon"><IconPackage /></div>
               <p>No products found{searchTerm ? ` for "${searchTerm}"` : ''}</p>
             </div>
           )}
@@ -689,7 +719,7 @@ const RemainingProducts = () => {
           <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404' }}>{pendingChecks.length} Flagged</div>
         </div>
         <div className="header-right">
-          <button onClick={fetchData} className="btn-secondary" disabled={isLoading}>{isLoading ? '🔄 Loading...' : '🔄 Refresh'}</button>
+          <button onClick={fetchData} className="btn-secondary" disabled={isLoading}><IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}</button>
         </div>
       </div>
       <div className="table-section">
@@ -731,8 +761,8 @@ const RemainingProducts = () => {
                       </td>
                       <td>
                         <div className="action-buttons">
-                          <button className="btn-small btn-success" onClick={() => handleReconfirmAccurate(check)}>✅ Confirm</button>
-                          <button className="btn-small btn-warning" onClick={() => handleReconfirmInaccurate(check)}>🔄 Still Unsure</button>
+                          <button className="btn-small btn-success" onClick={() => handleReconfirmAccurate(check)}><IconCheck /> Confirm</button>
+                          <button className="btn-small btn-warning" onClick={() => handleReconfirmInaccurate(check)}><IconRefresh /> Still Unsure</button>
                         </div>
                       </td>
                     </tr>
@@ -743,7 +773,7 @@ const RemainingProducts = () => {
           </div>
           {pendingChecks.length === 0 && (
             <div className="empty-table">
-              <div className="empty-icon">✅</div>
+              <div className="empty-icon"><IconCheckCircle /></div>
               <p>No pending reconfirmations — all checks cleared!</p>
             </div>
           )}
@@ -755,96 +785,204 @@ const RemainingProducts = () => {
   // ── Render: History tab ────────────────────────────────────────────────────
 
   const renderHistoryTab = () => {
-    const accurate   = historyData.filter(h => h.status === 'accurate').length;
-    const inaccurate = historyData.filter(h => h.status === 'inaccurate').length;
+    const searchText = historySearch.trim().toLowerCase();
+    const suggestions = searchText
+      ? products.filter(p =>
+          p.name?.toLowerCase().includes(searchText) ||
+          p.id?.toLowerCase().includes(searchText)
+        )
+      : [];
+
+    // Compute running balance on ALL entries first (so Stock After stays correct)
+    let cumQty = 0;
+    const entriesWithBalance = productHistoryEntries.map(entry => {
+      const stockAfter = (parseFloat(historySelectedProduct?.quantity) || 0) - cumQty;
+      cumQty += entry.qty;
+      return { ...entry, stockAfter };
+    });
+
+    // Then apply date filter only to what's displayed
+    const fromMs = historyDateFrom ? new Date(historyDateFrom).setHours(0, 0, 0, 0) : null;
+    const toMs   = historyDateTo   ? new Date(historyDateTo).setHours(23, 59, 59, 999) : null;
+    const displayedEntries = entriesWithBalance.filter(entry => {
+      const t = new Date(entry.date).getTime();
+      if (fromMs && t < fromMs) return false;
+      if (toMs   && t > toMs)   return false;
+      return true;
+    });
+
     return (
       <div>
         <div className="header-section">
           <div className="header-left">
-            <h2 className="section-title">Stock Check History</h2>
-            <div className="stats-badge">{historyData.length} Records</div>
-          </div>
-          <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontWeight: 600, fontSize: 14 }}>Month:</label>
-            <input
-              type="month" value={historyMonth}
-              onChange={e => setHistoryMonth(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14 }}
-            />
-            <button onClick={() => fetchHistory(historyMonth)} className="btn-secondary" disabled={historyLoading}>
-              {historyLoading ? '🔄' : '🔄 Load'}
-            </button>
+            {/* <h2 className="section-title">Product History</h2>
+            {historySelectedProduct && (
+              <div className="stats-badge">{displayedEntries.length} of {productHistoryEntries.length} Events</div>
+            )} */}
           </div>
         </div>
 
-        {historyData.length > 0 && (
-          <div style={{ display: 'flex', gap: 12, margin: '12px 0' }}>
-            <div style={{ flex: 1, background: '#e8f5e9', borderRadius: 10, padding: '14px 18px', borderLeft: '4px solid #28a745' }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a7a2e' }}>{accurate}</div>
-              <div style={{ fontSize: 13, color: '#555' }}>✅ Accurate checks</div>
+        {/* Product search with dropdown */}
+        <div style={{ margin: '12px 0', position: 'relative' }}>
+          <input
+            type="text"
+            placeholder="Search product by name or barcode..."
+            value={historySearch}
+            onChange={e => {
+              setHistorySearch(e.target.value);
+              setHistorySelectedProduct(null);
+              setProductHistoryEntries([]);
+            }}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
+          />
+          {suggestions.length > 0 && !historySelectedProduct && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #ccc', borderRadius: 6, zIndex: 100, maxHeight: 200, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+              {suggestions.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => {
+                    setHistorySelectedProduct(p);
+                    setHistorySearch(p.name);
+                    fetchProductHistory(p);
+                  }}
+                  style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 14 }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                >
+                  <strong>{p.name}</strong>
+                  <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>— {p.id}</span>
+                </div>
+              ))}
             </div>
-            <div style={{ flex: 1, background: '#fff3cd', borderRadius: 10, padding: '14px 18px', borderLeft: '4px solid #ffc107' }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#856404' }}>{inaccurate}</div>
-              <div style={{ fontSize: 13, color: '#555' }}>⚠️ Flagged as inaccurate</div>
+          )}
+        </div>
+
+        {/* Product info card */}
+        {historySelectedProduct && (
+          <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap', border: '1px solid #dee2e6' }}>
+            <div>
+              <div style={{ fontSize: 12, color: '#888' }}>Product</div>
+              <div style={{ fontWeight: 700 }}>{historySelectedProduct.name}</div>
             </div>
-            <div style={{ flex: 1, background: '#e7f1ff', borderRadius: 10, padding: '14px 18px', borderLeft: '4px solid #0d6efd' }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#0a58ca' }}>{historyData.length}</div>
-              <div style={{ fontSize: 13, color: '#555' }}>📋 Total checks</div>
+            <div>
+              <div style={{ fontSize: 12, color: '#888' }}>Barcode</div>
+              <div style={{ fontWeight: 600, fontFamily: 'monospace' }}>{historySelectedProduct.id}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: '#888' }}>Type</div>
+              <div>{historySelectedProduct.productType || '—'}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: '#888' }}>Current Stock</div>
+              <div style={{ fontWeight: 700, fontSize: 20, color: parseFloat(historySelectedProduct.quantity) > 0 ? '#198754' : '#dc3545' }}>
+                {historySelectedProduct.quantity}
+              </div>
             </div>
           </div>
         )}
 
-        <div className="table-section">
-          <div className="table-card">
-            <div className="table-container">
-              {historyLoading ? (
-                <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading history...</div>
-              ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Product Name</th>
-                      <th>Barcode</th>
-                      <th className="text-right">System Qty</th>
-                      <th className="text-right">Counted Qty</th>
-                      <th className="text-right">Difference</th>
-                      <th>Result</th>
-                      <th>Checked At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyData.map(entry => {
-                      const diff = entry.countedQuantity - entry.systemQuantity;
-                      return (
-                        <tr key={entry.key}>
-                          <td><span className="product-name-cell">{entry.productName}</span></td>
-                          <td><span className="barcode-cell">{entry.productId}</span></td>
-                          <td className="text-right"><span className="quantity-cell">{entry.systemQuantity}</span></td>
-                          <td className="text-right"><span className="quantity-cell">{entry.countedQuantity}</span></td>
-                          <td className="text-right">
-                            <span style={{ color: diff < 0 ? '#dc3545' : diff > 0 ? '#198754' : '#6c757d', fontWeight: 600 }}>{diff > 0 ? '+' : ''}{diff}</span>
-                          </td>
-                          <td>
-                            {entry.status === 'accurate'
-                              ? <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>✅ Accurate</span>
-                              : <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}>⚠️ Inaccurate</span>}
-                          </td>
-                          <td><span className="date-cell">{formatDate(entry.checkedAt)}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+        {/* Date filters */}
+        {historySelectedProduct && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', margin: '12px 0', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>From</label>
+              <input
+                type="date"
+                value={historyDateFrom}
+                onChange={e => setHistoryDateFrom(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
+              />
             </div>
-            {!historyLoading && historyData.length === 0 && (
-              <div className="empty-table">
-                <div className="empty-icon">📅</div>
-                <p>No stock checks recorded for {historyMonth}.</p>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>To</label>
+              <input
+                type="date"
+                value={historyDateTo}
+                onChange={e => setHistoryDateTo(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
+              />
+            </div>
+            {(historyDateFrom || historyDateTo) && (
+              <button
+                className="btn-secondary"
+                onClick={() => { setHistoryDateFrom(''); setHistoryDateTo(''); }}
+                style={{ fontSize: 13 }}
+              >
+                <IconX /> Clear Dates
+              </button>
             )}
           </div>
-        </div>
+        )}
+
+        {/* History table */}
+        {historySelectedProduct && (
+          <div className="table-section">
+            <div className="table-card">
+              <div className="table-container">
+                {productHistoryLoading ? (
+                  <div style={{ padding: 32, textAlign: 'center', color: '#888' }}><IconRefresh /> Loading history...</div>
+                ) : displayedEntries.length === 0 ? (
+                  <div className="empty-table">
+                    <div className="empty-icon"><IconClipboard /></div>
+                    <p>No history found for this product.</p>
+                  </div>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th className="text-right">Qty Change</th>
+                        <th className="text-right">Stock After</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedEntries.map((entry, i) => (
+                        <tr key={i}>
+                          <td><span className="date-cell">{formatDate(entry.date)}</span></td>
+                          <td>
+                            <span style={{
+                              padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                              backgroundColor: entry.type === 'Sale' ? '#fde8e8' : '#e8f5e9',
+                              color: entry.type === 'Sale' ? '#c0392b' : '#1a7a2e',
+                            }}>
+                              {entry.type === 'Sale' ? <><IconArrowUp /> Sale</> : <><IconArrowDown /> Stock In</>}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            <span style={{ color: entry.qty < 0 ? '#dc3545' : '#198754', fontWeight: 700 }}>
+                              {entry.qty > 0 ? '+' : ''}{entry.qty}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            <span style={{ fontWeight: 600, color: entry.stockAfter <= 0 ? '#dc3545' : '#198754' }}>
+                              {entry.stockAfter}
+                            </span>
+                          </td>
+                          <td>
+                            {entry.paymentStatus && (
+                              <span className={`status-badge status-${entry.paymentStatus?.toLowerCase()}`}>
+                                {entry.paymentStatus}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!historySelectedProduct && (
+          <div className="empty-table">
+            <div className="empty-icon"><IconSearch /></div>
+            <p>Search for a product above to view its history.</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -971,7 +1109,7 @@ const RemainingProducts = () => {
         if (filteredArchivedProducts.length === 0) {
           return (
             <div className="empty-table" style={{ padding: 26 }}>
-              <div className="empty-icon">🔎</div>
+              <div className="empty-icon"><IconSearch /></div>
               <p>No archived products match this search.</p>
             </div>
           );
@@ -1007,7 +1145,7 @@ const RemainingProducts = () => {
         if (filteredArchivedSoldItems.length === 0) {
           return (
             <div className="empty-table" style={{ padding: 26 }}>
-              <div className="empty-icon">🔎</div>
+              <div className="empty-icon"><IconSearch /></div>
               <p>No archived sold items match this search.</p>
             </div>
           );
@@ -1045,7 +1183,7 @@ const RemainingProducts = () => {
         if (filteredArchivedChecks.length === 0) {
           return (
             <div className="empty-table" style={{ padding: 26 }}>
-              <div className="empty-icon">🔎</div>
+              <div className="empty-icon"><IconSearch /></div>
               <p>No archived stock checks match this search.</p>
             </div>
           );
@@ -1094,7 +1232,7 @@ const RemainingProducts = () => {
       if (filteredArchivedHistory.length === 0) {
         return (
           <div className="empty-table" style={{ padding: 26 }}>
-            <div className="empty-icon">🔎</div>
+            <div className="empty-icon"><IconSearch /></div>
             <p>No archived history entries match this search.</p>
           </div>
         );
@@ -1151,7 +1289,7 @@ const RemainingProducts = () => {
           </div>
           <div className="header-right">
             <button onClick={fetchArchives} className="btn-secondary" disabled={archivesLoading}>
-              {archivesLoading ? '🔄 Loading...' : '🔄 Refresh'}
+              {archivesLoading ? <><IconRefresh /> Loading...</> : <><IconRefresh /> Refresh</>}
             </button>
           </div>
         </div>
@@ -1161,7 +1299,7 @@ const RemainingProducts = () => {
             <div className="table-card">
               <div className="table-container archive-table-container">
                 {archivesLoading ? (
-                  <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading archives...</div>
+                  <div style={{ padding: 32, textAlign: 'center', color: '#888' }}><IconRefresh /> Loading archives...</div>
                 ) : (
                   <table className="data-table archive-table">
                     <thead>
@@ -1194,7 +1332,7 @@ const RemainingProducts = () => {
               </div>
               {!archivesLoading && archivesData.length === 0 && (
                 <div className="empty-table">
-                  <div className="empty-icon">🗄️</div>
+                  <div className="empty-icon"><IconArchive /></div>
                   <p>No archives found yet.</p>
                 </div>
               )}
@@ -1204,10 +1342,10 @@ const RemainingProducts = () => {
           <div className="table-section" style={{ marginTop: 0 }}>
             <div className="table-card">
               {archiveDetailLoading ? (
-                <div style={{ padding: 32, textAlign: 'center', color: '#888' }}>🔄 Loading archive details...</div>
+                <div style={{ padding: 32, textAlign: 'center', color: '#888' }}><IconRefresh /> Loading archive details...</div>
               ) : !selectedArchive ? (
                 <div className="empty-table">
-                  <div className="empty-icon">📂</div>
+                  <div className="empty-icon"><IconFolderOpen /></div>
                   <p>Select an archive to view details.</p>
                 </div>
               ) : (
@@ -1220,7 +1358,7 @@ const RemainingProducts = () => {
                       disabled={isRestoring || archiveDetailLoading}
                       title="Restore this archive to live products, sold items, checks, and history"
                     >
-                      {isRestoring ? '🔄 Restoring...' : '♻️ Restore This Archive'}
+                      <IconRefresh /> {isRestoring ? 'Restoring...' : 'Restore This Archive'}
                     </button>
                   </div>
                   <div className="archive-summary-grid">
@@ -1272,7 +1410,7 @@ const RemainingProducts = () => {
                         />
                         {archiveSearchTerm && (
                           <button className="search-clear" onClick={() => setArchiveSearchTerm('')} title="Clear search">
-                            ✕
+                            <IconX />
                           </button>
                         )}
                       </div>
@@ -1296,8 +1434,8 @@ const RemainingProducts = () => {
     <div className="modal-overlay">
       <div className="modal" style={{ maxWidth: 460 }}>
         <div className="modal-header">
-          <h3 className="modal-title">📷 Scan Product Barcode</h3>
-          <button className="modal-close" onClick={() => setScannerOpen(false)}>✕</button>
+          <h3 className="modal-title"><IconCamera /> Scan Product Barcode</h3>
+          <button className="modal-close" onClick={() => setScannerOpen(false)}><IconX /></button>
         </div>
 
         <div className="modal-content">
@@ -1343,21 +1481,21 @@ const RemainingProducts = () => {
               {scanQty !== '' && !isNaN(parseFloat(scanQty)) && (
                 <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: parseFloat(scanQty) === scannedProduct.quantity ? '#198754' : '#dc3545' }}>
                   {parseFloat(scanQty) === scannedProduct.quantity
-                    ? '✓ Matches system quantity'
+                    ? 'Matches system quantity'
                     : `Δ ${(parseFloat(scanQty) - scannedProduct.quantity).toFixed(0)} from system quantity`}
                 </div>
               )}
 
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate}>✅ Accurate</button>
-                <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate}>❌ Inaccurate</button>
+                <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate}><IconCheck /> Accurate</button>
+                <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate}><IconXCircle /> Inaccurate</button>
               </div>
 
               <button
                 onClick={() => { setScannedProduct(null); setScanQty(''); setScannerPaused(false); setScanStatus('Align barcode within the frame.'); }}
                 style={{ marginTop: 8, width: '100%', padding: '6px 0', background: 'none', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#666' }}
               >
-                ↩ Scan a different product
+                <IconCornerUpLeft /> Scan a different product
               </button>
             </div>
           )}
@@ -1379,24 +1517,24 @@ const RemainingProducts = () => {
         <p className="page-subtitle">Scan barcodes, count stock, archive old data, and review history</p>
       </div>
 
-      {successMessage && <div className="success-message"><span className="message-icon">✓</span>{successMessage}</div>}
-      {errorMessage   && <div className="error-message"><span className="message-icon">⚠️</span>{errorMessage}</div>}
+      {successMessage && <div className="success-message"><span className="message-icon"><IconCheck /></span>{successMessage}</div>}
+      {errorMessage   && <div className="error-message"><span className="message-icon"><IconAlertTriangle /></span>{errorMessage}</div>}
 
       <div className="tab-navigation">
         <button onClick={() => setActiveTab('check')}   className={`tab-button ${activeTab === 'check'   ? 'active' : ''}`}>
-          <span className="tab-icon">🔍</span><span className="tab-label">Check Stock</span>
+          <span className="tab-icon"><IconSearch /></span><span className="tab-label">Check Stock</span>
         </button>
         <button onClick={() => setActiveTab('pending')} className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}>
-          <span className="tab-icon">⚠️</span><span className="tab-label">Pending</span>
+          <span className="tab-icon"><IconAlertTriangle /></span><span className="tab-label">Pending</span>
         </button>
         <button onClick={() => setActiveTab('history')} className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}>
-          <span className="tab-icon">📅</span><span className="tab-label">History</span>
+          <span className="tab-icon"><IconCalendar /></span><span className="tab-label">History</span>
         </button>
         <button onClick={() => setActiveTab('archives')} className={`tab-button ${activeTab === 'archives' ? 'active' : ''}`}>
-          <span className="tab-icon">🗄️</span><span className="tab-label">Archives</span>
+          <span className="tab-icon"><IconArchive /></span><span className="tab-label">Archives</span>
         </button>
         <button onClick={() => setShowZeroStock(prev => !prev)} className={`tab-button ${showZeroStock ? 'active' : ''}`}>
-          <span className="tab-icon">📦</span><span className="tab-label">Zero Stock</span>
+          <span className="tab-icon"><IconPackage /></span><span className="tab-label">Zero Stock</span>
         </button>
       </div>
 

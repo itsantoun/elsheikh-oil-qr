@@ -775,6 +775,12 @@ import '../CSS/BarcodeScanner.css';
 import { signOut } from 'firebase/auth';
 import { auth } from '../Auth/firebase';
 import { getAuth, onAuthStateChanged } from "firebase/auth";
+import {
+  IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
+  IconTag, IconBarChart, IconDollarSign, IconUser, IconHash, IconTrendingUp,
+  IconCreditCard, IconFileText, IconSettings, IconEdit, IconSave, IconEye, IconEyeOff,
+  IconLightbulb, IconClipboard, IconCalendar, IconInbox, IconLogOut, IconAlertTriangle,
+} from '../utils/icons';
 
 const BarcodeScanner = () => {
   const [scanStatus, setScanStatus] = useState('Align the barcode within the frame.');
@@ -1354,7 +1360,7 @@ const BarcodeScanner = () => {
       {/* Messages */}
       {successMessage && (
         <div className="success-message">
-          <span className="message-icon">✓</span>
+          <span className="message-icon"><IconCheck /></span>
           <span className="message-text">{successMessage}</span>
         </div>
       )}
@@ -1379,13 +1385,13 @@ const BarcodeScanner = () => {
             className={`btn-secondary ${!cameraActive ? 'camera-paused' : ''}`}
           >
             <span className="button-icon">
-              {cameraActive ? '📷' : '⏸️'}
+              {cameraActive ? <IconCamera /> : <IconPause />}
             </span>
             {cameraActive ? 'Pause Camera' : 'Resume Camera'}
           </button>
           
           <button className="btn-danger" onClick={handleLogout}>
-            <span className="button-icon">🚪</span>
+            <span className="button-icon"><IconLogOut /></span>
             تسجيل خروج
           </button>
         </div>
@@ -1396,12 +1402,12 @@ const BarcodeScanner = () => {
         <div className="scanner-card">
           <div className="scanner-header">
             <h2 className="scanner-title">
-              <span className="scanner-icon">📸</span>
+              <span className="scanner-icon"><IconCamera /></span>
               Live Scanner
             </h2>
             <div className="scanner-status">
               <span className={`status-indicator ${isProcessing ? 'processing' : 'ready'}`}>
-                {isProcessing ? '🔄' : '✅'}
+                {isProcessing ? <IconRefresh /> : <IconCheck />}
               </span>
               <span className="status-text">
                 {isProcessing ? 'Processing...' : 'Ready to Scan'}
@@ -1414,7 +1420,7 @@ const BarcodeScanner = () => {
               <video ref={scannerRef} className="scanner-video"></video>
             ) : (
               <div className="camera-paused-state">
-                <div className="paused-icon">⏸️</div>
+                <div className="paused-icon"><IconPause /></div>
                 <p className="paused-text">Camera Paused</p>
                 <p className="paused-subtext">Click "Resume Camera" to continue scanning</p>
               </div>
@@ -1432,14 +1438,14 @@ const BarcodeScanner = () => {
 
           <div className="scanner-info">
             <div className="scanner-message">
-              <span className="message-icon">💡</span>
+              <span className="message-icon"><IconLightbulb /></span>
               <p className="message-text">{scanStatus}</p>
             </div>
             
             {cameraActive && (
               <div className="zoom-controls">
                 <div className="zoom-header">
-                  <span className="zoom-icon">🔍</span>
+                  <span className="zoom-icon"><IconSettings /></span>
                   <span className="zoom-label">Zoom Control</span>
                 </div>
                 <div className="zoom-slider-container">
@@ -1484,7 +1490,7 @@ const BarcodeScanner = () => {
           <div className="modal">
             <div className="modal-header">
               <h3 className="modal-title">
-                <span className="modal-icon">📦</span>
+                <span className="modal-icon"><IconPackage /></span>
                 Product Scanned
               </h3>
               <button 
@@ -1492,14 +1498,14 @@ const BarcodeScanner = () => {
                 onClick={handleClosePopup}
                 disabled={isProcessing}
               >
-                ✕
+                <IconX />
               </button>
             </div>
             
             <div className="modal-content">
               <div className="product-info">
                 <div className="product-name">
-                  <span className="info-icon">🏷️</span>
+                  <span className="info-icon"><IconTag /></span>
                   <div className="info-content">
                     <div className="info-label">Product Name</div>
                     <div className="info-value">{dialogMessage}</div>
@@ -1508,7 +1514,7 @@ const BarcodeScanner = () => {
                 
                 {scannedProduct?.barcode && (
                   <div className="product-barcode">
-                    <span className="info-icon">📊</span>
+                    <span className="info-icon"><IconBarChart /></span>
                     <div className="info-content">
                       <div className="info-label">Barcode</div>
                       <div className="info-value code">{scannedProduct.barcode}</div>
@@ -1518,7 +1524,7 @@ const BarcodeScanner = () => {
 
                 {scannedProduct?.itemCost && (
                   <div className="product-price">
-                    <span className="info-icon">💰</span>
+                    <span className="info-icon"><IconDollarSign /></span>
                     <div className="info-content">
                       <div className="info-label">Unit Price</div>
                       <div className="info-value">${scannedProduct.itemCost.toFixed(2)}</div>
@@ -1531,7 +1537,7 @@ const BarcodeScanner = () => {
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">
-                      <span className="label-icon">👤</span>
+                      <span className="label-icon"><IconUser /></span>
                       Select Customer
                       <span className="required-star">*</span>
                     </label>
@@ -1552,7 +1558,7 @@ const BarcodeScanner = () => {
 
                   <div className="form-group">
                     <label className="form-label">
-                      <span className="label-icon">🔢</span>
+                      <span className="label-icon"><IconHash /></span>
                       Quantity
                       <span className="required-star">*</span>
                     </label>
@@ -1569,7 +1575,7 @@ const BarcodeScanner = () => {
                   {scannedProduct?.itemCost && quantity > 0 && paymentStatus !== 'Stock' && (
                     <div className="form-group">
                       <label className="form-label">
-                        <span className="label-icon">🧮</span>
+                        <span className="label-icon"><IconHash /></span>
                         Total Cost
                       </label>
                       <div className="total-cost-display">
@@ -1581,7 +1587,7 @@ const BarcodeScanner = () => {
                   {popupProfitMetrics && quantity > 0 && (
                     <div className="form-group">
                       <label className="form-label">
-                        <span className="label-icon">📈</span>
+                        <span className="label-icon"><IconTrendingUp /></span>
                         Estimated Profit
                       </label>
                       <div
@@ -1596,7 +1602,7 @@ const BarcodeScanner = () => {
 
                 <div className="payment-section">
                   <div className="form-label">
-                    <span className="label-icon">💳</span>
+                    <span className="label-icon"><IconCreditCard /></span>
                     Payment Status
                     <span className="required-star">*</span>
                   </div>
@@ -1613,7 +1619,7 @@ const BarcodeScanner = () => {
                       />
                       <span className="radio-custom"></span>
                       <span className="radio-label">
-                        <span className="radio-icon">✅</span>
+                        <span className="radio-icon"><IconCheck /></span>
                         Paid
                       </span>
                     </label>
@@ -1630,7 +1636,7 @@ const BarcodeScanner = () => {
                       />
                       <span className="radio-custom"></span>
                       <span className="radio-label">
-                        <span className="radio-icon">❌</span>
+                        <span className="radio-icon"><IconXCircle /></span>
                         Unpaid
                       </span>
                     </label>
@@ -1647,7 +1653,7 @@ const BarcodeScanner = () => {
                       />
                       <span className="radio-custom"></span>
                       <span className="radio-label">
-                        <span className="radio-icon">📦</span>
+                        <span className="radio-icon"><IconPackage /></span>
                         Stock
                       </span>
                     </label>
@@ -1656,7 +1662,7 @@ const BarcodeScanner = () => {
 
                 <div className="form-group">
                   <label className="form-label">
-                    <span className="label-icon">📝</span>
+                    <span className="label-icon"><IconFileText /></span>
                     Remarks
                   </label>
                   <textarea
@@ -1684,7 +1690,7 @@ const BarcodeScanner = () => {
                   </>
                 ) : (
                   <>
-                    <span className="button-icon">💾</span>
+                    <span className="button-icon"><IconSave /></span>
                     Save Item
                   </>
                 )}
@@ -1694,7 +1700,7 @@ const BarcodeScanner = () => {
                 onClick={handleClosePopup}
                 disabled={isProcessing}
               >
-                <span className="button-icon">✕</span>
+                <span className="button-icon"><IconX /></span>
                 Cancel
               </button>
             </div>
@@ -1708,7 +1714,7 @@ const BarcodeScanner = () => {
           <div className="table-header">
             <div className="table-header-left">
               <h2 className="table-title">
-                <span className="table-icon">📋</span>
+                <span className="table-icon"><IconClipboard /></span>
                 Today's Scanned Items
               </h2>
               <div className="table-stats">
@@ -1722,7 +1728,7 @@ const BarcodeScanner = () => {
                 className={`btn-secondary ${!showScannedItems ? 'collapsed' : ''}`}
               >
                 <span className="button-icon">
-                  {showScannedItems ? '👁️' : '👁️‍🗨️'}
+                  {showScannedItems ? <IconEye /> : <IconEyeOff />}
                 </span>
                 {showScannedItems ? 'Hide Items' : 'Show Items'}
               </button>
@@ -1737,61 +1743,61 @@ const BarcodeScanner = () => {
                     <tr>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">📊</span>
+                          <span className="header-icon"><IconBarChart /></span>
                           Barcode
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">🏷️</span>
+                          <span className="header-icon"><IconTag /></span>
                           Product
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">👤</span>
+                          <span className="header-icon"><IconUser /></span>
                           Customer
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">🔢</span>
+                          <span className="header-icon"><IconHash /></span>
                           Qty
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">💰</span>
+                          <span className="header-icon"><IconDollarSign /></span>
                           Total
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">📈</span>
+                          <span className="header-icon"><IconTrendingUp /></span>
                           Profit
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">💳</span>
+                          <span className="header-icon"><IconCreditCard /></span>
                           Status
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">📅</span>
+                          <span className="header-icon"><IconCalendar /></span>
                           Time
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">📝</span>
+                          <span className="header-icon"><IconFileText /></span>
                           Remarks
                         </div>
                       </th>
                       <th>
                         <div className="table-header-cell">
-                          <span className="header-icon">⚙️</span>
+                          <span className="header-icon"><IconSettings /></span>
                           Actions
                         </div>
                       </th>
@@ -1850,7 +1856,7 @@ const BarcodeScanner = () => {
                             className="btn-small btn-primary"
                             title="Edit item"
                           >
-                            <span className="button-icon">✏️</span>
+                            <span className="button-icon"><IconEdit /></span>
                             Edit
                           </button>
                         </td>
@@ -1860,7 +1866,7 @@ const BarcodeScanner = () => {
                 </table>
               ) : (
                 <div className="empty-table">
-                  <div className="empty-icon">📭</div>
+                  <div className="empty-icon"><IconInbox /></div>
                   <p className="empty-text">No items scanned today</p>
                 </div>
               )}
@@ -1875,14 +1881,14 @@ const BarcodeScanner = () => {
           <div className="modal">
             <div className="modal-header">
               <h3 className="modal-title">
-                <span className="modal-icon">✏️</span>
+                <span className="modal-icon"><IconEdit /></span>
                 Edit Item
               </h3>
               <button 
                 className="modal-close"
                 onClick={() => setEditingItem(null)}
               >
-                ✕
+                <IconX />
               </button>
             </div>
 
@@ -1908,7 +1914,7 @@ const BarcodeScanner = () => {
                 <div className="form-grid">
                   <div className="form-group">
                     <label className="form-label">
-                      <span className="label-icon">🔢</span>
+                      <span className="label-icon"><IconHash /></span>
                       Quantity
                     </label>
                     <input
@@ -1928,7 +1934,7 @@ const BarcodeScanner = () => {
 
                   <div className="form-group">
                     <label className="form-label">
-                      <span className="label-icon">💳</span>
+                      <span className="label-icon"><IconCreditCard /></span>
                       Payment Status
                     </label>
                     <select
@@ -1950,7 +1956,7 @@ const BarcodeScanner = () => {
 
                 <div className="form-group">
                   <label className="form-label">
-                    <span className="label-icon">📝</span>
+                    <span className="label-icon"><IconFileText /></span>
                     ملاحظة 
                   </label>
                   <textarea
@@ -1973,14 +1979,14 @@ const BarcodeScanner = () => {
                 className="btn-success"
                 onClick={() => saveEditedItem(editingItem)}
               >
-                <span className="button-icon">💾</span>
+                <span className="button-icon"><IconSave /></span>
               حفظ تعديل 
               </button>
               <button 
                 className="btn-secondary"
                 onClick={() => setEditingItem(null)}
               >
-                <span className="button-icon">✕</span>
+                <span className="button-icon"><IconX /></span>
                 الغاء
               </button>
             </div>

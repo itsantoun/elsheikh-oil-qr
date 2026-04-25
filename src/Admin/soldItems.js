@@ -4,6 +4,7 @@ import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
+import { IconRefresh, IconX } from '../utils/icons';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -931,7 +932,7 @@ const SoldItems = () => {
             onClick={handleRefresh}
             disabled={isRefreshing}
           >
-            {isRefreshing ? '⟳ Refreshing...' : '⟳ Refresh Data'}
+            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
           </button>
         </div>
       </div>
@@ -949,37 +950,37 @@ const SoldItems = () => {
             {customerFilter && (
               <span className="filter-tag">
                 Customer: {customerFilter}
-                <button onClick={() => setCustomerFilter('')}>×</button>
+                <button onClick={() => setCustomerFilter('')}><IconX /></button>
               </span>
             )}
             {productFilter && (
               <span className="filter-tag">
                 Product: {productFilter}
-                <button onClick={() => setProductFilter('')}>×</button>
+                <button onClick={() => setProductFilter('')}><IconX /></button>
               </span>
             )}
             {dateFilter && (
               <span className="filter-tag">
                 Date: {getDateFilterDisplay()}
-                <button onClick={() => setDateFilter('')}>×</button>
+                <button onClick={() => setDateFilter('')}><IconX /></button>
               </span>
             )}
             {monthFilter && (
               <span className="filter-tag">
                 Month: {formatMonthDisplay(parseInt(monthFilter, 10))}
-                <button onClick={() => setMonthFilter('')}>×</button>
+                <button onClick={() => setMonthFilter('')}><IconX /></button>
               </span>
             )}
             {paymentStatusFilter !== 'All' && (
               <span className="filter-tag">
                 Status: {paymentStatusFilter}
-                <button onClick={() => setPaymentStatusFilter('All')}>×</button>
+                <button onClick={() => setPaymentStatusFilter('All')}><IconX /></button>
               </span>
             )}
             {checkFilter !== 'all' && (
               <span className="filter-tag">
                 Check: {checkFilter === 'checked' ? 'Checked' : 'Unchecked'}
-                <button onClick={() => setCheckFilter('all')}>×</button>
+                <button onClick={() => setCheckFilter('all')}><IconX /></button>
               </span>
             )}
           </div>
@@ -1282,7 +1283,7 @@ const SoldItems = () => {
             <div className="modal-header">
               <h3>Add Missing Item</h3>
               <button className="modal-close" onClick={closeMissingItemsModal}>
-                ×
+                <IconX />
               </button>
             </div>
             <div className="modal-content">

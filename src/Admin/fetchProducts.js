@@ -3,6 +3,7 @@ import { ref, get, set, remove } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import * as XLSX from 'xlsx';
+import { IconRefresh, IconArchive, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
 
 const FetchProducts = () => {
   const [products, setProducts] = useState([]);
@@ -496,7 +497,7 @@ const FetchProducts = () => {
   };
 
   const getSortIcon = (field) => {
-    if (sortBy.field !== field) return '↕️';
+    if (sortBy.field !== field) return <IconArrowUpDown />;
     return sortBy.order === 'asc' ? '↑' : '↓';
   };
 
@@ -527,17 +528,17 @@ const FetchProducts = () => {
             disabled={isRefreshing || isArchivingProducts || products.length === 0}
             title="Archive all products and reset all quantities to 0 while keeping products"
           >
-            {isArchivingProducts ? '🗄️ Archiving...' : '🗄️ Archive & Reset Qty'}
+            <IconArchive /> {isArchivingProducts ? 'Archiving...' : 'Archive & Reset Qty'}
           </button>
           <button 
             onClick={handleRefresh} 
             className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
             disabled={isRefreshing}
           >
-            {isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh'}
+            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </button>
           <button onClick={handleExportToExcel} className="btn-primary">
-            📊 Export Excel
+            <IconBarChart /> Export Excel
           </button>
         </div>
       </div>
@@ -654,11 +655,11 @@ const FetchProducts = () => {
           <div className="form-actions">
             {editingProduct ? (
               <button onClick={handleSaveChanges} className="btn-success">
-                💾 Update Product
+                <IconSave /> Update Product
               </button>
             ) : (
               <button onClick={handleAddProduct} className="btn-primary">
-                ➕ Add Product
+                <IconPlus /> Add Product
               </button>
             )}
           </div>
@@ -687,7 +688,7 @@ const FetchProducts = () => {
               />
               {searchTerm && (
                 <button onClick={handleClearSearch} className="search-clear">
-                  ✕
+                  <IconX />
                 </button>
               )}
             </div>
@@ -869,13 +870,13 @@ const FetchProducts = () => {
                         ) : (
                           <>
                             <button onClick={() => handleEditProduct(product)} className="btn-small btn-primary">
-                              Edit
+                              <IconEdit /> Edit
                             </button>
                             <button onClick={() => handleHoldProduct(product)} className="btn-small btn-warning">
-                              Hold
+                              <IconPause /> Hold
                             </button>
                             <button onClick={() => handleDeleteProduct(product.id)} className="btn-small btn-danger">
-                              Delete
+                              <IconTrash /> Delete
                             </button>
                           </>
                         )}
@@ -889,7 +890,7 @@ const FetchProducts = () => {
 
           {filteredProducts.length === 0 && (
             <div className="empty-table">
-              <div className="empty-icon">📦</div>
+              <div className="empty-icon"><IconPackage /></div>
               <p>No products found{searchTerm ? ` for "${searchTerm}"` : ''}</p>
               {searchTerm && (
                 <button onClick={handleClearSearch} className="btn-secondary">
@@ -921,7 +922,7 @@ const FetchProducts = () => {
             className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
             disabled={isRefreshing}
           >
-            {isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh'}
+            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -1002,7 +1003,7 @@ const FetchProducts = () => {
 
           {heldProducts.length === 0 && (
             <div className="empty-table">
-              <div className="empty-icon">⏸️</div>
+              <div className="empty-icon"><IconPause /></div>
               <p>No held products found</p>
             </div>
           )}
@@ -1022,13 +1023,13 @@ const FetchProducts = () => {
       {/* Messages */}
       {successMessage && (
         <div className="success-message">
-          <span className="message-icon">✓</span>
+          <span className="message-icon"><IconCheck /></span>
           {successMessage}
         </div>
       )}
       {errorMessage && (
         <div className="error-message">
-          <span className="message-icon">⚠️</span>
+          <span className="message-icon"><IconAlertTriangle /></span>
           {errorMessage}
         </div>
       )}
@@ -1039,14 +1040,14 @@ const FetchProducts = () => {
           onClick={() => setActiveTab('products')}
           className={`tab-button ${activeTab === 'products' ? 'active' : ''}`}
         >
-          <span className="tab-icon">📦</span>
+          <span className="tab-icon"><IconPackage /></span>
           <span className="tab-label">Products ({products.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('holds')}
           className={`tab-button ${activeTab === 'holds' ? 'active' : ''}`}
         >
-          <span className="tab-icon">⏸️</span>
+          <span className="tab-icon"><IconPause /></span>
           <span className="tab-label">Held ({heldProducts.length})</span>
         </button>
       </div>

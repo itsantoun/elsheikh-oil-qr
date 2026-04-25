@@ -207,6 +207,7 @@ import React, { useState, useEffect } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, set, update, remove, push } from 'firebase/database';
 import '../CSS/addCustomer.css';
+import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash } from '../utils/icons';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -392,13 +393,13 @@ const AddCustomer = () => {
       {/* Messages */}
       {successMessage && (
         <div className="success-message">
-          <span className="message-icon">✓</span>
+          <span className="message-icon"><IconCheck /></span>
           <span className="message-text">{successMessage}</span>
         </div>
       )}
       {errorMessage && (
         <div className="error-message">
-          <span className="message-icon">⚠️</span>
+          <span className="message-icon"><IconAlertTriangle /></span>
           <span className="message-text">{errorMessage}</span>
         </div>
       )}
@@ -407,7 +408,7 @@ const AddCustomer = () => {
       <div className="form-card">
         <div className="form-header">
           <h2 className="form-title">
-            <span className="form-icon">👥</span>
+            <span className="form-icon"><IconUsers /></span>
             Add New Customer
           </h2>
           <div className="form-stats">
@@ -462,7 +463,7 @@ const AddCustomer = () => {
                 </>
               ) : (
                 <>
-                  <span className="button-icon">➕</span>
+                  <span className="button-icon"><IconPlus /></span>
                   Add Customer
                 </>
               )}
@@ -484,7 +485,7 @@ const AddCustomer = () => {
         <div className="table-header">
           <div className="table-header-left">
             <h2 className="table-title">
-              <span className="table-icon">📋</span>
+              <span className="table-icon"><IconClipboard /></span>
               Customer List
             </h2>
             <div className="table-stats">
@@ -507,7 +508,7 @@ const AddCustomer = () => {
                   className="search-clear"
                   disabled={isLoading}
                 >
-                  ✕
+                  <IconX />
                 </button>
               )}
             </div>
@@ -516,7 +517,7 @@ const AddCustomer = () => {
               className={`btn-secondary ${isLoading ? 'refreshing' : ''}`}
               disabled={isLoading}
             >
-              {isLoading ? '🔄 Refreshing...' : '🔄 Refresh'}
+              <IconRefresh /> {isLoading ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -527,19 +528,17 @@ const AddCustomer = () => {
               <tr>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">🇬🇧</span>
                     English Name
                   </div>
                 </th>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">🇸🇦</span>
                     Arabic Name
                   </div>
                 </th>
                 <th>
                   <div className="table-header-cell">
-                    <span className="header-icon">⚙️</span>
+                    <span className="header-icon"><IconSettings /></span>
                     Actions
                   </div>
                 </th>
@@ -556,7 +555,7 @@ const AddCustomer = () => {
               ) : filteredCustomers.length === 0 ? (
                 <tr>
                   <td colSpan="3" className="empty-cell">
-                    <div className="empty-icon">👥</div>
+                    <div className="empty-icon"><IconUsers /></div>
                     {searchTerm ? 'No customers found' : 'No customers added yet'}
                   </td>
                 </tr>
@@ -604,14 +603,14 @@ const AddCustomer = () => {
                               className="btn-small btn-success"
                               disabled={isLoading || !editName.trim() || !editNameArabic.trim()}
                             >
-                              💾 Save
+                              <IconSave /> Save
                             </button>
-                            <button 
+                            <button
                               onClick={handleCancelEdit}
                               className="btn-small btn-secondary"
                               disabled={isLoading}
                             >
-                              ✕ Cancel
+                              <IconX /> Cancel
                             </button>
                           </>
                         ) : (
@@ -622,7 +621,7 @@ const AddCustomer = () => {
                               disabled={isLoading}
                               title="Edit customer"
                             >
-                              ✏️ Edit
+                              <IconEdit /> Edit
                             </button>
                             <button
                               onClick={() => handleDeleteCustomer(customer.id)}
@@ -630,7 +629,7 @@ const AddCustomer = () => {
                               disabled={isLoading}
                               title="Delete customer"
                             >
-                              🗑️ Delete
+                              <IconTrash /> Delete
                             </button>
                           </>
                         )}

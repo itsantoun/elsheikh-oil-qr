@@ -537,6 +537,9 @@ const Transactions = () => {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
+  const formatCurrency = (value) =>
+    value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const asCleanString = (value) => String(value ?? '').trim();
 
   const pickFirstNonEmpty = (...values) => {
@@ -739,7 +742,7 @@ const Transactions = () => {
       });
     }
 
-    return filtered;
+    return filtered.sort((a, b) => new Date(b.dateScanned) - new Date(a.dateScanned));
   };
 
   const filteredTransactions = filterTransactions();
@@ -842,7 +845,9 @@ const Transactions = () => {
       await update(ref(database, `transactions/${id}`), updates);
 
       setTransactions(prev =>
-        prev.map(t => t.id === id ? { ...t, ...updates } : t)
+        prev
+          .map(t => t.id === id ? { ...t, ...updates } : t)
+          .sort((a, b) => new Date(b.dateScanned) - new Date(a.dateScanned))
       );
 
       setEditing(null);
@@ -978,13 +983,13 @@ const Transactions = () => {
           <div className="summary-card highlight">
             <div className="summary-card-content">
               <span className="summary-card-label">Total Sell Price</span>
-              <span className="summary-card-value">${filteredTotals.totalCost.toFixed(2)}</span>
+              <span className="summary-card-value">${formatCurrency(filteredTotals.totalCost)}</span>
             </div>
           </div>
           <div className="summary-card">
             <div className="summary-card-content">
               <span className="summary-card-label">Total Purchasing Cost</span>
-              <span className="summary-card-value">${filteredTotals.totalPurchaseCost.toFixed(2)}</span>
+              <span className="summary-card-value">${formatCurrency(filteredTotals.totalPurchaseCost)}</span>
             </div>
           </div>
           <div className="summary-card">
@@ -994,7 +999,7 @@ const Transactions = () => {
                 className="summary-card-value"
                 style={{ color: filteredTotals.totalProfit >= 0 ? '#198754' : '#dc3545' }}
               >
-                ${filteredTotals.totalProfit.toFixed(2)}
+                ${formatCurrency(filteredTotals.totalProfit)}
               </span>
             </div>
           </div>
@@ -1012,7 +1017,7 @@ const Transactions = () => {
       {/* Results Info */}
       {filteredTransactions.length > 0 && (
         <div className="results-info">
-          Showing {filteredTransactions.length} transaction(s) • Profit: ${filteredTotals.totalProfit.toFixed(2)}
+          Showing {filteredTransactions.length} transaction(s) • Profit: ${formatCurrency(filteredTotals.totalProfit)}
         </div>
       )}
 

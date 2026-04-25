@@ -1174,7 +1174,8 @@ const BarcodeScanner = () => {
   }, []);
 
   const saveScannedItem = useCallback(async () => {
-    if (!scannedProduct?.barcode || !selectedCustomer || quantity <= 0) {
+    const isStock = String(paymentStatus || '').toLowerCase().startsWith('stock');
+    if (!scannedProduct?.barcode || (!isStock && !selectedCustomer) || quantity <= 0) {
       setDialogMessage("!يجب تعبئت كل الخانات");
       return;
     }
@@ -1182,48 +1183,60 @@ const BarcodeScanner = () => {
     setIsProcessing(true);
     const saleUnitPrice = parseFloat(scannedProduct.itemCost) || 0;
     const purchaseUnitPrice = parseFloat(scannedProduct.purchasingPrice) || 0;
-    const totalCost = paymentStatus === 'Stock' ? 0 : saleUnitPrice * quantity;
-    const profitMetrics = calculateSaleProfit(
-      {
-        quantity,
-        paymentStatus,
-        itemCost: saleUnitPrice,
-        purchasingPrice: purchaseUnitPrice,
-        totalCost,
-      }
-    );
-    const scannedBy = name || 'Unknown';
-    const customer = customers.find(c => c.id === selectedCustomer);
-
-    if (!customer) {
-      setDialogMessage("Error: Customer not found.");
-      setIsProcessing(false);
-      return;
-    }
-
-    const soldItemsRef = ref(database, 'SoldItems');
-    const currentDate = new Date().toISOString();
-
-    const newItem = {
-      barcode: scannedProduct.barcode,
-      name: scannedProduct.name,
-      category: scannedProduct.category || 'Unknown',
-      price: scannedProduct.price || 0,
-      dateScanned: currentDate,
-      scannedBy: scannedBy,
-      customerName: customer.name,
-      quantity: quantity,
-      paymentStatus: paymentStatus,
+    const totalCost = isStock ? 0 : saleUnitPrice * quantity;
+    const profitMetrics = calculateSaleProfit({
+      quantity,
+      paymentStatus,
       itemCost: saleUnitPrice,
       purchasingPrice: purchaseUnitPrice,
-      totalCost: totalCost,
-      unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
-      totalProfit: profitMetrics.profit,
-      remark: remark,
-    };
+      totalCost,
+    });
+    const scannedBy = name || 'Unknown';
+    const currentDate = new Date().toISOString();
 
     try {
-      await push(soldItemsRef, newItem);
+      if (isStock) {
+        const transaction = {
+          barcode: scannedProduct.barcode,
+          productId: scannedProduct.barcode,
+          name: scannedProduct.name,
+          quantity: quantity,
+          dateScanned: currentDate,
+          paymentStatus: 'Pending',
+          itemCost: saleUnitPrice,
+          purchasingPrice: purchaseUnitPrice,
+          totalCost: purchaseUnitPrice * quantity,
+          scannedBy: scannedBy,
+          remark: remark,
+        };
+        await push(ref(database, 'transactions'), transaction);
+      } else {
+        const customer = customers.find(c => c.id === selectedCustomer);
+        if (!customer) {
+          setDialogMessage("Error: Customer not found.");
+          setIsProcessing(false);
+          return;
+        }
+        const newItem = {
+          barcode: scannedProduct.barcode,
+          name: scannedProduct.name,
+          category: scannedProduct.category || 'Unknown',
+          price: scannedProduct.price || 0,
+          dateScanned: currentDate,
+          scannedBy: scannedBy,
+          customerName: customer.name,
+          quantity: quantity,
+          paymentStatus: paymentStatus,
+          itemCost: saleUnitPrice,
+          purchasingPrice: purchaseUnitPrice,
+          totalCost: totalCost,
+          unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
+          totalProfit: profitMetrics.profit,
+          remark: remark,
+        };
+        await push(ref(database, 'SoldItems'), newItem);
+      }
+
       setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);
       setTimeout(() => setSuccessMessage(null), 3000);
       
@@ -1662,7 +1675,7 @@ const BarcodeScanner = () => {
               <button 
                 className="btn-primary"
                 onClick={saveScannedItem}
-                disabled={isProcessing || !selectedCustomer || quantity <= 0}
+                disabled={isProcessing || (!String(paymentStatus).toLowerCase().startsWith('stock') && !selectedCustomer) || quantity <= 0}
               >
                 {isProcessing ? (
                   <>

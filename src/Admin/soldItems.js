@@ -154,6 +154,9 @@ const SoldItems = () => {
     });
   };
 
+  const formatCurrency = (value) =>
+    value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const toNumber = (value) => {
     const parsed = parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -245,12 +248,14 @@ const SoldItems = () => {
 
         if (soldItemsSnapshot.exists()) {
           const soldData = soldItemsSnapshot.val();
-          const soldItemList = Object.keys(soldData).map((key) => ({
-            id: key,
-            ...soldData[key],
-            customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-                        soldData[key].customerName,
-          }));
+          const soldItemList = Object.keys(soldData)
+            .map((key) => ({
+              id: key,
+              ...soldData[key],
+              customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+                          soldData[key].customerName,
+            }))
+            .filter(item => !isStockLikeStatus(item.paymentStatus));
           const sortedItems = sortItemsByDate(soldItemList);
           setSoldItems(sortedItems);
           setFilteredItems(sortedItems);
@@ -550,12 +555,14 @@ const SoldItems = () => {
       // Update sold items
       if (soldItemsSnapshot.exists()) {
         const soldData = soldItemsSnapshot.val();
-        const soldItemList = Object.keys(soldData).map((key) => ({
-          id: key,
-          ...soldData[key],
-          customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-                      soldData[key].customerName,
-        }));
+        const soldItemList = Object.keys(soldData)
+          .map((key) => ({
+            id: key,
+            ...soldData[key],
+            customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+                        soldData[key].customerName,
+          }))
+          .filter(item => !isStockLikeStatus(item.paymentStatus));
         const sortedItems = sortItemsByDate(soldItemList);
         setSoldItems(sortedItems);
         setFilteredItems(sortedItems);
@@ -883,7 +890,6 @@ const SoldItems = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
-              <option value="Stock">Stock</option>
             </select>
           </div>
 
@@ -992,19 +998,19 @@ const SoldItems = () => {
           <div className="summary-card">
             <div className="summary-card-content">
               <span className="summary-card-label">Total Quantity</span>
-              <span className="summary-card-value">{filteredTotals.totalQuantity.toFixed(2)}</span>
+              <span className="summary-card-value">{formatCurrency(filteredTotals.totalQuantity)}</span>
             </div>
           </div>
           <div className="summary-card highlight">
             <div className="summary-card-content">
               <span className="summary-card-label">Total Revenue</span>
-              <span className="summary-card-value">${filteredTotals.totalCost.toFixed(2)}</span>
+              <span className="summary-card-value">${formatCurrency(filteredTotals.totalCost)}</span>
             </div>
           </div>
           <div className="summary-card">
             <div className="summary-card-content">
               <span className="summary-card-label">Total Purchase Cost</span>
-              <span className="summary-card-value">${filteredTotals.totalPurchaseCost.toFixed(2)}</span>
+              <span className="summary-card-value">${formatCurrency(filteredTotals.totalPurchaseCost)}</span>
             </div>
           </div>
           <div className="summary-card">
@@ -1014,7 +1020,7 @@ const SoldItems = () => {
                 className="summary-card-value"
                 style={{ color: filteredTotals.totalProfit >= 0 ? '#198754' : '#dc3545' }}
               >
-                ${filteredTotals.totalProfit.toFixed(2)}
+                ${formatCurrency(filteredTotals.totalProfit)}
               </span>
             </div>
           </div>
@@ -1032,7 +1038,7 @@ const SoldItems = () => {
         <div className="results-info">
           Showing {filteredItems.length} sold item(s) • 
           Data range: {formatDate(filteredItems[0]?.dateScanned)} to {formatDate(filteredItems[filteredItems.length - 1]?.dateScanned)} •
-          Filtered profit: ${filteredTotals.totalProfit.toFixed(2)} •
+          Filtered profit: ${formatCurrency(filteredTotals.totalProfit)} •
           {checkedItems.length > 0 && ` ${checkedItems.length} items checked`}
         </div>
       )}

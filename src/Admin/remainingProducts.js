@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ref, get, update, push, set } from 'firebase/database';
+import { ref, get, update, push, set, remove } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import '../CSS/admin.css';
@@ -25,7 +25,6 @@ const RemainingProducts = () => {
   const [countedQty, setCountedQty]     = useState({});
   const [reconfirmQty, setReconfirmQty] = useState({});
   const [soldTotals, setSoldTotals]     = useState({});
-  const [soldOverrides, setSoldOverrides] = useState({});
 
   // Scanner
   const [scannerOpen, setScannerOpen]     = useState(false);
@@ -51,6 +50,8 @@ const RemainingProducts = () => {
   const [archiveDetailLoading, setArchiveDetailLoading] = useState(false);
   const [archiveDetailView, setArchiveDetailView] = useState('products');
   const [archiveSearchTerm, setArchiveSearchTerm] = useState('');
+
+  const [showZeroStock, setShowZeroStock] = useState(false);
 
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage]     = useState(null);
@@ -109,11 +110,10 @@ const RemainingProducts = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [prodSnap, checkSnap, soldSnap, overridesSnap] = await Promise.all([
+      const [prodSnap, checkSnap, soldSnap] = await Promise.all([
         get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'SoldItems')),
-        get(ref(database, 'soldTotalsOverrides')),
       ]);
 
       if (prodSnap.exists()) {
@@ -159,23 +159,22 @@ const RemainingProducts = () => {
         setSoldTotals({});
       }
 
-      if (overridesSnap.exists()) {
-        setSoldOverrides(overridesSnap.val());
-      }
-    } catch (err) { console.error(err); showError('Error loading data.'); }
+} catch (err) { console.error(err); showError('Error loading data.'); }
     finally { setIsLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
-    const stockProducts = products.filter(hasStock);
-    if (!searchTerm.trim()) { setFilteredProducts(stockProducts); return; }
+    const baseProducts = showZeroStock
+      ? products.filter(p => (parseFloat(p.quantity) || 0) - (soldTotals[p.id] || 0) <= 0)
+      : products.filter(hasStock);
+    if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
-    setFilteredProducts(stockProducts.filter(p =>
+    setFilteredProducts(baseProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
-  }, [searchTerm, products]);
+  }, [searchTerm, products, showZeroStock, soldTotals]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -343,6 +342,25 @@ const RemainingProducts = () => {
       setScannedProduct(null); setScanQty(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
     } catch (err) { console.error(err); showError('Failed to save.'); }
+  };
+
+  // ── Actions: hold ─────────────────────────────────────────────────────────
+
+  const handleHoldProduct = async (product) => {
+    if (!window.confirm(`Hold "${product.name}"? It will move to the Held section in Product Management.`)) return;
+    try {
+      await set(ref(database, `heldProducts/${product.id}`), {
+        name: product.name || '',
+        productType: product.productType || '',
+        itemCost: product.itemCost || 0,
+        purchasingPrice: product.purchasingPrice || 0,
+        quantity: product.quantity || 0,
+        heldDate: new Date().toISOString(),
+      });
+      await remove(ref(database, `products/${product.id}`));
+      setProducts(prev => prev.filter(p => p.id !== product.id));
+      showSuccess(`"${product.name}" moved to Held.`);
+    } catch (err) { console.error(err); showError('Failed to hold product.'); }
   };
 
   // ── Actions: table ─────────────────────────────────────────────────────────
@@ -605,8 +623,7 @@ const RemainingProducts = () => {
                 {filteredProducts.map(product => {
                   const isPending        = pendingChecks.some(c => c.id === product.id);
                   const inputVal         = countedQty[product.id] ?? '';
-                  const hasOverride      = soldOverrides[product.id] !== undefined && soldOverrides[product.id] !== '';
-                  const totalSold        = hasOverride ? parseFloat(soldOverrides[product.id]) || 0 : soldTotals[product.id] || 0;
+                  const totalSold        = soldTotals[product.id] || 0;
                   const currentStock     = product.quantity;
                   const expectedRemaining = currentStock - totalSold;
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
@@ -642,6 +659,7 @@ const RemainingProducts = () => {
                         <div className="action-buttons">
                           <button className="btn-small btn-success" onClick={() => handleAccurate(product)}>✅ Accurate</button>
                           <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}>❌ Inaccurate</button>
+                          <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}>⏸️ Hold</button>
                         </div>
                       </td>
                     </tr>
@@ -1366,16 +1384,19 @@ const RemainingProducts = () => {
 
       <div className="tab-navigation">
         <button onClick={() => setActiveTab('check')}   className={`tab-button ${activeTab === 'check'   ? 'active' : ''}`}>
-          <span className="tab-icon">🔍</span><span className="tab-label">Check Stock ({products.filter(hasStock).length})</span>
+          <span className="tab-icon">🔍</span><span className="tab-label">Check Stock</span>
         </button>
         <button onClick={() => setActiveTab('pending')} className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}>
-          <span className="tab-icon">⚠️</span><span className="tab-label">Pending ({pendingChecks.length})</span>
+          <span className="tab-icon">⚠️</span><span className="tab-label">Pending</span>
         </button>
         <button onClick={() => setActiveTab('history')} className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}>
           <span className="tab-icon">📅</span><span className="tab-label">History</span>
         </button>
         <button onClick={() => setActiveTab('archives')} className={`tab-button ${activeTab === 'archives' ? 'active' : ''}`}>
-          <span className="tab-icon">🗄️</span><span className="tab-label">Archives ({archivesData.length})</span>
+          <span className="tab-icon">🗄️</span><span className="tab-label">Archives</span>
+        </button>
+        <button onClick={() => setShowZeroStock(prev => !prev)} className={`tab-button ${showZeroStock ? 'active' : ''}`}>
+          <span className="tab-icon">📦</span><span className="tab-label">Zero Stock</span>
         </button>
       </div>
 

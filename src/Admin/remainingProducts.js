@@ -208,7 +208,10 @@ const RemainingProducts = () => {
       }
       if (txSnap.exists()) {
         Object.values(txSnap.val()).forEach(tx => {
-          if (tx.barcode === product.id || tx.productId === product.id) {
+          if (
+            (tx.barcode === product.id || tx.productId === product.id) &&
+            tx.paymentStatus === 'Confirmed'
+          ) {
             entries.push({
               date: tx.dateScanned,
               type: 'Stock In',
@@ -793,10 +796,16 @@ const RemainingProducts = () => {
         )
       : [];
 
-    // Compute running balance on ALL entries first (so Stock After stays correct)
+    // Actual physical qty = system qty (last check) minus sales since that check.
+    // This is the same formula as "Expected Remaining" on the Check tab.
+    const actualCurrentQty =
+      (parseFloat(historySelectedProduct?.quantity) || 0) -
+      (soldTotals[historySelectedProduct?.id] || 0);
+
+    // Compute running balance backwards through all entries (newest-first).
     let cumQty = 0;
     const entriesWithBalance = productHistoryEntries.map(entry => {
-      const stockAfter = (parseFloat(historySelectedProduct?.quantity) || 0) - cumQty;
+      const stockAfter = actualCurrentQty - cumQty;
       cumQty += entry.qty;
       return { ...entry, stockAfter };
     });

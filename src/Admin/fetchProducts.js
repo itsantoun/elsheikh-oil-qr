@@ -200,6 +200,7 @@ const FetchProducts = () => {
         itemCost: parsedItemCost,
         purchasingPrice: parsedPurchasingPrice,
         quantity: parsedQuantity,
+        createdAt: new Date().toISOString(),
       });
 
       const newProductObj = {

@@ -160,20 +160,30 @@ const RemainingProducts = () => {
         });
       }
 
+      // Build { [barcode]: createdAt } from products so re-added products ignore
+      // all SoldItems that existed before the product was (re-)created.
+      const productCreatedAt = {};
+      if (prodSnap.exists()) {
+        Object.entries(prodSnap.val()).forEach(([id, v]) => {
+          if (v.createdAt) productCreatedAt[id] = new Date(v.createdAt);
+        });
+      }
+
       // Build { [barcode]: qtySoldSinceLastCheck }
-      // Cutoff = max(lastStockCheck, lastConfirmedStockIn) so that sales before
-      // a restock are not counted against the newly restocked quantity.
+      // Cutoff = max(lastStockCheck, lastConfirmedStockIn, productCreatedAt) so that
+      // sales before a restock or before a re-added product are never counted.
       if (soldSnap.exists()) {
         const totals = {};
         Object.values(soldSnap.val()).forEach(item => {
           const barcode  = item.barcode;
           const qty      = parseFloat(item.quantity) || 0;
           if (!barcode) return;
-          const checkCutoff  = lastCheckedAt[barcode];
-          const stockInCutoff = lastStockInAt[barcode];
-          let cutoff = null;
-          if (checkCutoff && stockInCutoff) cutoff = checkCutoff > stockInCutoff ? checkCutoff : stockInCutoff;
-          else cutoff = checkCutoff || stockInCutoff;
+          const candidates = [
+            lastCheckedAt[barcode],
+            lastStockInAt[barcode],
+            productCreatedAt[barcode],
+          ].filter(Boolean);
+          const cutoff = candidates.length ? new Date(Math.max(...candidates)) : null;
           const saleDate = new Date(item.dateScanned);
           if (!cutoff || saleDate > cutoff) {
             totals[barcode] = (totals[barcode] || 0) + qty;
@@ -399,13 +409,50 @@ const RemainingProducts = () => {
   // ── Actions: delete ───────────────────────────────────────────────────────
 
   const handleDeleteProduct = async (product) => {
-    if (!window.confirm(`Delete "${product.name}" permanently from stock? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete "${product.name}" permanently? This will remove the product plus all its transactions, sold records, and stock history.`)) return;
     try {
-      await remove(ref(database, `products/${product.id}`));
-      await remove(ref(database, `stockChecks/${product.id}`));
+      const [soldSnap, txSnap, historySnap] = await Promise.all([
+        get(ref(database, 'SoldItems')),
+        get(ref(database, 'transactions')),
+        get(ref(database, 'stockCheckHistory')),
+      ]);
+
+      const updates = {};
+      updates[`products/${product.id}`] = null;
+      updates[`stockChecks/${product.id}`] = null;
+
+      if (soldSnap.exists()) {
+        Object.entries(soldSnap.val()).forEach(([key, item]) => {
+          if (item.barcode === product.id || item.productId === product.id) {
+            updates[`SoldItems/${key}`] = null;
+          }
+        });
+      }
+
+      if (txSnap.exists()) {
+        Object.entries(txSnap.val()).forEach(([key, tx]) => {
+          if (tx.barcode === product.id || tx.productId === product.id) {
+            updates[`transactions/${key}`] = null;
+          }
+        });
+      }
+
+      if (historySnap.exists()) {
+        Object.entries(historySnap.val()).forEach(([month, monthData]) => {
+          if (!monthData || typeof monthData !== 'object') return;
+          Object.entries(monthData).forEach(([key, entry]) => {
+            if (entry.productId === product.id) {
+              updates[`stockCheckHistory/${month}/${key}`] = null;
+            }
+          });
+        });
+      }
+
+      await update(ref(database), updates);
+
       setProducts(prev => prev.filter(p => p.id !== product.id));
       setPendingChecks(prev => prev.filter(c => c.id !== product.id));
-      showSuccess(`"${product.name}" deleted from stock.`);
+      showSuccess(`"${product.name}" and all its data deleted.`);
     } catch (err) { console.error(err); showError('Failed to delete product.'); }
   };
 

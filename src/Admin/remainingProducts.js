@@ -115,10 +115,11 @@ const RemainingProducts = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [prodSnap, checkSnap, soldSnap] = await Promise.all([
+      const [prodSnap, checkSnap, soldSnap, txSnap] = await Promise.all([
         get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'SoldItems')),
+        get(ref(database, 'transactions')),
       ]);
 
       if (prodSnap.exists()) {
@@ -130,8 +131,7 @@ const RemainingProducts = () => {
         setProducts([]); setFilteredProducts([]);
       }
 
-      // Build lastCheckedAt map { [productId]: Date } from ALL stockChecks (any status)
-      // This is the cutoff — we only count sales AFTER the last check date
+      // Build lastCheckedAt map { [productId]: Date } from ALL stockChecks
       const lastCheckedAt = {};
       if (checkSnap.exists()) {
         const allChecks = Object.entries(checkSnap.val()).map(([id, v]) => ({ id, ...v }));
@@ -144,17 +144,37 @@ const RemainingProducts = () => {
         setPendingChecks([]);
       }
 
+      // Build lastStockInAt { [barcode]: Date } from the most recent CONFIRMED transaction.
+      // A confirmed stock-in resets the "sold since" baseline — sales before the restock
+      // should not be subtracted from the new stock level.
+      const lastStockInAt = {};
+      if (txSnap.exists()) {
+        Object.values(txSnap.val()).forEach(tx => {
+          if (tx.paymentStatus !== 'Confirmed') return;
+          const barcode = tx.barcode || tx.productId;
+          if (!barcode) return;
+          const txDate = new Date(tx.dateScanned);
+          if (!lastStockInAt[barcode] || txDate > lastStockInAt[barcode]) {
+            lastStockInAt[barcode] = txDate;
+          }
+        });
+      }
+
       // Build { [barcode]: qtySoldSinceLastCheck }
-      // For products never checked, count ALL sold items (no cutoff)
+      // Cutoff = max(lastStockCheck, lastConfirmedStockIn) so that sales before
+      // a restock are not counted against the newly restocked quantity.
       if (soldSnap.exists()) {
         const totals = {};
         Object.values(soldSnap.val()).forEach(item => {
           const barcode  = item.barcode;
           const qty      = parseFloat(item.quantity) || 0;
           if (!barcode) return;
-          const cutoff   = lastCheckedAt[barcode];
+          const checkCutoff  = lastCheckedAt[barcode];
+          const stockInCutoff = lastStockInAt[barcode];
+          let cutoff = null;
+          if (checkCutoff && stockInCutoff) cutoff = checkCutoff > stockInCutoff ? checkCutoff : stockInCutoff;
+          else cutoff = checkCutoff || stockInCutoff;
           const saleDate = new Date(item.dateScanned);
-          // Only count this sale if it happened AFTER the last stock check
           if (!cutoff || saleDate > cutoff) {
             totals[barcode] = (totals[barcode] || 0) + qty;
           }
@@ -164,7 +184,7 @@ const RemainingProducts = () => {
         setSoldTotals({});
       }
 
-} catch (err) { console.error(err); showError('Error loading data.'); }
+    } catch (err) { console.error(err); showError('Error loading data.'); }
     finally { setIsLoading(false); }
   };
 
@@ -374,6 +394,19 @@ const RemainingProducts = () => {
       setScannedProduct(null); setScanQty(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
     } catch (err) { console.error(err); showError('Failed to save.'); }
+  };
+
+  // ── Actions: delete ───────────────────────────────────────────────────────
+
+  const handleDeleteProduct = async (product) => {
+    if (!window.confirm(`Delete "${product.name}" permanently from stock? This cannot be undone.`)) return;
+    try {
+      await remove(ref(database, `products/${product.id}`));
+      await remove(ref(database, `stockChecks/${product.id}`));
+      setProducts(prev => prev.filter(p => p.id !== product.id));
+      setPendingChecks(prev => prev.filter(c => c.id !== product.id));
+      showSuccess(`"${product.name}" deleted from stock.`);
+    } catch (err) { console.error(err); showError('Failed to delete product.'); }
   };
 
   // ── Actions: hold ─────────────────────────────────────────────────────────
@@ -693,6 +726,7 @@ const RemainingProducts = () => {
                           <button className="btn-small btn-success" onClick={() => handleAccurate(product)}><IconCheck /> Accurate</button>
                           <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}><IconXCircle /> Inaccurate</button>
                           <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
+                          <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
                         </div>
                       </td>
                     </tr>

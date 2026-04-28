@@ -63,8 +63,15 @@ const RemainingProducts = () => {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  const showSuccess = (msg) => { setSuccessMessage(msg); setTimeout(() => setSuccessMessage(null), 3000); };
-  const showError   = (msg) => { setErrorMessage(msg);   setTimeout(() => setErrorMessage(null),   3000); };
+  const showSuccess = useCallback((msg) => {
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  }, []);
+
+  const showError = useCallback((msg) => {
+    setErrorMessage(msg);
+    setTimeout(() => setErrorMessage(null), 3000);
+  }, []);
 
   const formatDate = (iso) => {
     try {
@@ -84,7 +91,60 @@ const RemainingProducts = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   };
 
-  const hasStock = (product) => (parseFloat(product?.quantity) || 0) > 0;
+  const toNumber = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const isStockLikeStatus = useCallback(
+    (status) => String(status || '').toLowerCase().startsWith('stock'),
+    []
+  );
+
+  const getProductKey = useCallback(
+    (item = {}) => String(item.barcode || item.productId || '').trim(),
+    []
+  );
+
+  const decodePushKeyTimestampMs = useCallback((pushKey) => {
+    if (!pushKey || typeof pushKey !== 'string' || pushKey.length < 8) return null;
+    const chars = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+    let timestamp = 0;
+
+    for (let i = 0; i < 8; i += 1) {
+      const idx = chars.indexOf(pushKey[i]);
+      if (idx < 0) return null;
+      timestamp = (timestamp * 64) + idx;
+    }
+
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }, []);
+
+  const getSoldRecordTimestamp = useCallback((item = {}, recordKey = '') => {
+    const createdAtMs = new Date(item.createdAt || item.created_on || '').getTime();
+    if (!Number.isNaN(createdAtMs)) return createdAtMs;
+
+    const pushKeyMs = decodePushKeyTimestampMs(recordKey);
+    if (pushKeyMs != null) return pushKeyMs;
+
+    const scannedAtMs = new Date(item.dateScanned || '').getTime();
+    if (!Number.isNaN(scannedAtMs)) return scannedAtMs;
+
+    return null;
+  }, [decodePushKeyTimestampMs]);
+
+  const getExpectedRemaining = useCallback((product, quantityOverride = null) => {
+    const productId = typeof product === 'string' ? product : product?.id;
+    const systemQty = quantityOverride == null
+      ? toNumber(typeof product === 'string' ? 0 : product?.quantity)
+      : toNumber(quantityOverride);
+    return systemQty - toNumber(soldTotals[productId]);
+  }, [soldTotals]);
+
+  const hasPositiveExpectedStock = useCallback(
+    (product) => getExpectedRemaining(product) > 0,
+    [getExpectedRemaining]
+  );
 
   const objCount = (obj) => (obj && typeof obj === 'object' ? Object.keys(obj).length : 0);
 
@@ -112,7 +172,7 @@ const RemainingProducts = () => {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [prodSnap, checkSnap, soldSnap, txSnap] = await Promise.all([
@@ -126,7 +186,7 @@ const RemainingProducts = () => {
         const list = Object.entries(prodSnap.val()).map(([id, v]) => ({ id, ...v }));
         list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         setProducts(list);
-        setFilteredProducts(list.filter(hasStock));
+        setFilteredProducts(list);
       } else {
         setProducts([]); setFilteredProducts([]);
       }
@@ -151,11 +211,11 @@ const RemainingProducts = () => {
       if (txSnap.exists()) {
         Object.values(txSnap.val()).forEach(tx => {
           if (tx.paymentStatus !== 'Confirmed') return;
-          const barcode = tx.barcode || tx.productId;
-          if (!barcode) return;
+          const productKey = getProductKey(tx);
+          if (!productKey) return;
           const txDate = new Date(tx.dateScanned);
-          if (!lastStockInAt[barcode] || txDate > lastStockInAt[barcode]) {
-            lastStockInAt[barcode] = txDate;
+          if (!lastStockInAt[productKey] || txDate > lastStockInAt[productKey]) {
+            lastStockInAt[productKey] = txDate;
           }
         });
       }
@@ -174,19 +234,25 @@ const RemainingProducts = () => {
       // sales before a restock or before a re-added product are never counted.
       if (soldSnap.exists()) {
         const totals = {};
-        Object.values(soldSnap.val()).forEach(item => {
-          const barcode  = item.barcode;
-          const qty      = parseFloat(item.quantity) || 0;
-          if (!barcode) return;
+        Object.entries(soldSnap.val()).forEach(([recordKey, item]) => {
+          const productKey = getProductKey(item);
+          if (!productKey || isStockLikeStatus(item.paymentStatus)) return;
+
+          const qty = toNumber(item.quantity);
+          if (qty <= 0) return;
+
           const candidates = [
-            lastCheckedAt[barcode],
-            lastStockInAt[barcode],
-            productCreatedAt[barcode],
+            lastCheckedAt[productKey],
+            lastStockInAt[productKey],
+            productCreatedAt[productKey],
           ].filter(Boolean);
+
           const cutoff = candidates.length ? new Date(Math.max(...candidates)) : null;
-          const saleDate = new Date(item.dateScanned);
-          if (!cutoff || saleDate > cutoff) {
-            totals[barcode] = (totals[barcode] || 0) + qty;
+          const entryTimeMs = getSoldRecordTimestamp(item, recordKey);
+          if (entryTimeMs == null) return;
+
+          if (!cutoff || entryTimeMs > cutoff.getTime()) {
+            totals[productKey] = (totals[productKey] || 0) + qty;
           }
         });
         setSoldTotals(totals);
@@ -196,20 +262,20 @@ const RemainingProducts = () => {
 
     } catch (err) { console.error(err); showError('Error loading data.'); }
     finally { setIsLoading(false); }
-  };
+  }, [showError, getProductKey, getSoldRecordTimestamp, isStockLikeStatus]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
     const baseProducts = showZeroStock
-      ? products.filter(p => (parseFloat(p.quantity) || 0) - (soldTotals[p.id] || 0) <= 0)
-      : products.filter(hasStock);
+      ? products.filter(p => getExpectedRemaining(p) <= 0)
+      : products.filter(hasPositiveExpectedStock);
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
-  }, [searchTerm, products, showZeroStock, soldTotals]);
+  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -224,6 +290,7 @@ const RemainingProducts = () => {
       const entries = [];
       if (soldSnap.exists()) {
         Object.values(soldSnap.val()).forEach(item => {
+          if (isStockLikeStatus(item.paymentStatus)) return;
           if (item.barcode === product.id || item.productId === product.id) {
             entries.push({
               date: item.dateScanned,
@@ -257,7 +324,7 @@ const RemainingProducts = () => {
       setProductHistoryEntries(entries);
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
-  }, []);
+  }, [showError, isStockLikeStatus]);
 
   const fetchArchives = useCallback(async () => {
     setArchivesLoading(true);
@@ -290,7 +357,7 @@ const RemainingProducts = () => {
     } finally {
       setArchivesLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   const fetchArchiveDetails = useCallback(async (archiveId) => {
     if (!archiveId) { setSelectedArchive(null); return; }
@@ -308,7 +375,7 @@ const RemainingProducts = () => {
     } finally {
       setArchiveDetailLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     if (activeTab === 'archives') fetchArchives();
@@ -338,14 +405,14 @@ const RemainingProducts = () => {
       scanCoolRef.current = setTimeout(() => { scanCoolRef.current = null; }, 2500);
 
       const barcode = result.getText();
-      const found = products.find(p => p.id === barcode && hasStock(p));
+      const found = products.find(p => p.id === barcode);
       if (found) {
         setScannerPaused(true);
         setScannedProduct(found);
         setScanQty('');
         setScanStatus(`Found: ${found.name}`);
       } else {
-        setScanStatus(`Barcode "${barcode}" not found in active stock.`);
+        setScanStatus(`Barcode "${barcode}" not found in products.`);
         setTimeout(() => setScanStatus('Align barcode within the frame.'), 2500);
       }
     }, { tryHarder: false, constraints: { video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } } } })
@@ -372,12 +439,13 @@ const RemainingProducts = () => {
     const counted = parseFloat(scanQty);
     if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
     try {
+      const expectedQty = getExpectedRemaining(scannedProduct);
       await update(ref(database, `products/${scannedProduct.id}`), { quantity: counted });
       await update(ref(database, `stockChecks/${scannedProduct.id}`), {
-        productName: scannedProduct.name, systemQuantity: scannedProduct.quantity,
+        productName: scannedProduct.name, systemQuantity: expectedQty,
         countedQuantity: counted, status: 'accurate', checkedAt: new Date().toISOString(),
       });
-      await pushHistory(scannedProduct.id, scannedProduct.name, scannedProduct.quantity, counted, 'accurate');
+      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate');
       setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
       showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
       setScannedProduct(null); setScanQty(''); setScannerPaused(false);
@@ -389,12 +457,13 @@ const RemainingProducts = () => {
     const counted = parseFloat(scanQty);
     if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
     try {
+      const expectedQty = getExpectedRemaining(scannedProduct);
       const checkData = {
-        productName: scannedProduct.name, systemQuantity: scannedProduct.quantity,
+        productName: scannedProduct.name, systemQuantity: expectedQty,
         countedQuantity: counted, status: 'pending', checkedAt: new Date().toISOString(),
       };
       await update(ref(database, `stockChecks/${scannedProduct.id}`), checkData);
-      await pushHistory(scannedProduct.id, scannedProduct.name, scannedProduct.quantity, counted, 'inaccurate');
+      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'inaccurate');
       setPendingChecks(prev => {
         const exists = prev.find(c => c.id === scannedProduct.id);
         if (exists) return prev.map(c => c.id === scannedProduct.id ? { id: scannedProduct.id, ...checkData } : c);
@@ -481,12 +550,13 @@ const RemainingProducts = () => {
     const counted = parseFloat(countedQty[product.id]);
     if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
     try {
+      const expectedQty = getExpectedRemaining(product);
       await update(ref(database, `products/${product.id}`), { quantity: counted });
       await update(ref(database, `stockChecks/${product.id}`), {
-        productName: product.name, systemQuantity: product.quantity,
+        productName: product.name, systemQuantity: expectedQty,
         countedQuantity: counted, status: 'accurate', checkedAt: new Date().toISOString(),
       });
-      await pushHistory(product.id, product.name, product.quantity, counted, 'accurate');
+      await pushHistory(product.id, product.name, expectedQty, counted, 'accurate');
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: counted } : p));
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       showSuccess(`✓ "${product.name}" updated to ${counted}.`);
@@ -497,12 +567,13 @@ const RemainingProducts = () => {
     const counted = parseFloat(countedQty[product.id]);
     if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
     try {
+      const expectedQty = getExpectedRemaining(product);
       const checkData = {
-        productName: product.name, systemQuantity: product.quantity,
+        productName: product.name, systemQuantity: expectedQty,
         countedQuantity: counted, status: 'pending', checkedAt: new Date().toISOString(),
       };
       await update(ref(database, `stockChecks/${product.id}`), checkData);
-      await pushHistory(product.id, product.name, product.quantity, counted, 'inaccurate');
+      await pushHistory(product.id, product.name, expectedQty, counted, 'inaccurate');
       setPendingChecks(prev => {
         const exists = prev.find(c => c.id === product.id);
         if (exists) return prev.map(c => c.id === product.id ? { id: product.id, ...checkData } : c);
@@ -736,9 +807,9 @@ const RemainingProducts = () => {
                 {filteredProducts.map(product => {
                   const isPending        = pendingChecks.some(c => c.id === product.id);
                   const inputVal         = countedQty[product.id] ?? '';
-                  const totalSold        = soldTotals[product.id] || 0;
-                  const currentStock     = product.quantity;
-                  const expectedRemaining = currentStock - totalSold;
+                  const totalSold        = toNumber(soldTotals[product.id]);
+                  const currentStock     = toNumber(product.quantity);
+                  const expectedRemaining = getExpectedRemaining(product, currentStock);
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                   return (
                     <tr key={product.id} style={isPending ? { backgroundColor: '#fffbeb' } : {}}>
@@ -824,7 +895,7 @@ const RemainingProducts = () => {
               </thead>
               <tbody>
                 {pendingChecks.map(check => {
-                  const diff       = check.countedQuantity - check.systemQuantity;
+                  const diff       = toNumber(check.countedQuantity) - toNumber(check.systemQuantity);
                   const reInputVal = reconfirmQty[check.id] ?? '';
                   return (
                     <tr key={check.id} style={{ backgroundColor: '#fffbeb' }}>
@@ -880,8 +951,7 @@ const RemainingProducts = () => {
     // Actual physical qty = system qty (last check) minus sales since that check.
     // This is the same formula as "Expected Remaining" on the Check tab.
     const actualCurrentQty =
-      (parseFloat(historySelectedProduct?.quantity) || 0) -
-      (soldTotals[historySelectedProduct?.id] || 0);
+      getExpectedRemaining(historySelectedProduct);
 
     // Compute running balance backwards through all entries (newest-first).
     let cumQty = 0;
@@ -1520,83 +1590,95 @@ const RemainingProducts = () => {
 
   // ── Render: Scanner modal ──────────────────────────────────────────────────
 
-  const renderScannerModal = () => (
-    <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: 460 }}>
-        <div className="modal-header">
-          <h3 className="modal-title"><IconCamera /> Scan Product Barcode</h3>
-          <button className="modal-close" onClick={() => setScannerOpen(false)}><IconX /></button>
-        </div>
+  const renderScannerModal = () => {
+    const systemQty = scannedProduct ? toNumber(scannedProduct.quantity) : 0;
+    const soldSinceCheck = scannedProduct ? toNumber(soldTotals[scannedProduct.id]) : 0;
+    const expectedQty = scannedProduct ? getExpectedRemaining(scannedProduct, systemQty) : 0;
+    const enteredQty = toNumber(scanQty);
+    const hasEnteredQty = scanQty !== '' && !Number.isNaN(parseFloat(scanQty));
+    const qtyDiff = enteredQty - expectedQty;
 
-        <div className="modal-content">
-          {!scannedProduct && (
-            <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 12 }}>
-              <video ref={scannerRef} style={{ width: '100%', display: 'block' }} />
-              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                <div style={{ position: 'absolute', top: '25%', left: '15%', width: 28, height: 28, borderTop: '3px solid #28a745', borderLeft: '3px solid #28a745' }} />
-                <div style={{ position: 'absolute', top: '25%', right: '15%', width: 28, height: 28, borderTop: '3px solid #28a745', borderRight: '3px solid #28a745' }} />
-                <div style={{ position: 'absolute', bottom: '25%', left: '15%', width: 28, height: 28, borderBottom: '3px solid #28a745', borderLeft: '3px solid #28a745' }} />
-                <div style={{ position: 'absolute', bottom: '25%', right: '15%', width: 28, height: 28, borderBottom: '3px solid #28a745', borderRight: '3px solid #28a745' }} />
-              </div>
-            </div>
-          )}
+    return (
+      <div className="modal-overlay">
+        <div className="modal" style={{ maxWidth: 460 }}>
+          <div className="modal-header">
+            <h3 className="modal-title"><IconCamera /> Scan Product Barcode</h3>
+            <button className="modal-close" onClick={() => setScannerOpen(false)}><IconX /></button>
+          </div>
 
-          <p style={{ textAlign: 'center', fontSize: 13, color: '#666', margin: '0 0 12px' }}>{scanStatus}</p>
-
-          {scannedProduct && (
-            <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 16, border: '1px solid #dee2e6' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{scannedProduct.name}</div>
-                  <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{scannedProduct.id}</div>
-                  <div style={{ fontSize: 12, color: '#888' }}>{scannedProduct.productType}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 12, color: '#888' }}>System Qty</div>
-                  <div style={{ fontWeight: 700, fontSize: 22 }}>{scannedProduct.quantity}</div>
+          <div className="modal-content">
+            {!scannedProduct && (
+              <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#000', marginBottom: 12 }}>
+                <video ref={scannerRef} style={{ width: '100%', display: 'block' }} />
+                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                  <div style={{ position: 'absolute', top: '25%', left: '15%', width: 28, height: 28, borderTop: '3px solid #28a745', borderLeft: '3px solid #28a745' }} />
+                  <div style={{ position: 'absolute', top: '25%', right: '15%', width: 28, height: 28, borderTop: '3px solid #28a745', borderRight: '3px solid #28a745' }} />
+                  <div style={{ position: 'absolute', bottom: '25%', left: '15%', width: 28, height: 28, borderBottom: '3px solid #28a745', borderLeft: '3px solid #28a745' }} />
+                  <div style={{ position: 'absolute', bottom: '25%', right: '15%', width: 28, height: 28, borderBottom: '3px solid #28a745', borderRight: '3px solid #28a745' }} />
                 </div>
               </div>
+            )}
 
-              <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
-                Counted Quantity <span style={{ color: '#dc3545' }}>*</span>
-              </label>
-              <input
-                type="number" min="0" autoFocus
-                value={scanQty}
-                onChange={e => setScanQty(e.target.value)}
-                placeholder="Enter physical count..."
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' }}
-              />
+            <p style={{ textAlign: 'center', fontSize: 13, color: '#666', margin: '0 0 12px' }}>{scanStatus}</p>
 
-              {scanQty !== '' && !isNaN(parseFloat(scanQty)) && (
-                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: parseFloat(scanQty) === scannedProduct.quantity ? '#198754' : '#dc3545' }}>
-                  {parseFloat(scanQty) === scannedProduct.quantity
-                    ? 'Matches system quantity'
-                    : `Δ ${(parseFloat(scanQty) - scannedProduct.quantity).toFixed(0)} from system quantity`}
+            {scannedProduct && (
+              <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 16, border: '1px solid #dee2e6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{scannedProduct.name}</div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{scannedProduct.id}</div>
+                    <div style={{ fontSize: 12, color: '#888' }}>{scannedProduct.productType}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 12, color: '#888' }}>Expected Qty</div>
+                    <div style={{ fontWeight: 700, fontSize: 22, color: expectedQty < 0 ? '#dc3545' : '#198754' }}>{expectedQty}</div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                      System {systemQty} • Sold {soldSinceCheck}
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate}><IconCheck /> Accurate</button>
-                <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate}><IconXCircle /> Inaccurate</button>
+                <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                  Counted Quantity <span style={{ color: '#dc3545' }}>*</span>
+                </label>
+                <input
+                  type="number" min="0" autoFocus
+                  value={scanQty}
+                  onChange={e => setScanQty(e.target.value)}
+                  placeholder="Enter physical count..."
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' }}
+                />
+
+                {hasEnteredQty && (
+                  <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: qtyDiff === 0 ? '#198754' : '#dc3545' }}>
+                    {qtyDiff === 0
+                      ? 'Matches expected quantity'
+                      : `Δ ${qtyDiff > 0 ? '+' : ''}${qtyDiff} vs expected`}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                  <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate}><IconCheck /> Accurate</button>
+                  <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate}><IconXCircle /> Inaccurate</button>
+                </div>
+
+                <button
+                  onClick={() => { setScannedProduct(null); setScanQty(''); setScannerPaused(false); setScanStatus('Align barcode within the frame.'); }}
+                  style={{ marginTop: 8, width: '100%', padding: '6px 0', background: 'none', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#666' }}
+                >
+                  <IconCornerUpLeft /> Scan a different product
+                </button>
               </div>
+            )}
+          </div>
 
-              <button
-                onClick={() => { setScannedProduct(null); setScanQty(''); setScannerPaused(false); setScanStatus('Align barcode within the frame.'); }}
-                style={{ marginTop: 8, width: '100%', padding: '6px 0', background: 'none', border: '1px solid #ccc', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#666' }}
-              >
-                <IconCornerUpLeft /> Scan a different product
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={() => setScannerOpen(false)}>Close Scanner</button>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={() => setScannerOpen(false)}>Close Scanner</button>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // ── Main ───────────────────────────────────────────────────────────────────
 

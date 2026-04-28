@@ -22,7 +22,8 @@ const SoldItems = () => {
   // Filter states
   const [customerFilter, setCustomerFilter] = useState('');
   const [productFilter, setProductFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('All');
   const [checkFilter, setCheckFilter] = useState('all');
@@ -90,17 +91,6 @@ const SoldItems = () => {
     } catch (error) {
       console.error('Error formatting date for input:', error);
       return '';
-    }
-  };
-
-  // Parse DD-MM-YYYY to Date object
-  const parseDateFromDDMMYYYY = (dateString) => {
-    try {
-      const [day, month, year] = dateString.split('-').map(Number);
-      return new Date(year, month - 1, day);
-    } catch (error) {
-      console.error('Error parsing date:', error);
-      return null;
     }
   };
 
@@ -302,11 +292,21 @@ const SoldItems = () => {
       );
     }
 
-    if (dateFilter) {
-      const filterDate = formatDate(dateFilter); // Convert YYYY-MM-DD to DD-MM-YYYY
-      filtered = filtered.filter(
-        (item) => formatDate(item.dateScanned) === filterDate
-      );
+    if (dateFromFilter || dateToFilter) {
+      const fromMs = dateFromFilter
+        ? new Date(`${dateFromFilter}T00:00:00`).getTime()
+        : null;
+      const toMs = dateToFilter
+        ? new Date(`${dateToFilter}T23:59:59.999`).getTime()
+        : null;
+
+      filtered = filtered.filter((item) => {
+        const itemMs = new Date(item.dateScanned).getTime();
+        if (isNaN(itemMs)) return false;
+        if (fromMs !== null && itemMs < fromMs) return false;
+        if (toMs !== null && itemMs > toMs) return false;
+        return true;
+      });
     }
 
     if (monthFilter) {
@@ -337,7 +337,8 @@ const SoldItems = () => {
   }, [
     customerFilter,
     productFilter,
-    dateFilter,
+    dateFromFilter,
+    dateToFilter,
     monthFilter,
     paymentStatusFilter,
     checkFilter,
@@ -349,7 +350,8 @@ const SoldItems = () => {
   const clearAllFilters = () => {
     setCustomerFilter('');
     setProductFilter('');
-    setDateFilter('');
+    setDateFromFilter('');
+    setDateToFilter('');
     setMonthFilter('');
     setPaymentStatusFilter('All');
     setCheckFilter('all');
@@ -362,11 +364,6 @@ const SoldItems = () => {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     return monthNames[monthNumber - 1] || '';
-  };
-
-  // Handle date input change (converts from YYYY-MM-DD to DD-MM-YYYY for display)
-  const handleDateFilterChange = (e) => {
-    setDateFilter(e.target.value);
   };
 
   // Checkbox functions - THESE ARE STILL HERE
@@ -640,11 +637,11 @@ const SoldItems = () => {
     document.body.removeChild(link);
   };
 
-  // Format date filter value for display in active filters
-  const getDateFilterDisplay = () => {
-    if (!dateFilter) return '';
+  // Format date input value for display in active filters
+  const getDateDisplay = (dateValue) => {
+    if (!dateValue) return '';
     // Convert YYYY-MM-DD to DD-MM-YYYY for display
-    const [year, month, day] = dateFilter.split('-');
+    const [year, month, day] = dateValue.split('-');
     return `${day}-${month}-${year}`;
   };
 
@@ -853,16 +850,31 @@ const SoldItems = () => {
           </div>
 
           <div className="filter-group">
-            <label>Date (DD-MM-YYYY)</label>
+            <label>From Date</label>
             <input
               type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
+              value={dateFromFilter}
+              onChange={(e) => setDateFromFilter(e.target.value)}
               className="date-input"
             />
-            {dateFilter && (
+            {dateFromFilter && (
               <div className="date-display-hint">
-                Filtering for: {getDateFilterDisplay()}
+                From: {getDateDisplay(dateFromFilter)}
+              </div>
+            )}
+          </div>
+
+          <div className="filter-group">
+            <label>To Date</label>
+            <input
+              type="date"
+              value={dateToFilter}
+              onChange={(e) => setDateToFilter(e.target.value)}
+              className="date-input"
+            />
+            {dateToFilter && (
+              <div className="date-display-hint">
+                To: {getDateDisplay(dateToFilter)}
               </div>
             )}
           </div>
@@ -938,7 +950,7 @@ const SoldItems = () => {
       </div>
 
       {/* Active Filters */}
-      {(customerFilter || productFilter || dateFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
+      {(customerFilter || productFilter || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
         <div className="active-filters">
           <div className="active-filters-header">
             <span className="active-filters-title">Active Filters:</span>
@@ -959,10 +971,16 @@ const SoldItems = () => {
                 <button onClick={() => setProductFilter('')}><IconX /></button>
               </span>
             )}
-            {dateFilter && (
+            {dateFromFilter && (
               <span className="filter-tag">
-                Date: {getDateFilterDisplay()}
-                <button onClick={() => setDateFilter('')}><IconX /></button>
+                From: {getDateDisplay(dateFromFilter)}
+                <button onClick={() => setDateFromFilter('')}><IconX /></button>
+              </span>
+            )}
+            {dateToFilter && (
+              <span className="filter-tag">
+                To: {getDateDisplay(dateToFilter)}
+                <button onClick={() => setDateToFilter('')}><IconX /></button>
               </span>
             )}
             {monthFilter && (

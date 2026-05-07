@@ -469,26 +469,9 @@ const SoldItems = () => {
   // Delete functions
   const handleDelete = async (itemId) => {
     try {
-      const itemToDelete = soldItems.find((item) => item.id === itemId);
       const updates = {
         [`SoldItems/${itemId}`]: null,
       };
-
-      if (itemToDelete) {
-        const isRefundable = !isStockLikeStatus(itemToDelete.paymentStatus);
-        const productKey = itemToDelete.barcode || itemToDelete.productId || null;
-        const refundQuantity = toNumber(itemToDelete.quantity);
-
-        if (isRefundable && productKey && refundQuantity > 0) {
-          const productRef = ref(database, `products/${productKey}`);
-          const productSnapshot = await get(productRef);
-
-          if (productSnapshot.exists()) {
-            const currentQuantity = toNumber(productSnapshot.val().quantity);
-            updates[`products/${productKey}/quantity`] = currentQuantity + refundQuantity;
-          }
-        }
-      }
 
       await update(ref(database), updates);
       setSoldItems(prev => prev.filter((item) => item.id !== itemId));

@@ -120,19 +120,6 @@ const RemainingProducts = () => {
     return Number.isFinite(timestamp) ? timestamp : null;
   }, []);
 
-  const getSoldRecordTimestamp = useCallback((item = {}, recordKey = '') => {
-    const createdAtMs = new Date(item.createdAt || item.created_on || '').getTime();
-    if (!Number.isNaN(createdAtMs)) return createdAtMs;
-
-    const pushKeyMs = decodePushKeyTimestampMs(recordKey);
-    if (pushKeyMs != null) return pushKeyMs;
-
-    const scannedAtMs = new Date(item.dateScanned || '').getTime();
-    if (!Number.isNaN(scannedAtMs)) return scannedAtMs;
-
-    return null;
-  }, [decodePushKeyTimestampMs]);
-
   const getExpectedRemaining = useCallback((product, quantityOverride = null) => {
     const productId = typeof product === 'string' ? product : product?.id;
     const systemQty = quantityOverride == null
@@ -175,11 +162,10 @@ const RemainingProducts = () => {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [prodSnap, checkSnap, soldSnap, txSnap] = await Promise.all([
+      const [prodSnap, checkSnap, soldSnap] = await Promise.all([
         get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'SoldItems')),
-        get(ref(database, 'transactions')),
       ]);
 
       if (prodSnap.exists()) {
@@ -191,7 +177,8 @@ const RemainingProducts = () => {
         setProducts([]); setFilteredProducts([]);
       }
 
-      // Build lastCheckedAt map { [productId]: Date } from ALL stockChecks
+      // Cutoff per product = date of last accurate stock check only.
+      // No productCreatedAt or lastStockInAt — those caused silent exclusions of real sales.
       const lastCheckedAt = {};
       if (checkSnap.exists()) {
         const allChecks = Object.entries(checkSnap.val()).map(([id, v]) => ({ id, ...v }));
@@ -204,34 +191,10 @@ const RemainingProducts = () => {
         setPendingChecks([]);
       }
 
-      // Build lastStockInAt { [barcode]: Date } from the most recent CONFIRMED transaction.
-      // A confirmed stock-in resets the "sold since" baseline — sales before the restock
-      // should not be subtracted from the new stock level.
-      const lastStockInAt = {};
-      if (txSnap.exists()) {
-        Object.values(txSnap.val()).forEach(tx => {
-          if (tx.paymentStatus !== 'Confirmed') return;
-          const productKey = getProductKey(tx);
-          if (!productKey) return;
-          const txDate = new Date(tx.dateScanned);
-          if (!lastStockInAt[productKey] || txDate > lastStockInAt[productKey]) {
-            lastStockInAt[productKey] = txDate;
-          }
-        });
-      }
-
-      // Build { [barcode]: createdAt } from products so re-added products ignore
-      // all SoldItems that existed before the product was (re-)created.
-      const productCreatedAt = {};
-      if (prodSnap.exists()) {
-        Object.entries(prodSnap.val()).forEach(([id, v]) => {
-          if (v.createdAt) productCreatedAt[id] = new Date(v.createdAt);
-        });
-      }
-
-      // Build { [barcode]: qtySoldSinceLastCheck }
-      // Cutoff = max(lastStockCheck, lastConfirmedStockIn, productCreatedAt) so that
-      // sales before a restock or before a re-added product are never counted.
+      // Build { [productKey]: qtySoldSinceLastCheck }.
+      // "Since last check" uses the sale's actual dateScanned (not push-key write time).
+      // If no stock check exists for a product, count ALL its sales.
+      // If dateScanned is missing/invalid, count the item rather than silently skip it.
       if (soldSnap.exists()) {
         const totals = {};
         Object.entries(soldSnap.val()).forEach(([recordKey, item]) => {
@@ -241,17 +204,31 @@ const RemainingProducts = () => {
           const qty = toNumber(item.quantity);
           if (qty <= 0) return;
 
-          const candidates = [
-            lastCheckedAt[productKey],
-            lastStockInAt[productKey],
-            productCreatedAt[productKey],
-          ].filter(Boolean);
+          const cutoff = lastCheckedAt[productKey] || null;
 
-          const cutoff = candidates.length ? new Date(Math.max(...candidates)) : null;
-          const entryTimeMs = getSoldRecordTimestamp(item, recordKey);
-          if (entryTimeMs == null) return;
+          if (!cutoff) {
+            // No stock check recorded — count every sale
+            totals[productKey] = (totals[productKey] || 0) + qty;
+            return;
+          }
 
-          if (!cutoff || entryTimeMs > cutoff.getTime()) {
+          // Use dateScanned (actual sale date) first; push-key write time as fallback
+          const saleDateMs = new Date(item.dateScanned || '').getTime();
+          if (!isNaN(saleDateMs)) {
+            if (saleDateMs > cutoff.getTime()) {
+              totals[productKey] = (totals[productKey] || 0) + qty;
+            }
+            return;
+          }
+
+          // dateScanned missing — fall back to push-key write time
+          const pushKeyMs = decodePushKeyTimestampMs(recordKey);
+          if (pushKeyMs != null) {
+            if (pushKeyMs > cutoff.getTime()) {
+              totals[productKey] = (totals[productKey] || 0) + qty;
+            }
+          } else {
+            // Can't determine date at all — count the item to avoid silent exclusion
             totals[productKey] = (totals[productKey] || 0) + qty;
           }
         });
@@ -262,7 +239,7 @@ const RemainingProducts = () => {
 
     } catch (err) { console.error(err); showError('Error loading data.'); }
     finally { setIsLoading(false); }
-  }, [showError, getProductKey, getSoldRecordTimestamp, isStockLikeStatus]);
+  }, [showError, getProductKey, isStockLikeStatus, decodePushKeyTimestampMs]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -283,45 +260,86 @@ const RemainingProducts = () => {
     setProductHistoryLoading(true);
     setProductHistoryEntries([]);
     try {
-      const [soldSnap, txSnap] = await Promise.all([
+      const [soldSnap, txSnap, checkSnap] = await Promise.all([
         get(ref(database, 'SoldItems')),
         get(ref(database, 'transactions')),
+        get(ref(database, `stockChecks/${product.id}`)),
       ]);
+
+      // Find the last confirmed stock check (our running-balance anchor)
+      const checkRecord = checkSnap.exists() ? checkSnap.val() : null;
+      const lastCheckTs = checkRecord && checkRecord.status === 'accurate'
+        ? new Date(checkRecord.reconfirmedAt || checkRecord.checkedAt).getTime()
+        : null;
+      const lastCheckQty = checkRecord && checkRecord.status === 'accurate'
+        ? toNumber(checkRecord.countedQuantity)
+        : null;
+
       const entries = [];
+
+      // Include the last accurate stock check as an anchor row
+      if (lastCheckTs != null && lastCheckQty != null) {
+        entries.push({
+          date: checkRecord.reconfirmedAt || checkRecord.checkedAt,
+          type: 'Stock Check',
+          qty: null,
+          setTo: lastCheckQty,
+          paymentStatus: null,
+          isCheckEvent: true,
+        });
+      }
+
+      // Sales — only those after the last accurate check
       if (soldSnap.exists()) {
         Object.values(soldSnap.val()).forEach(item => {
           if (isStockLikeStatus(item.paymentStatus)) return;
-          if (item.barcode === product.id || item.productId === product.id) {
-            entries.push({
-              date: item.dateScanned,
-              type: 'Sale',
-              qty: -(parseFloat(item.quantity) || 0),
-              customer: item.customerName || '—',
-              remark: item.remark || '—',
-              paymentStatus: item.paymentStatus,
-            });
-          }
+          if (item.barcode !== product.id && item.productId !== product.id) return;
+          const itemTs = new Date(item.dateScanned || item.createdAt || 0).getTime();
+          if (lastCheckTs != null && itemTs <= lastCheckTs) return;
+          entries.push({
+            date: item.dateScanned || item.createdAt,
+            type: 'Sale',
+            qty: -(parseFloat(item.quantity) || 0),
+            paymentStatus: item.paymentStatus,
+            isCheckEvent: false,
+          });
         });
       }
+
+      // Confirmed stock-ins (transactions) — only after last check
       if (txSnap.exists()) {
         Object.values(txSnap.val()).forEach(tx => {
-          if (
-            (tx.barcode === product.id || tx.productId === product.id) &&
-            tx.paymentStatus === 'Confirmed'
-          ) {
-            entries.push({
-              date: tx.dateScanned,
-              type: 'Stock In',
-              qty: +(parseFloat(tx.quantity) || 0),
-              customer: '—',
-              remark: tx.remark || '—',
-              paymentStatus: tx.paymentStatus,
-            });
-          }
+          if (tx.barcode !== product.id && tx.productId !== product.id) return;
+          if (tx.paymentStatus !== 'Confirmed') return;
+          const txTs = new Date(tx.dateScanned || 0).getTime();
+          if (lastCheckTs != null && txTs <= lastCheckTs) return;
+          entries.push({
+            date: tx.dateScanned,
+            type: 'Stock In',
+            qty: +(parseFloat(tx.quantity) || 0),
+            paymentStatus: tx.paymentStatus,
+            isCheckEvent: false,
+          });
         });
       }
-      entries.sort((a, b) => new Date(b.date) - new Date(a.date));
-      setProductHistoryEntries(entries);
+
+      // Sort ascending so we can walk forward and compute accurate running balance
+      entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Forward walk: anchor = lastCheckQty if we have one, else product.quantity
+      let balance = lastCheckQty != null ? lastCheckQty : toNumber(product.quantity);
+      const entriesWithBalance = entries.map(entry => {
+        if (entry.isCheckEvent) {
+          balance = entry.setTo;
+          return { ...entry, stockAfter: balance };
+        }
+        balance += entry.qty;
+        return { ...entry, stockAfter: balance };
+      });
+
+      // Reverse to display newest-first
+      entriesWithBalance.reverse();
+      setProductHistoryEntries(entriesWithBalance);
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
   }, [showError, isStockLikeStatus]);
@@ -447,6 +465,7 @@ const RemainingProducts = () => {
       });
       await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate');
       setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
+      setSoldTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
       showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
       setScannedProduct(null); setScanQty(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
@@ -558,6 +577,8 @@ const RemainingProducts = () => {
       });
       await pushHistory(product.id, product.name, expectedQty, counted, 'accurate');
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: counted } : p));
+      // Reset soldTotals for this product to 0 — no sales have happened since this check yet
+      setSoldTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       showSuccess(`✓ "${product.name}" updated to ${counted}.`);
     } catch (err) { console.error(err); showError('Failed to update stock.'); }
@@ -595,6 +616,7 @@ const RemainingProducts = () => {
       await pushHistory(check.id, check.productName, check.systemQuantity, qty, 'accurate');
       setProducts(prev => prev.map(p => p.id === check.id ? { ...p, quantity: qty } : p));
       setPendingChecks(prev => prev.filter(c => c.id !== check.id));
+      setSoldTotals(prev => { const n = { ...prev }; delete n[check.id]; return n; });
       setReconfirmQty(prev => { const n = { ...prev }; delete n[check.id]; return n; });
       showSuccess(`✓ "${check.productName}" confirmed — updated to ${qty}.`);
     } catch (err) { console.error(err); showError('Failed to reconfirm.'); }
@@ -948,23 +970,11 @@ const RemainingProducts = () => {
         )
       : [];
 
-    // Actual physical qty = system qty (last check) minus sales since that check.
-    // This is the same formula as "Expected Remaining" on the Check tab.
-    const actualCurrentQty =
-      getExpectedRemaining(historySelectedProduct);
-
-    // Compute running balance backwards through all entries (newest-first).
-    let cumQty = 0;
-    const entriesWithBalance = productHistoryEntries.map(entry => {
-      const stockAfter = actualCurrentQty - cumQty;
-      cumQty += entry.qty;
-      return { ...entry, stockAfter };
-    });
-
-    // Then apply date filter only to what's displayed
+    // stockAfter is pre-computed via a forward walk in fetchProductHistory.
+    // Apply date filter only to what's displayed (balance values remain correct).
     const fromMs = historyDateFrom ? new Date(historyDateFrom).setHours(0, 0, 0, 0) : null;
     const toMs   = historyDateTo   ? new Date(historyDateTo).setHours(23, 59, 59, 999) : null;
-    const displayedEntries = entriesWithBalance.filter(entry => {
+    const displayedEntries = productHistoryEntries.filter(entry => {
       const t = new Date(entry.date).getTime();
       if (fromMs && t < fromMs) return false;
       if (toMs   && t > toMs)   return false;
@@ -1033,9 +1043,9 @@ const RemainingProducts = () => {
               <div>{historySelectedProduct.productType || '—'}</div>
             </div>
             <div>
-              <div style={{ fontSize: 12, color: '#888' }}>Current Stock</div>
-              <div style={{ fontWeight: 700, fontSize: 20, color: parseFloat(historySelectedProduct.quantity) > 0 ? '#198754' : '#dc3545' }}>
-                {historySelectedProduct.quantity}
+              <div style={{ fontSize: 12, color: '#888' }}>Expected Remaining</div>
+              <div style={{ fontWeight: 700, fontSize: 20, color: getExpectedRemaining(historySelectedProduct) > 0 ? '#198754' : '#dc3545' }}>
+                {getExpectedRemaining(historySelectedProduct)}
               </div>
             </div>
           </div>
@@ -1099,21 +1109,34 @@ const RemainingProducts = () => {
                     </thead>
                     <tbody>
                       {displayedEntries.map((entry, i) => (
-                        <tr key={i}>
+                        <tr key={i} style={entry.isCheckEvent ? { backgroundColor: '#e8f5e9' } : {}}>
                           <td><span className="date-cell">{formatDate(entry.date)}</span></td>
                           <td>
-                            <span style={{
-                              padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                              backgroundColor: entry.type === 'Sale' ? '#fde8e8' : '#e8f5e9',
-                              color: entry.type === 'Sale' ? '#c0392b' : '#1a7a2e',
-                            }}>
-                              {entry.type === 'Sale' ? <><IconArrowUp /> Sale</> : <><IconArrowDown /> Stock In</>}
-                            </span>
+                            {entry.isCheckEvent ? (
+                              <span style={{
+                                padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                backgroundColor: '#d4edda', color: '#155724',
+                              }}>
+                                <IconCheck /> Stock Check
+                              </span>
+                            ) : (
+                              <span style={{
+                                padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                backgroundColor: entry.type === 'Sale' ? '#fde8e8' : '#e8f5e9',
+                                color: entry.type === 'Sale' ? '#c0392b' : '#1a7a2e',
+                              }}>
+                                {entry.type === 'Sale' ? <><IconArrowUp /> Sale</> : <><IconArrowDown /> Stock In</>}
+                              </span>
+                            )}
                           </td>
                           <td className="text-right">
-                            <span style={{ color: entry.qty < 0 ? '#dc3545' : '#198754', fontWeight: 700 }}>
-                              {entry.qty > 0 ? '+' : ''}{entry.qty}
-                            </span>
+                            {entry.isCheckEvent ? (
+                              <span style={{ color: '#155724', fontWeight: 700 }}>Set to {entry.setTo}</span>
+                            ) : (
+                              <span style={{ color: entry.qty < 0 ? '#dc3545' : '#198754', fontWeight: 700 }}>
+                                {entry.qty > 0 ? '+' : ''}{entry.qty}
+                              </span>
+                            )}
                           </td>
                           <td className="text-right">
                             <span style={{ fontWeight: 600, color: entry.stockAfter <= 0 ? '#dc3545' : '#198754' }}>

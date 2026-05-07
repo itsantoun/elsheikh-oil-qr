@@ -296,7 +296,8 @@ const FetchProducts = () => {
         productType: product.productType || '',
         itemCost: product.itemCost || 0,
         purchasingPrice: product.purchasingPrice || 0,
-        quantity: product.quantity || 0
+        quantity: product.quantity || 0,
+        ...(product.createdAt ? { createdAt: product.createdAt } : { createdAt: new Date().toISOString() }),
       };
 
       const productRef = ref(database, `products/${product.id}`);
@@ -351,12 +352,16 @@ const FetchProducts = () => {
         await remove(oldProductRef);
       }
 
+      const existingSnap = await get(newProductRef);
+      const existingData = existingSnap.exists() ? existingSnap.val() : {};
+
       await set(newProductRef, {
         name: editingProduct.name.trim() || 'Unnamed Product',
         productType: editingProduct.productType.trim() || 'General',
         itemCost: parsedItemCost,
         purchasingPrice: parsedPurchasingPrice,
         quantity: parsedQuantity,
+        ...(editingProduct.createdAt ? { createdAt: editingProduct.createdAt } : existingData.createdAt ? { createdAt: existingData.createdAt } : {}),
       });
 
       const updatedProducts = products.map((product) =>

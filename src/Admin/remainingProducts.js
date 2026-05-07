@@ -45,6 +45,7 @@ const RemainingProducts = () => {
   const [historySearch, setHistorySearch]               = useState('');
   const [historySelectedProduct, setHistorySelectedProduct] = useState(null);
   const [productHistoryEntries, setProductHistoryEntries]   = useState([]);
+  const [monthlySummary, setMonthlySummary]                 = useState([]);
   const [productHistoryLoading, setProductHistoryLoading]   = useState(false);
   const [historyDateFrom, setHistoryDateFrom]               = useState('');
   const [historyDateTo, setHistoryDateTo]                   = useState('');
@@ -259,87 +260,115 @@ const RemainingProducts = () => {
   const fetchProductHistory = useCallback(async (product) => {
     setProductHistoryLoading(true);
     setProductHistoryEntries([]);
+    setMonthlySummary([]);
     try {
-      const [soldSnap, txSnap, checkSnap] = await Promise.all([
+      const [soldSnap, txSnap, historySnap] = await Promise.all([
         get(ref(database, 'SoldItems')),
         get(ref(database, 'transactions')),
-        get(ref(database, `stockChecks/${product.id}`)),
+        get(ref(database, 'stockCheckHistory')),
       ]);
 
-      // Find the last confirmed stock check (our running-balance anchor)
-      const checkRecord = checkSnap.exists() ? checkSnap.val() : null;
-      const lastCheckTs = checkRecord && checkRecord.status === 'accurate'
-        ? new Date(checkRecord.reconfirmedAt || checkRecord.checkedAt).getTime()
-        : null;
-      const lastCheckQty = checkRecord && checkRecord.status === 'accurate'
-        ? toNumber(checkRecord.countedQuantity)
-        : null;
+      const events = [];
 
-      const entries = [];
-
-      // Include the last accurate stock check as an anchor row
-      if (lastCheckTs != null && lastCheckQty != null) {
-        entries.push({
-          date: checkRecord.reconfirmedAt || checkRecord.checkedAt,
-          type: 'Stock Check',
-          qty: null,
-          setTo: lastCheckQty,
-          paymentStatus: null,
-          isCheckEvent: true,
-        });
-      }
-
-      // Sales — only those after the last accurate check
+      // All sales for this product
       if (soldSnap.exists()) {
         Object.values(soldSnap.val()).forEach(item => {
           if (isStockLikeStatus(item.paymentStatus)) return;
           if (item.barcode !== product.id && item.productId !== product.id) return;
-          const itemTs = new Date(item.dateScanned || item.createdAt || 0).getTime();
-          if (lastCheckTs != null && itemTs <= lastCheckTs) return;
-          entries.push({
-            date: item.dateScanned || item.createdAt,
+          events.push({
+            date: item.dateScanned || item.createdAt || null,
             type: 'Sale',
-            qty: -(parseFloat(item.quantity) || 0),
+            qty: -(toNumber(item.quantity)),
             paymentStatus: item.paymentStatus,
             isCheckEvent: false,
           });
         });
       }
 
-      // Confirmed stock-ins (transactions) — only after last check
+      // All restocks (transactions) for this product — all statuses
       if (txSnap.exists()) {
         Object.values(txSnap.val()).forEach(tx => {
           if (tx.barcode !== product.id && tx.productId !== product.id) return;
-          if (tx.paymentStatus !== 'Confirmed') return;
-          const txTs = new Date(tx.dateScanned || 0).getTime();
-          if (lastCheckTs != null && txTs <= lastCheckTs) return;
-          entries.push({
-            date: tx.dateScanned,
-            type: 'Stock In',
-            qty: +(parseFloat(tx.quantity) || 0),
+          events.push({
+            date: tx.dateScanned || null,
+            type: 'Restock',
+            qty: toNumber(tx.quantity),
             paymentStatus: tx.paymentStatus,
             isCheckEvent: false,
           });
         });
       }
 
-      // Sort ascending so we can walk forward and compute accurate running balance
-      entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+      // Accurate stock checks from history — used as balance anchors
+      if (historySnap.exists()) {
+        Object.values(historySnap.val()).forEach(monthData => {
+          if (!monthData || typeof monthData !== 'object') return;
+          Object.values(monthData).forEach(entry => {
+            if (entry.productId !== product.id || entry.status !== 'accurate') return;
+            events.push({
+              date: entry.checkedAt,
+              type: 'Stock Check',
+              qty: null,
+              setTo: toNumber(entry.countedQuantity),
+              paymentStatus: null,
+              isCheckEvent: true,
+            });
+          });
+        });
+      }
 
-      // Forward walk: anchor = lastCheckQty if we have one, else product.quantity
-      let balance = lastCheckQty != null ? lastCheckQty : toNumber(product.quantity);
-      const entriesWithBalance = entries.map(entry => {
-        if (entry.isCheckEvent) {
-          balance = entry.setTo;
-          return { ...entry, stockAfter: balance };
+      // Sort all events ascending by date
+      events.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+      // Determine starting balance.
+      // If we have stock check anchors, start from 0 and let the first check reset it.
+      // If no checks, use product.quantity as the known current baseline and walk backwards
+      // to find the initial balance: initialQty = product.quantity + allSales - allRestocks.
+      const hasChecks = events.some(e => e.isCheckEvent);
+      let balance = 0;
+      let balanceKnown = false;
+      if (!hasChecks) {
+        const totalSales    = events.filter(e => e.type === 'Sale').reduce((s, e) => s + Math.abs(e.qty), 0);
+        const totalRestocks = events.filter(e => e.type === 'Restock').reduce((s, e) => s + e.qty, 0);
+        balance = toNumber(product.quantity) + totalSales - totalRestocks;
+        balanceKnown = true;
+      }
+
+      // Forward walk — compute stockAfter and balanceBefore for every event
+      const walked = events.map(event => {
+        const balanceBefore = balance;
+        if (event.isCheckEvent) {
+          balance = event.setTo;
+          balanceKnown = true;
+        } else {
+          balance += event.qty;
         }
-        balance += entry.qty;
-        return { ...entry, stockAfter: balance };
+        return { ...event, balanceBefore, stockAfter: balance, balanceKnown };
       });
 
-      // Reverse to display newest-first
-      entriesWithBalance.reverse();
-      setProductHistoryEntries(entriesWithBalance);
+      // Build monthly summary
+      const monthMap = {};
+      walked.forEach(event => {
+        if (!event.date) return;
+        const d = new Date(event.date);
+        if (isNaN(d.getTime())) return;
+        const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+        if (!monthMap[key]) {
+          monthMap[key] = { key, label, openingStock: event.balanceBefore, openingKnown: !event.isCheckEvent && event.balanceKnown, sold: 0, restocked: 0, closingStock: event.stockAfter, closingKnown: event.balanceKnown };
+        } else {
+          monthMap[key].closingStock = event.stockAfter;
+          monthMap[key].closingKnown = event.balanceKnown;
+        }
+        if (event.type === 'Sale')    monthMap[key].sold      += Math.abs(event.qty);
+        if (event.type === 'Restock') monthMap[key].restocked += event.qty;
+      });
+
+      setMonthlySummary(Object.values(monthMap).sort((a, b) => b.key.localeCompare(a.key)));
+
+      // Reverse for newest-first display
+      walked.reverse();
+      setProductHistoryEntries(walked);
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
   }, [showError, isStockLikeStatus]);
@@ -970,29 +999,26 @@ const RemainingProducts = () => {
         )
       : [];
 
-    // stockAfter is pre-computed via a forward walk in fetchProductHistory.
-    // Apply date filter only to what's displayed (balance values remain correct).
     const fromMs = historyDateFrom ? new Date(historyDateFrom).setHours(0, 0, 0, 0) : null;
     const toMs   = historyDateTo   ? new Date(historyDateTo).setHours(23, 59, 59, 999) : null;
     const displayedEntries = productHistoryEntries.filter(entry => {
-      const t = new Date(entry.date).getTime();
+      const t = new Date(entry.date || 0).getTime();
       if (fromMs && t < fromMs) return false;
       if (toMs   && t > toMs)   return false;
       return true;
     });
 
+    const totalSoldAllTime     = monthlySummary.reduce((s, m) => s + m.sold, 0);
+    const totalRestockedAllTime = monthlySummary.reduce((s, m) => s + m.restocked, 0);
+    const expectedNow          = historySelectedProduct ? getExpectedRemaining(historySelectedProduct) : 0;
+
+    const qtyBadge = (val, color) => (
+      <span style={{ fontWeight: 700, fontSize: 18, color }}>{val}</span>
+    );
+
     return (
       <div>
-        <div className="header-section">
-          <div className="header-left">
-            {/* <h2 className="section-title">Product History</h2>
-            {historySelectedProduct && (
-              <div className="stats-badge">{displayedEntries.length} of {productHistoryEntries.length} Events</div>
-            )} */}
-          </div>
-        </div>
-
-        {/* Product search with dropdown */}
+        {/* Search */}
         <div style={{ margin: '12px 0', position: 'relative' }}>
           <input
             type="text"
@@ -1002,6 +1028,7 @@ const RemainingProducts = () => {
               setHistorySearch(e.target.value);
               setHistorySelectedProduct(null);
               setProductHistoryEntries([]);
+              setMonthlySummary([]);
             }}
             style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
           />
@@ -1010,11 +1037,7 @@ const RemainingProducts = () => {
               {suggestions.map(p => (
                 <div
                   key={p.id}
-                  onClick={() => {
-                    setHistorySelectedProduct(p);
-                    setHistorySearch(p.name);
-                    fetchProductHistory(p);
-                  }}
+                  onClick={() => { setHistorySelectedProduct(p); setHistorySearch(p.name); fetchProductHistory(p); }}
                   style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 14 }}
                   onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
                   onMouseLeave={e => e.currentTarget.style.background = '#fff'}
@@ -1027,144 +1050,181 @@ const RemainingProducts = () => {
           )}
         </div>
 
-        {/* Product info card */}
-        {historySelectedProduct && (
-          <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 24, flexWrap: 'wrap', border: '1px solid #dee2e6' }}>
-            <div>
-              <div style={{ fontSize: 12, color: '#888' }}>Product</div>
-              <div style={{ fontWeight: 700 }}>{historySelectedProduct.name}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: '#888' }}>Barcode</div>
-              <div style={{ fontWeight: 600, fontFamily: 'monospace' }}>{historySelectedProduct.id}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: '#888' }}>Type</div>
-              <div>{historySelectedProduct.productType || '—'}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: '#888' }}>Expected Remaining</div>
-              <div style={{ fontWeight: 700, fontSize: 20, color: getExpectedRemaining(historySelectedProduct) > 0 ? '#198754' : '#dc3545' }}>
-                {getExpectedRemaining(historySelectedProduct)}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Date filters */}
-        {historySelectedProduct && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', margin: '12px 0', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>From</label>
-              <input
-                type="date"
-                value={historyDateFrom}
-                onChange={e => setHistoryDateFrom(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>To</label>
-              <input
-                type="date"
-                value={historyDateTo}
-                onChange={e => setHistoryDateTo(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
-              />
-            </div>
-            {(historyDateFrom || historyDateTo) && (
-              <button
-                className="btn-secondary"
-                onClick={() => { setHistoryDateFrom(''); setHistoryDateTo(''); }}
-                style={{ fontSize: 13 }}
-              >
-                <IconX /> Clear Dates
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* History table */}
-        {historySelectedProduct && (
-          <div className="table-section">
-            <div className="table-card">
-              <div className="table-container">
-                {productHistoryLoading ? (
-                  <div style={{ padding: 32, textAlign: 'center', color: '#888' }}><IconRefresh /> Loading history...</div>
-                ) : displayedEntries.length === 0 ? (
-                  <div className="empty-table">
-                    <div className="empty-icon"><IconClipboard /></div>
-                    <p>No history found for this product.</p>
-                  </div>
-                ) : (
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th className="text-right">Qty Change</th>
-                        <th className="text-right">Stock After</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedEntries.map((entry, i) => (
-                        <tr key={i} style={entry.isCheckEvent ? { backgroundColor: '#e8f5e9' } : {}}>
-                          <td><span className="date-cell">{formatDate(entry.date)}</span></td>
-                          <td>
-                            {entry.isCheckEvent ? (
-                              <span style={{
-                                padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                backgroundColor: '#d4edda', color: '#155724',
-                              }}>
-                                <IconCheck /> Stock Check
-                              </span>
-                            ) : (
-                              <span style={{
-                                padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                backgroundColor: entry.type === 'Sale' ? '#fde8e8' : '#e8f5e9',
-                                color: entry.type === 'Sale' ? '#c0392b' : '#1a7a2e',
-                              }}>
-                                {entry.type === 'Sale' ? <><IconArrowUp /> Sale</> : <><IconArrowDown /> Stock In</>}
-                              </span>
-                            )}
-                          </td>
-                          <td className="text-right">
-                            {entry.isCheckEvent ? (
-                              <span style={{ color: '#155724', fontWeight: 700 }}>Set to {entry.setTo}</span>
-                            ) : (
-                              <span style={{ color: entry.qty < 0 ? '#dc3545' : '#198754', fontWeight: 700 }}>
-                                {entry.qty > 0 ? '+' : ''}{entry.qty}
-                              </span>
-                            )}
-                          </td>
-                          <td className="text-right">
-                            <span style={{ fontWeight: 600, color: entry.stockAfter <= 0 ? '#dc3545' : '#198754' }}>
-                              {entry.stockAfter}
-                            </span>
-                          </td>
-                          <td>
-                            {entry.paymentStatus && (
-                              <span className={`status-badge status-${entry.paymentStatus?.toLowerCase()}`}>
-                                {entry.paymentStatus}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {!historySelectedProduct && (
           <div className="empty-table">
             <div className="empty-icon"><IconSearch /></div>
-            <p>Search for a product above to view its history.</p>
+            <p>Search for a product above to view its full history.</p>
           </div>
+        )}
+
+        {historySelectedProduct && productHistoryLoading && (
+          <div style={{ padding: 32, textAlign: 'center', color: '#888' }}><IconRefresh /> Loading history...</div>
+        )}
+
+        {historySelectedProduct && !productHistoryLoading && (
+          <>
+            {/* Summary cards */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+              <div style={{ flex: 1, minWidth: 140, background: '#f8f9fa', borderRadius: 10, padding: '12px 16px', border: '1px solid #dee2e6' }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Product</div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{historySelectedProduct.name}</div>
+                <div style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>{historySelectedProduct.id}</div>
+              </div>
+              <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '2px solid #198754' }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Current Stock</div>
+                {qtyBadge(expectedNow, expectedNow > 0 ? '#198754' : '#dc3545')}
+              </div>
+              <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #dee2e6' }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Total Sold (all time)</div>
+                {qtyBadge(totalSoldAllTime, '#dc3545')}
+              </div>
+              <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #dee2e6' }}>
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Total Restocked (all time)</div>
+                {qtyBadge(totalRestockedAllTime, '#0d6efd')}
+              </div>
+            </div>
+
+            {/* Monthly summary table */}
+            {monthlySummary.length > 0 && (
+              <div className="table-section" style={{ marginBottom: 16 }}>
+                <div className="table-card">
+                  <div style={{ padding: '10px 16px 4px', fontWeight: 700, fontSize: 14 }}>Monthly Breakdown</div>
+                  <div className="table-container">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Month</th>
+                          <th className="text-right">Opening Stock</th>
+                          <th className="text-right">Restocked</th>
+                          <th className="text-right">Sold</th>
+                          <th className="text-right">Closing Stock</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthlySummary.map(m => (
+                          <tr key={m.key}>
+                            <td><span style={{ fontWeight: 600 }}>{m.label}</span></td>
+                            <td className="text-right">
+                              <span style={{ color: '#555' }}>{m.openingKnown ? m.openingStock : '—'}</span>
+                            </td>
+                            <td className="text-right">
+                              <span style={{ color: m.restocked > 0 ? '#0d6efd' : '#aaa', fontWeight: m.restocked > 0 ? 700 : 400 }}>
+                                {m.restocked > 0 ? `+${m.restocked}` : '—'}
+                              </span>
+                            </td>
+                            <td className="text-right">
+                              <span style={{ color: m.sold > 0 ? '#dc3545' : '#aaa', fontWeight: m.sold > 0 ? 700 : 400 }}>
+                                {m.sold > 0 ? m.sold : '—'}
+                              </span>
+                            </td>
+                            <td className="text-right">
+                              <span style={{ fontWeight: 700, color: m.closingKnown ? (m.closingStock > 0 ? '#198754' : '#dc3545') : '#aaa' }}>
+                                {m.closingKnown ? m.closingStock : '—'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Date filter for event timeline */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', margin: '12px 0', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Filter Events:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ fontSize: 13, whiteSpace: 'nowrap' }}>From</label>
+                <input type="date" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ fontSize: 13, whiteSpace: 'nowrap' }}>To</label>
+                <input type="date" value={historyDateTo} onChange={e => setHistoryDateTo(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }} />
+              </div>
+              {(historyDateFrom || historyDateTo) && (
+                <button className="btn-secondary" onClick={() => { setHistoryDateFrom(''); setHistoryDateTo(''); }} style={{ fontSize: 13 }}>
+                  <IconX /> Clear
+                </button>
+              )}
+              <span style={{ fontSize: 12, color: '#888', marginLeft: 'auto' }}>{displayedEntries.length} of {productHistoryEntries.length} events</span>
+            </div>
+
+            {/* Full event timeline */}
+            <div className="table-section">
+              <div className="table-card">
+                <div className="table-container">
+                  {displayedEntries.length === 0 ? (
+                    <div className="empty-table">
+                      <div className="empty-icon"><IconClipboard /></div>
+                      <p>No events found{(historyDateFrom || historyDateTo) ? ' for this date range' : ' for this product'}.</p>
+                    </div>
+                  ) : (
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Type</th>
+                          <th className="text-right">Qty Change</th>
+                          <th className="text-right">Stock After</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedEntries.map((entry, i) => (
+                          <tr key={i} style={entry.isCheckEvent ? { backgroundColor: '#e8f5e9' } : {}}>
+                            <td><span className="date-cell">{formatDate(entry.date)}</span></td>
+                            <td>
+                              {entry.isCheckEvent ? (
+                                <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#d4edda', color: '#155724' }}>
+                                  <IconCheck /> Stock Check
+                                </span>
+                              ) : entry.type === 'Sale' ? (
+                                <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fde8e8', color: '#c0392b' }}>
+                                  <IconArrowUp /> Sale
+                                </span>
+                              ) : (
+                                <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#e8f0fe', color: '#1a56db' }}>
+                                  <IconArrowDown /> Restock
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-right">
+                              {entry.isCheckEvent ? (
+                                <span style={{ color: '#155724', fontWeight: 700 }}>Set to {entry.setTo}</span>
+                              ) : (
+                                <span style={{ color: entry.qty < 0 ? '#dc3545' : '#0d6efd', fontWeight: 700 }}>
+                                  {entry.qty > 0 ? '+' : ''}{entry.qty}
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-right">
+                              {entry.balanceKnown ? (
+                                <span style={{ fontWeight: 600, color: entry.stockAfter <= 0 ? '#dc3545' : '#198754' }}>
+                                  {entry.stockAfter}
+                                </span>
+                              ) : (
+                                <span style={{ color: '#aaa' }}>—</span>
+                              )}
+                            </td>
+                            <td>
+                              {entry.paymentStatus && (
+                                <span className={`status-badge status-${entry.paymentStatus?.toLowerCase()}`}>
+                                  {entry.paymentStatus}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
     );

@@ -29,6 +29,7 @@ const RemainingProducts = () => {
   const [isRestoring, setIsRestoring]           = useState(false);
 
   const [countedQty, setCountedQty] = useState({});
+  const [checkDate, setCheckDate]   = useState({});
   const [soldTotals, setSoldTotals] = useState({});
 
   // Scanner
@@ -37,6 +38,7 @@ const RemainingProducts = () => {
   const [scanStatus, setScanStatus]       = useState('Align barcode within the frame.');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [scanQty, setScanQty]             = useState('');
+  const [scanDate, setScanDate]           = useState('');
   const scannerRef    = useRef(null);
   const codeReaderRef = useRef(null);
   const scanCoolRef   = useRef(null);
@@ -74,6 +76,14 @@ const RemainingProducts = () => {
     setTimeout(() => setErrorMessage(null), 3000);
   }, []);
 
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  const dateStrToISO = (dateStr) => {
+    // Parse as local date at noon to avoid timezone shifting the day
+    const d = new Date(`${dateStr}T12:00:00`);
+    return isNaN(d) ? new Date().toISOString() : d.toISOString();
+  };
+
   const formatDate = (iso) => {
     try {
       const d = new Date(iso);
@@ -85,11 +95,6 @@ const RemainingProducts = () => {
       const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
       return `${dd}-${mm}-${d.getFullYear()} ${hh}:${min} ${ampm}`;
     } catch { return 'N/A'; }
-  };
-
-  const currentMonthKey = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   };
 
   const toNumber = (value) => {
@@ -148,12 +153,15 @@ const RemainingProducts = () => {
 
   // ── History writer ─────────────────────────────────────────────────────────
 
-  const pushHistory = async (productId, productName, systemQty, counted, status) => {
+  const pushHistory = async (productId, productName, systemQty, counted, status, checkedAt) => {
     try {
-      await push(ref(database, `stockCheckHistory/${currentMonthKey()}`), {
+      const iso = checkedAt || new Date().toISOString();
+      const d   = new Date(iso);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      await push(ref(database, `stockCheckHistory/${monthKey}`), {
         productId, productName,
         systemQuantity: systemQty, countedQuantity: counted,
-        status, checkedAt: new Date().toISOString(),
+        status, checkedAt: iso,
       });
     } catch (err) { console.error('History write failed:', err); }
   };
@@ -439,7 +447,7 @@ const RemainingProducts = () => {
     setArchiveDetailView('products');
     setArchiveSearchTerm('');
   }, [activeTab, selectedArchiveId]);
-
+  
   // ── Scanner camera lifecycle ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -477,7 +485,7 @@ const RemainingProducts = () => {
     if (!scannerOpen) {
       if (scanCoolRef.current) { clearTimeout(scanCoolRef.current); scanCoolRef.current = null; }
       if (codeReaderRef.current) { codeReaderRef.current.reset(); codeReaderRef.current = null; }
-      setScannerPaused(false); setScannedProduct(null); setScanQty('');
+      setScannerPaused(false); setScannedProduct(null); setScanQty(''); setScanDate('');
       setScanStatus('Align barcode within the frame.');
     }
   }, [scannerOpen]);
@@ -490,16 +498,17 @@ const RemainingProducts = () => {
     try {
       const expectedQty = getExpectedRemaining(scannedProduct);
       await update(ref(database, `products/${scannedProduct.id}`), { quantity: counted });
+      const checkedAt = dateStrToISO(scanDate || todayStr());
       await update(ref(database, `stockChecks/${scannedProduct.id}`), {
         productName: scannedProduct.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'accurate', checkedAt: new Date().toISOString(),
+        countedQuantity: counted, status: 'accurate', checkedAt,
       });
-      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate');
+      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate', checkedAt);
       setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
       setSoldTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
       setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
       showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
-      setScannedProduct(null); setScanQty(''); setScannerPaused(false);
+      setScannedProduct(null); setScanQty(''); setScanDate(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
     } catch (err) { console.error(err); showError('Failed to update.'); }
   };
@@ -509,12 +518,13 @@ const RemainingProducts = () => {
     if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
     try {
       const expectedQty = getExpectedRemaining(scannedProduct);
+      const checkedAt = dateStrToISO(scanDate || todayStr());
       const checkData = {
         productName: scannedProduct.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'pending', checkedAt: new Date().toISOString(),
+        countedQuantity: counted, status: 'pending', checkedAt,
       };
       await update(ref(database, `stockChecks/${scannedProduct.id}`), checkData);
-      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'inaccurate');
+      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'inaccurate', checkedAt);
       setPendingChecks(prev => {
         const exists = prev.find(c => c.id === scannedProduct.id);
         if (exists) return prev.map(c => c.id === scannedProduct.id ? { id: scannedProduct.id, ...checkData } : c);
@@ -522,7 +532,7 @@ const RemainingProducts = () => {
       });
       setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
       showSuccess(`"${scannedProduct.name}" flagged for reconfirmation.`);
-      setScannedProduct(null); setScanQty(''); setScannerPaused(false);
+      setScannedProduct(null); setScanQty(''); setScanDate(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
     } catch (err) { console.error(err); showError('Failed to save.'); }
   };
@@ -604,15 +614,16 @@ const RemainingProducts = () => {
     try {
       const expectedQty = getExpectedRemaining(product);
       await update(ref(database, `products/${product.id}`), { quantity: counted });
+      const checkedAt = dateStrToISO(checkDate[product.id] || todayStr());
       await update(ref(database, `stockChecks/${product.id}`), {
         productName: product.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'accurate', checkedAt: new Date().toISOString(),
+        countedQuantity: counted, status: 'accurate', checkedAt,
       });
-      await pushHistory(product.id, product.name, expectedQty, counted, 'accurate');
+      await pushHistory(product.id, product.name, expectedQty, counted, 'accurate', checkedAt);
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: counted } : p));
-      // Reset soldTotals for this product to 0 — no sales have happened since this check yet
       setSoldTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      setCheckDate(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setAllCheckedProductIds(prev => new Set([...prev, product.id]));
       showSuccess(`✓ "${product.name}" updated to ${counted}.`);
     } catch (err) { console.error(err); showError('Failed to update stock.'); }
@@ -623,12 +634,13 @@ const RemainingProducts = () => {
     if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
     try {
       const expectedQty = getExpectedRemaining(product);
+      const checkedAt = dateStrToISO(checkDate[product.id] || todayStr());
       const checkData = {
         productName: product.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'pending', checkedAt: new Date().toISOString(),
+        countedQuantity: counted, status: 'pending', checkedAt,
       };
       await update(ref(database, `stockChecks/${product.id}`), checkData);
-      await pushHistory(product.id, product.name, expectedQty, counted, 'inaccurate');
+      await pushHistory(product.id, product.name, expectedQty, counted, 'inaccurate', checkedAt);
       setPendingChecks(prev => {
         const exists = prev.find(c => c.id === product.id);
         if (exists) return prev.map(c => c.id === product.id ? { id: product.id, ...checkData } : c);
@@ -636,6 +648,7 @@ const RemainingProducts = () => {
       });
       setAllCheckedProductIds(prev => new Set([...prev, product.id]));
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      setCheckDate(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       showSuccess(`"${product.name}" flagged for reconfirmation.`);
     } catch (err) { console.error(err); showError('Failed to save check.'); }
   };
@@ -709,6 +722,7 @@ const RemainingProducts = () => {
       setPendingChecks([]);
       setAllCheckedProductIds(new Set());
       setCountedQty({});
+      setCheckDate({});
       setSoldTotals({});
       setProductHistoryEntries([]);
       setHistorySelectedProduct(null);
@@ -860,6 +874,13 @@ const RemainingProducts = () => {
                           style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
                         />
                         {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
+                        <input
+                          type="date" value={checkDate[product.id] ?? ''}
+                          max={todayStr()}
+                          onChange={e => setCheckDate(prev => ({ ...prev, [product.id]: e.target.value }))}
+                          style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[product.id] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
+                          title="Select the date you physically checked this product"
+                        />
                       </td>
                       <td>
                         {isPending
@@ -868,8 +889,8 @@ const RemainingProducts = () => {
                       </td>
                       <td>
                         <div className="action-buttons">
-                          <button className="btn-small btn-success" onClick={() => handleAccurate(product)}><IconCheck /> Accurate</button>
-                          <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}><IconXCircle /> Inaccurate</button>
+                          <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /> Accurate</button>
+                          <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /> Inaccurate</button>
                           <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
                           <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
                         </div>
@@ -966,6 +987,13 @@ const RemainingProducts = () => {
                             style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
                           />
                           {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
+                          <input
+                            type="date" value={checkDate[product.id] ?? ''}
+                            max={todayStr()}
+                            onChange={e => setCheckDate(prev => ({ ...prev, [product.id]: e.target.value }))}
+                            style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[product.id] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
+                            title="Select the date you physically checked this product"
+                          />
                         </td>
                         <td>
                           {isPending
@@ -974,8 +1002,8 @@ const RemainingProducts = () => {
                         </td>
                         <td>
                           <div className="action-buttons">
-                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)}><IconCheck /> Accurate</button>
-                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}><IconXCircle /> Inaccurate</button>
+                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /> Accurate</button>
+                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /> Inaccurate</button>
                             <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
                             <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
                           </div>
@@ -1741,6 +1769,16 @@ const RemainingProducts = () => {
                   placeholder="Enter physical count..."
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' }}
                 />
+                <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 4, marginTop: 12 }}>
+                  Check Date <span style={{ fontWeight: 400, color: '#888', fontSize: 12 }}>(optional — defaults to today)</span>
+                </label>
+                <input
+                  type="date"
+                  value={scanDate}
+                  max={todayStr()}
+                  onChange={e => setScanDate(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
+                />
 
                 {hasEnteredQty && (
                   <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: qtyDiff === 0 ? '#198754' : '#dc3545' }}>
@@ -1751,8 +1789,8 @@ const RemainingProducts = () => {
                 )}
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                  <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate}><IconCheck /> Accurate</button>
-                  <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate}><IconXCircle /> Inaccurate</button>
+                  <button className="btn-small btn-success" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanAccurate} disabled={!scanDate}><IconCheck /> Accurate</button>
+                  <button className="btn-small btn-danger" style={{ flex: 1, padding: '8px 0' }} onClick={handleScanInaccurate} disabled={!scanDate}><IconXCircle /> Inaccurate</button>
                 </div>
 
                 <button

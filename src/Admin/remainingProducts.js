@@ -21,15 +21,15 @@ const RemainingProducts = () => {
   const [products, setProducts]                 = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [pendingChecks, setPendingChecks]       = useState([]);
+  const [allCheckedProductIds, setAllCheckedProductIds] = useState(new Set());
   const [searchTerm, setSearchTerm]             = useState('');
   const [activeTab, setActiveTab]               = useState('check');
   const [isLoading, setIsLoading]               = useState(false);
   const [isArchiving, setIsArchiving]           = useState(false);
   const [isRestoring, setIsRestoring]           = useState(false);
 
-  const [countedQty, setCountedQty]     = useState({});
-  const [reconfirmQty, setReconfirmQty] = useState({});
-  const [soldTotals, setSoldTotals]     = useState({});
+  const [countedQty, setCountedQty] = useState({});
+  const [soldTotals, setSoldTotals] = useState({});
 
   // Scanner
   const [scannerOpen, setScannerOpen]     = useState(false);
@@ -188,8 +188,10 @@ const RemainingProducts = () => {
           if (ts) lastCheckedAt[c.id] = new Date(ts);
         });
         setPendingChecks(allChecks.filter(c => c.status === 'pending'));
+        setAllCheckedProductIds(new Set(allChecks.map(c => c.id)));
       } else {
         setPendingChecks([]);
+        setAllCheckedProductIds(new Set());
       }
 
       // Build { [productKey]: qtySoldSinceLastCheck }.
@@ -495,6 +497,7 @@ const RemainingProducts = () => {
       await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate');
       setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
       setSoldTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
+      setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
       showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
       setScannedProduct(null); setScanQty(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
@@ -517,6 +520,7 @@ const RemainingProducts = () => {
         if (exists) return prev.map(c => c.id === scannedProduct.id ? { id: scannedProduct.id, ...checkData } : c);
         return [...prev, { id: scannedProduct.id, ...checkData }];
       });
+      setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
       showSuccess(`"${scannedProduct.name}" flagged for reconfirmation.`);
       setScannedProduct(null); setScanQty(''); setScannerPaused(false);
       setScanStatus('Align barcode within the frame.');
@@ -609,6 +613,7 @@ const RemainingProducts = () => {
       // Reset soldTotals for this product to 0 — no sales have happened since this check yet
       setSoldTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      setAllCheckedProductIds(prev => new Set([...prev, product.id]));
       showSuccess(`✓ "${product.name}" updated to ${counted}.`);
     } catch (err) { console.error(err); showError('Failed to update stock.'); }
   };
@@ -629,38 +634,10 @@ const RemainingProducts = () => {
         if (exists) return prev.map(c => c.id === product.id ? { id: product.id, ...checkData } : c);
         return [...prev, { id: product.id, ...checkData }];
       });
+      setAllCheckedProductIds(prev => new Set([...prev, product.id]));
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       showSuccess(`"${product.name}" flagged for reconfirmation.`);
     } catch (err) { console.error(err); showError('Failed to save check.'); }
-  };
-
-  // ── Actions: pending ───────────────────────────────────────────────────────
-
-  const handleReconfirmAccurate = async (check) => {
-    const newQty = parseFloat(reconfirmQty[check.id]);
-    const qty = isNaN(newQty) ? check.countedQuantity : newQty;
-    try {
-      await update(ref(database, `products/${check.id}`), { quantity: qty });
-      await update(ref(database, `stockChecks/${check.id}`), { countedQuantity: qty, status: 'accurate', reconfirmedAt: new Date().toISOString() });
-      await pushHistory(check.id, check.productName, check.systemQuantity, qty, 'accurate');
-      setProducts(prev => prev.map(p => p.id === check.id ? { ...p, quantity: qty } : p));
-      setPendingChecks(prev => prev.filter(c => c.id !== check.id));
-      setSoldTotals(prev => { const n = { ...prev }; delete n[check.id]; return n; });
-      setReconfirmQty(prev => { const n = { ...prev }; delete n[check.id]; return n; });
-      showSuccess(`✓ "${check.productName}" confirmed — updated to ${qty}.`);
-    } catch (err) { console.error(err); showError('Failed to reconfirm.'); }
-  };
-
-  const handleReconfirmInaccurate = async (check) => {
-    const newQty = parseFloat(reconfirmQty[check.id]);
-    const qty = isNaN(newQty) ? check.countedQuantity : newQty;
-    try {
-      await update(ref(database, `stockChecks/${check.id}`), { countedQuantity: qty, status: 'pending', checkedAt: new Date().toISOString() });
-      await pushHistory(check.id, check.productName, check.systemQuantity, qty, 'inaccurate');
-      setPendingChecks(prev => prev.map(c => c.id === check.id ? { ...c, countedQuantity: qty, checkedAt: new Date().toISOString() } : c));
-      setReconfirmQty(prev => { const n = { ...prev }; delete n[check.id]; return n; });
-      showSuccess(`"${check.productName}" remains flagged for review.`);
-    } catch (err) { console.error(err); showError('Failed to update.'); }
   };
 
   // ── Actions: archive all stock and reset ──────────────────────────────────
@@ -730,8 +707,8 @@ const RemainingProducts = () => {
       setProducts([]);
       setFilteredProducts([]);
       setPendingChecks([]);
+      setAllCheckedProductIds(new Set());
       setCountedQty({});
-      setReconfirmQty({});
       setSoldTotals({});
       setProductHistoryEntries([]);
       setHistorySelectedProduct(null);
@@ -779,7 +756,6 @@ const RemainingProducts = () => {
 
       await fetchData();
       setCountedQty({});
-      setReconfirmQty({});
       if (activeTab === 'archives') fetchArchives();
 
       showSuccess(`Archive restored successfully (${objCount(selectedArchive.products)} products).`);
@@ -917,76 +893,110 @@ const RemainingProducts = () => {
 
   // ── Render: Pending tab ────────────────────────────────────────────────────
 
-  const renderPendingTab = () => (
-    <div>
-      <div className="header-section">
-        <div className="header-left">
-          <h2 className="section-title">Pending Reconfirmations</h2>
-          <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404' }}>{pendingChecks.length} Flagged</div>
-        </div>
-        <div className="header-right">
-          <button onClick={fetchData} className="btn-secondary" disabled={isLoading}><IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}</button>
-        </div>
-      </div>
-      <div className="table-section">
-        <div className="table-card">
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Barcode</th>
-                  <th>Product Name</th>
-                  <th className="text-right">System Qty</th>
-                  <th className="text-right">Last Count</th>
-                  <th className="text-right">Difference</th>
-                  <th>Flagged At</th>
-                  <th className="text-right">Re-count Qty</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingChecks.map(check => {
-                  const diff       = toNumber(check.countedQuantity) - toNumber(check.systemQuantity);
-                  const reInputVal = reconfirmQty[check.id] ?? '';
-                  return (
-                    <tr key={check.id} style={{ backgroundColor: '#fffbeb' }}>
-                      <td><span className="barcode-cell">{check.id}</span></td>
-                      <td><span className="product-name-cell">{check.productName}</span></td>
-                      <td className="text-right"><span className="quantity-cell">{check.systemQuantity}</span></td>
-                      <td className="text-right"><span className="quantity-cell">{check.countedQuantity}</span></td>
-                      <td className="text-right">
-                        <span style={{ color: diff < 0 ? '#dc3545' : diff > 0 ? '#198754' : '#6c757d', fontWeight: 600 }}>{diff > 0 ? '+' : ''}{diff}</span>
-                      </td>
-                      <td><span className="date-cell">{formatDate(check.checkedAt)}</span></td>
-                      <td className="text-right">
-                        <input
-                          type="number" min="0" placeholder={String(check.countedQuantity)} value={reInputVal}
-                          onChange={e => setReconfirmQty(prev => ({ ...prev, [check.id]: e.target.value }))}
-                          className="edit-input" style={{ width: 90 }}
-                        />
-                      </td>
-                      <td>
-                        <div className="action-buttons">
-                          <button className="btn-small btn-success" onClick={() => handleReconfirmAccurate(check)}><IconCheck /> Confirm</button>
-                          <button className="btn-small btn-warning" onClick={() => handleReconfirmInaccurate(check)}><IconRefresh /> Still Unsure</button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+  const renderPendingTab = () => {
+    const pendingProductIds = new Set(pendingChecks.map(c => c.id));
+    const pendingProducts = products.filter(
+      p => pendingProductIds.has(p.id) || !allCheckedProductIds.has(p.id)
+    );
+    const inaccurateCount = pendingChecks.length;
+    const uncheckedCount  = products.filter(p => !allCheckedProductIds.has(p.id)).length;
+
+    return (
+      <div>
+        <div className="header-section">
+          <div className="header-left">
+            <h2 className="section-title">Pending Review</h2>
+            <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404' }}>{pendingProducts.length} Items</div>
+            {inaccurateCount > 0 && (
+              <div className="stats-badge" style={{ backgroundColor: '#fde8e8', color: '#c0392b', marginLeft: 8 }}>{inaccurateCount} Inaccurate</div>
+            )}
+            {uncheckedCount > 0 && (
+              <div className="stats-badge" style={{ backgroundColor: '#e8f0fe', color: '#1a56db', marginLeft: 8 }}>{uncheckedCount} Not Checked</div>
+            )}
           </div>
-          {pendingChecks.length === 0 && (
-            <div className="empty-table">
-              <div className="empty-icon"><IconCheckCircle /></div>
-              <p>No pending reconfirmations — all checks cleared!</p>
+          <div className="header-right">
+            <button onClick={fetchData} className="btn-secondary" disabled={isLoading}><IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}</button>
+          </div>
+        </div>
+
+        <div className="table-section">
+          <div className="table-card">
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Barcode</th>
+                    <th>Product Name</th>
+                    <th>Type</th>
+                    <th className="text-right">Current Stock</th>
+                    <th className="text-right" title="Sold since last stock check">Sold Since Check</th>
+                    <th className="text-right">Expected Remaining</th>
+                    <th className="text-right">Counted Qty</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingProducts.map(product => {
+                    const isPending         = pendingProductIds.has(product.id);
+                    const inputVal          = countedQty[product.id] ?? '';
+                    const totalSold         = toNumber(soldTotals[product.id]);
+                    const currentStock      = toNumber(product.quantity);
+                    const expectedRemaining = getExpectedRemaining(product, currentStock);
+                    const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
+                    return (
+                      <tr key={product.id} style={{ backgroundColor: isPending ? '#fffbeb' : '#f0f4ff' }}>
+                        <td><span className="barcode-cell">{product.id}</span></td>
+                        <td><span className="product-name-cell">{product.name}</span></td>
+                        <td><span className="type-cell">{product.productType}</span></td>
+                        <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
+                        <td className="text-right">
+                          <span className="quantity-cell" style={{ color: totalSold > 0 ? '#dc3545' : '#6c757d' }}>{totalSold}</span>
+                        </td>
+                        <td className="text-right">
+                          <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
+                            {expectedRemaining}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <input
+                            type="number" min="0" placeholder="Enter count" value={inputVal}
+                            onChange={e => setCountedQty(prev => ({ ...prev, [product.id]: e.target.value }))}
+                            className="edit-input"
+                            style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
+                          />
+                          {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
+                        </td>
+                        <td>
+                          {isPending
+                            ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconAlertTriangle /> Inaccurate</span>
+                            : <span style={{ backgroundColor: '#e8f0fe', color: '#1a56db', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconPackage /> Not Checked</span>}
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)}><IconCheck /> Accurate</button>
+                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)}><IconXCircle /> Inaccurate</button>
+                            <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
+                            <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
+            {pendingProducts.length === 0 && !isLoading && (
+              <div className="empty-table">
+                <div className="empty-icon"><IconCheckCircle /></div>
+                <p>All products checked and confirmed!</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // ── Render: History tab ────────────────────────────────────────────────────
 

@@ -660,6 +660,11 @@ const Transactions = () => {
           } else {
             transaction.productName = fallbackName;
             transaction.barcode = asCleanString(transaction.barcode || transaction.productId) || 'N/A';
+            // Product not in productsData — keep the raw barcode as productKey so handleConfirm
+            // can still attempt a direct Firebase lookup (guarded by productSnapshot.exists()).
+            if (candidateKeys.length) {
+              transaction.productKey = candidateKeys[0];
+            }
           }
 
           if (!transaction.barcode) {
@@ -758,12 +763,18 @@ const Transactions = () => {
       const updates = {};
       updates[`transactions/${id}/paymentStatus`] = 'Confirmed';
 
-      if (productKey) {
-        const productSnapshot = await get(ref(database, `products/${productKey}`));
+      // Resolve the best available key: prefer the matched productKey, fall back to
+      // the transaction's own productId/barcode so we always attempt a Firebase lookup.
+      const tx = transactions.find(t => t.id === id);
+      const rawBarcode = asCleanString(tx?.productId || tx?.barcode);
+      const resolvedKey = productKey || (rawBarcode !== 'N/A' ? rawBarcode : '');
+
+      if (resolvedKey) {
+        const productSnapshot = await get(ref(database, `products/${resolvedKey}`));
         if (productSnapshot.exists()) {
           const currentQuantity = parseFloat(productSnapshot.val().quantity) || 0;
           const confirmedQuantity = parseFloat(transactionQuantity) || 0;
-          updates[`products/${productKey}/quantity`] = currentQuantity + confirmedQuantity;
+          updates[`products/${resolvedKey}/quantity`] = currentQuantity + confirmedQuantity;
         }
       }
 
@@ -786,14 +797,18 @@ const Transactions = () => {
       const updates = {};
       updates[`transactions/${id}/paymentStatus`] = 'Pending';
 
-      if (productKey) {
-        const productSnapshot = await get(ref(database, `products/${productKey}`));
+      const tx = transactions.find(t => t.id === id);
+      const rawBarcode = asCleanString(tx?.productId || tx?.barcode);
+      const resolvedKey = productKey || (rawBarcode !== 'N/A' ? rawBarcode : '');
+
+      if (resolvedKey) {
+        const productSnapshot = await get(ref(database, `products/${resolvedKey}`));
         if (productSnapshot.exists()) {
           const currentQuantity = parseFloat(productSnapshot.val().quantity) || 0;
           const unconfirmedQuantity = parseFloat(transactionQuantity) || 0;
           const newQuantity = currentQuantity - unconfirmedQuantity;
           if (newQuantity >= 0) {
-            updates[`products/${productKey}/quantity`] = newQuantity;
+            updates[`products/${resolvedKey}/quantity`] = newQuantity;
           } else {
             throw new Error('Quantity cannot be negative');
           }

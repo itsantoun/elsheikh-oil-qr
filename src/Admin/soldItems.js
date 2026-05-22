@@ -6,6 +6,11 @@ import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
 import { IconRefresh, IconX } from '../utils/icons';
 
+const isMaghsalItem = (item, productsList) => {
+  const product = productsList.find(p => p.id === item.barcode || p.id === item.productId);
+  return String(product?.productType || '').toLowerCase() === 'maghsal';
+};
+
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
   const nameB = (b.name || '').trim().toLowerCase();
@@ -59,6 +64,7 @@ const SoldItems = () => {
   const [missingItemRemark, setMissingItemRemark] = useState('');
   const [isSavingMissingItem, setIsSavingMissingItem] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showMaghsal, setShowMaghsal] = useState(false);
   
   // Format date to DD-MM-YYYY
   const formatDate = (dateString) => {
@@ -278,7 +284,10 @@ const SoldItems = () => {
 
   // Apply filters
   useEffect(() => {
-    let filtered = [...soldItems];
+    // Separate Maghsal from main items first — same split as Stock Checker.
+    let filtered = soldItems.filter(item =>
+      showMaghsal ? isMaghsalItem(item, products) : !isMaghsalItem(item, products)
+    );
 
     if (customerFilter) {
       filtered = filtered.filter((item) =>
@@ -343,7 +352,9 @@ const SoldItems = () => {
     paymentStatusFilter,
     checkFilter,
     checkedItems,
-    soldItems
+    soldItems,
+    showMaghsal,
+    products,
   ]);
 
   // Clear all filters
@@ -800,7 +811,27 @@ const SoldItems = () => {
     <div className="sold-items-container">
       {/* Header */}
       <div className="header-section">
-        <h1 className="page-title">Sold Items</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <h1 className="page-title" style={{ margin: 0 }}>
+            Sold Items{showMaghsal ? ' — Maghsal' : ''}
+          </h1>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setShowMaghsal(false)}
+              className={`tab-button${!showMaghsal ? ' active' : ''}`}
+              style={{ padding: '4px 14px', fontSize: 13 }}
+            >
+              Oil / Filter
+            </button>
+            <button
+              onClick={() => setShowMaghsal(true)}
+              className={`tab-button${showMaghsal ? ' active' : ''}`}
+              style={{ padding: '4px 14px', fontSize: 13 }}
+            >
+              Maghsal
+            </button>
+          </div>
+        </div>
         {errorMessage && <div className="error-message">{errorMessage}</div>}
       </div>
 
@@ -1298,11 +1329,16 @@ const SoldItems = () => {
                     disabled={isSavingMissingItem}
                   >
                     <option value="">Select a Product</option>
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name} - {product.barcode}
-                      </option>
-                    ))}
+                    {products
+                      .filter(p => showMaghsal
+                        ? String(p.productType || '').toLowerCase() === 'maghsal'
+                        : String(p.productType || '').toLowerCase() !== 'maghsal'
+                      )
+                      .map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} - {product.barcode}
+                        </option>
+                      ))}
                   </select>
                 </div>
 

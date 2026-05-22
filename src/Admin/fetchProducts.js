@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ref, get, set, remove } from "firebase/database";
+import { ref, get, set, remove, push } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import * as XLSX from 'xlsx';
@@ -34,6 +34,20 @@ const FetchProducts = () => {
   };
 
   const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
+
+  const writeProductEvent = async (productId, productName, quantity, status) => {
+    try {
+      const now = new Date();
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      await push(ref(database, `stockCheckHistory/${monthKey}`), {
+        productId, productName,
+        systemQuantity: quantity,
+        countedQuantity: quantity,
+        status,
+        checkedAt: now.toISOString(),
+      });
+    } catch (err) { console.error('History write failed:', err); }
+  };
 
   const getProfitMetrics = (product, overrides = {}) => {
     const merged = { ...product, ...overrides };
@@ -255,13 +269,16 @@ const FetchProducts = () => {
     if (!confirmed) return;
 
     try {
+      const heldDate = new Date().toISOString();
+      await writeProductEvent(product.id, product.name, toNumber(product.quantity), 'held');
+
       const cleanedProduct = {
         name: product.name || '',
         productType: product.productType || '',
         itemCost: product.itemCost || 0,
         purchasingPrice: product.purchasingPrice || 0,
         quantity: product.quantity || 0,
-        heldDate: new Date().toISOString()
+        heldDate,
       };
 
       const heldProductRef = ref(database, `heldProducts/${product.id}`);
@@ -291,6 +308,8 @@ const FetchProducts = () => {
     if (!confirmed) return;
 
     try {
+      await writeProductEvent(product.id, product.name, toNumber(product.quantity), 'restored');
+
       const cleanedProduct = {
         name: product.name || '',
         productType: product.productType || '',

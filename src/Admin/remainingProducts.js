@@ -60,6 +60,7 @@ const RemainingProducts = () => {
   const [archiveSearchTerm, setArchiveSearchTerm] = useState('');
 
   const [showZeroStock, setShowZeroStock] = useState(false);
+  const [maghsalSearchTerm, setMaghsalSearchTerm] = useState('');
 
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage]     = useState(null);
@@ -104,6 +105,11 @@ const RemainingProducts = () => {
 
   const isStockLikeStatus = useCallback(
     (status) => String(status || '').toLowerCase().startsWith('stock'),
+    []
+  );
+
+  const isMaghsal = useCallback(
+    (product) => String(product?.productType || '').toLowerCase() === 'maghsal',
     []
   );
 
@@ -255,15 +261,16 @@ const RemainingProducts = () => {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
+    // Maghsal products are shown in their own dedicated tab, not in Check Stock / Pending.
     const baseProducts = showZeroStock
-      ? products.filter(p => getExpectedRemaining(p) <= 0)
-      : products.filter(hasPositiveExpectedStock);
+      ? products.filter(p => !isMaghsal(p) && getExpectedRemaining(p) <= 0)
+      : products.filter(p => !isMaghsal(p) && hasPositiveExpectedStock(p));
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
-  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock]);
+  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, isMaghsal]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -309,20 +316,60 @@ const RemainingProducts = () => {
         });
       }
 
-      // Accurate stock checks from history — used as balance anchors
+      // History events: stock checks, inaccurate checks, held, restored, deleted
       if (historySnap.exists()) {
         Object.values(historySnap.val()).forEach(monthData => {
           if (!monthData || typeof monthData !== 'object') return;
           Object.values(monthData).forEach(entry => {
-            if (entry.productId !== product.id || entry.status !== 'accurate') return;
-            events.push({
-              date: entry.checkedAt,
-              type: 'Stock Check',
-              qty: null,
-              setTo: toNumber(entry.countedQuantity),
-              paymentStatus: null,
-              isCheckEvent: true,
-            });
+            if (entry.productId !== product.id) return;
+            if (entry.status === 'accurate') {
+              events.push({
+                date: entry.checkedAt,
+                type: 'Stock Check',
+                qty: null,
+                setTo: toNumber(entry.countedQuantity),
+                paymentStatus: null,
+                isCheckEvent: true,
+                isInfoEvent: false,
+              });
+            } else if (entry.status === 'inaccurate') {
+              events.push({
+                date: entry.checkedAt,
+                type: 'Inaccurate Check',
+                qty: 0,
+                note: `System: ${entry.systemQuantity ?? '?'}, Counted: ${entry.countedQuantity ?? '?'}`,
+                paymentStatus: null,
+                isCheckEvent: false,
+                isInfoEvent: true,
+              });
+            } else if (entry.status === 'held') {
+              events.push({
+                date: entry.checkedAt,
+                type: 'Held',
+                qty: 0,
+                paymentStatus: null,
+                isCheckEvent: false,
+                isInfoEvent: true,
+              });
+            } else if (entry.status === 'restored') {
+              events.push({
+                date: entry.checkedAt,
+                type: 'Restored',
+                qty: 0,
+                paymentStatus: null,
+                isCheckEvent: false,
+                isInfoEvent: true,
+              });
+            } else if (entry.status === 'deleted') {
+              events.push({
+                date: entry.checkedAt,
+                type: 'Deleted',
+                qty: 0,
+                paymentStatus: null,
+                isCheckEvent: false,
+                isInfoEvent: true,
+              });
+            }
           });
         });
       }
@@ -350,8 +397,8 @@ const RemainingProducts = () => {
         if (event.isCheckEvent) {
           balance = event.setTo;
           balanceKnown = true;
-        } else {
-          balance += event.qty;
+        } else if (!event.isInfoEvent) {
+          balance += (event.qty || 0);
         }
         return { ...event, balanceBefore, stockAfter: balance, balanceKnown };
       });
@@ -370,8 +417,8 @@ const RemainingProducts = () => {
           monthMap[key].closingStock = event.stockAfter;
           monthMap[key].closingKnown = event.balanceKnown;
         }
-        if (event.type === 'Sale')    monthMap[key].sold      += Math.abs(event.qty);
-        if (event.type === 'Restock') monthMap[key].restocked += event.qty;
+        if (event.type === 'Sale')    monthMap[key].sold      += Math.abs(event.qty || 0);
+        if (event.type === 'Restock') monthMap[key].restocked += (event.qty || 0);
       });
 
       setMonthlySummary(Object.values(monthMap).sort((a, b) => b.key.localeCompare(a.key)));
@@ -448,8 +495,7 @@ const RemainingProducts = () => {
     setArchiveSearchTerm('');
   }, [activeTab, selectedArchiveId]);
   
-  // ── Scanner camera lifecycle ───────────────────────────────────────────────
-
+  
   useEffect(() => {
     if (!scannerOpen || scannerPaused) return;
 
@@ -542,6 +588,9 @@ const RemainingProducts = () => {
   const handleDeleteProduct = async (product) => {
     if (!window.confirm(`Delete "${product.name}" permanently? This will remove the product plus all its transactions, sold records, and stock history.`)) return;
     try {
+      // Write deletion event first so the audit trail survives the history cleanup below.
+      await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'deleted', new Date().toISOString());
+
       const [soldSnap, txSnap, historySnap] = await Promise.all([
         get(ref(database, 'SoldItems')),
         get(ref(database, 'transactions')),
@@ -572,7 +621,8 @@ const RemainingProducts = () => {
         Object.entries(historySnap.val()).forEach(([month, monthData]) => {
           if (!monthData || typeof monthData !== 'object') return;
           Object.entries(monthData).forEach(([key, entry]) => {
-            if (entry.productId === product.id) {
+            // Keep 'deleted' events so the audit trail is preserved even after deletion.
+            if (entry.productId === product.id && entry.status !== 'deleted') {
               updates[`stockCheckHistory/${month}/${key}`] = null;
             }
           });
@@ -592,13 +642,15 @@ const RemainingProducts = () => {
   const handleHoldProduct = async (product) => {
     if (!window.confirm(`Hold "${product.name}"? It will move to the Held section in Product Management.`)) return;
     try {
+      const heldAt = new Date().toISOString();
+      await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'held', heldAt);
       await set(ref(database, `heldProducts/${product.id}`), {
         name: product.name || '',
         productType: product.productType || '',
         itemCost: product.itemCost || 0,
         purchasingPrice: product.purchasingPrice || 0,
         quantity: product.quantity || 0,
-        heldDate: new Date().toISOString(),
+        heldDate: heldAt,
       });
       await remove(ref(database, `products/${product.id}`));
       setProducts(prev => prev.filter(p => p.id !== product.id));
@@ -1211,27 +1263,42 @@ const RemainingProducts = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {displayedEntries.map((entry, i) => (
-                          <tr key={i} style={entry.isCheckEvent ? { backgroundColor: '#e8f5e9' } : {}}>
+                        {displayedEntries.map((entry, i) => {
+                          const rowBg = entry.isCheckEvent
+                            ? '#e8f5e9'
+                            : entry.type === 'Held' ? '#fff8e1'
+                            : entry.type === 'Deleted' ? '#fdecea'
+                            : entry.type === 'Restored' ? '#e8f0fe'
+                            : entry.type === 'Inaccurate Check' ? '#fff3cd'
+                            : undefined;
+
+                          const typeBadge = () => {
+                            if (entry.isCheckEvent)
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#d4edda', color: '#155724' }}><IconCheck /> Stock Check</span>;
+                            if (entry.type === 'Sale')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fde8e8', color: '#c0392b' }}><IconArrowUp /> Sale</span>;
+                            if (entry.type === 'Restock')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#e8f0fe', color: '#1a56db' }}><IconArrowDown /> Restock</span>;
+                            if (entry.type === 'Held')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fff8e1', color: '#b45309' }}><IconPause /> Held</span>;
+                            if (entry.type === 'Restored')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#e8f0fe', color: '#1a56db' }}><IconCornerUpLeft /> Restored</span>;
+                            if (entry.type === 'Deleted')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fdecea', color: '#c0392b' }}><IconX /> Deleted</span>;
+                            if (entry.type === 'Inaccurate Check')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fff3cd', color: '#856404' }}><IconAlertTriangle /> Inaccurate Check</span>;
+                            return null;
+                          };
+
+                          return (
+                          <tr key={i} style={{ backgroundColor: rowBg }}>
                             <td><span className="date-cell">{formatDate(entry.date)}</span></td>
-                            <td>
-                              {entry.isCheckEvent ? (
-                                <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#d4edda', color: '#155724' }}>
-                                  <IconCheck /> Stock Check
-                                </span>
-                              ) : entry.type === 'Sale' ? (
-                                <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fde8e8', color: '#c0392b' }}>
-                                  <IconArrowUp /> Sale
-                                </span>
-                              ) : (
-                                <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#e8f0fe', color: '#1a56db' }}>
-                                  <IconArrowDown /> Restock
-                                </span>
-                              )}
-                            </td>
+                            <td>{typeBadge()}</td>
                             <td className="text-right">
                               {entry.isCheckEvent ? (
                                 <span style={{ color: '#155724', fontWeight: 700 }}>Set to {entry.setTo}</span>
+                              ) : entry.isInfoEvent ? (
+                                <span style={{ color: '#888', fontSize: 12 }}>{entry.note || '—'}</span>
                               ) : (
                                 <span style={{ color: entry.qty < 0 ? '#dc3545' : '#0d6efd', fontWeight: 700 }}>
                                   {entry.qty > 0 ? '+' : ''}{entry.qty}
@@ -1239,7 +1306,9 @@ const RemainingProducts = () => {
                               )}
                             </td>
                             <td className="text-right">
-                              {entry.balanceKnown ? (
+                              {entry.isInfoEvent ? (
+                                <span style={{ color: '#aaa' }}>—</span>
+                              ) : entry.balanceKnown ? (
                                 <span style={{ fontWeight: 600, color: entry.stockAfter <= 0 ? '#dc3545' : '#198754' }}>
                                   {entry.stockAfter}
                                 </span>
@@ -1255,7 +1324,8 @@ const RemainingProducts = () => {
                               )}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}
@@ -1709,6 +1779,132 @@ const RemainingProducts = () => {
     );
   };
 
+  // ── Render: Maghsal tab ───────────────────────────────────────────────────
+
+  const renderMaghsalTab = () => {
+    const allMaghsal = products.filter(isMaghsal);
+    const t = maghsalSearchTerm.trim().toLowerCase();
+    const displayed = t
+      ? allMaghsal.filter(p =>
+          p.name?.toLowerCase().includes(t) ||
+          p.id?.toLowerCase().includes(t)
+        )
+      : allMaghsal;
+
+    const maghsalPendingIds = new Set(pendingChecks.filter(c => allMaghsal.some(p => p.id === c.id)).map(c => c.id));
+
+    return (
+      <div>
+        <div className="header-section">
+          <div className="header-left">
+            <h2 className="section-title">Maghsal Stock</h2>
+            <div className="stats-badge">{allMaghsal.length} Products</div>
+            {maghsalPendingIds.size > 0 && (
+              <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404', marginLeft: 8 }}>
+                {maghsalPendingIds.size} Pending
+              </div>
+            )}
+          </div>
+          <div className="header-right">
+            <button onClick={fetchData} className={`btn-secondary ${isLoading ? 'refreshing' : ''}`} disabled={isLoading}>
+              <IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ margin: '12px 0' }}>
+          <input
+            type="text"
+            placeholder="Search Maghsal products..."
+            value={maghsalSearchTerm}
+            onChange={e => setMaghsalSearchTerm(e.target.value)}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <div className="table-section">
+          <div className="table-card">
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Barcode</th>
+                    <th>Product Name</th>
+                    <th className="text-right">Current Stock</th>
+                    <th className="text-right" title="Sold since last stock check">Sold Since Check</th>
+                    <th className="text-right">Expected Remaining</th>
+                    <th className="text-right">Counted Qty</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayed.map(product => {
+                    const isPending         = maghsalPendingIds.has(product.id);
+                    const inputVal          = countedQty[product.id] ?? '';
+                    const totalSold         = toNumber(soldTotals[product.id]);
+                    const currentStock      = toNumber(product.quantity);
+                    const expectedRemaining = getExpectedRemaining(product, currentStock);
+                    const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
+                    return (
+                      <tr key={product.id} style={isPending ? { backgroundColor: '#fffbeb' } : {}}>
+                        <td><span className="barcode-cell">{product.id}</span></td>
+                        <td><span className="product-name-cell">{product.name}</span></td>
+                        <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
+                        <td className="text-right">
+                          <span className="quantity-cell" style={{ color: totalSold > 0 ? '#dc3545' : '#6c757d' }}>{totalSold}</span>
+                        </td>
+                        <td className="text-right">
+                          <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
+                            {expectedRemaining}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <input
+                            type="number" min="0" placeholder="Enter count" value={inputVal}
+                            onChange={e => setCountedQty(prev => ({ ...prev, [product.id]: e.target.value }))}
+                            className="edit-input"
+                            style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
+                          />
+                          {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
+                          <input
+                            type="date" value={checkDate[product.id] ?? ''}
+                            max={todayStr()}
+                            onChange={e => setCheckDate(prev => ({ ...prev, [product.id]: e.target.value }))}
+                            style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[product.id] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
+                          />
+                        </td>
+                        <td>
+                          {isPending
+                            ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconAlertTriangle /> Pending</span>
+                            : <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconCheck /> OK</span>}
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /> Accurate</button>
+                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /> Inaccurate</button>
+                            <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
+                            <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {displayed.length === 0 && !isLoading && (
+              <div className="empty-table">
+                <div className="empty-icon"><IconPackage /></div>
+                <p>{allMaghsal.length === 0 ? 'No Maghsal products found.' : `No products match "${maghsalSearchTerm}".`}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ── Render: Scanner modal ──────────────────────────────────────────────────
 
   const renderScannerModal = () => {
@@ -1830,6 +2026,11 @@ const RemainingProducts = () => {
         <button onClick={() => setActiveTab('pending')} className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}>
           <span className="tab-icon"><IconAlertTriangle /></span><span className="tab-label">Pending</span>
         </button>
+        <button onClick={() => setActiveTab('maghsal')} className={`tab-button ${activeTab === 'maghsal' ? 'active' : ''}`}
+          style={{ borderColor: activeTab === 'maghsal' ? '#0d6efd' : undefined }}>
+          <span className="tab-icon"><IconPackage /></span>
+          <span className="tab-label">Maghsal ({products.filter(isMaghsal).length})</span>
+        </button>
         <button onClick={() => setActiveTab('history')} className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}>
           <span className="tab-icon"><IconCalendar /></span><span className="tab-label">History</span>
         </button>
@@ -1842,9 +2043,10 @@ const RemainingProducts = () => {
       </div>
 
       <div className="tab-content">
-        {activeTab === 'check'   && renderCheckTab()}
-        {activeTab === 'pending' && renderPendingTab()}
-        {activeTab === 'history' && renderHistoryTab()}
+        {activeTab === 'check'    && renderCheckTab()}
+        {activeTab === 'pending'  && renderPendingTab()}
+        {activeTab === 'maghsal'  && renderMaghsalTab()}
+        {activeTab === 'history'  && renderHistoryTab()}
         {activeTab === 'archives' && renderArchivesTab()}
       </div>
 

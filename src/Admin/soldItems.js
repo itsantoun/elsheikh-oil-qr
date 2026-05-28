@@ -64,6 +64,7 @@ const SoldItems = () => {
   const [missingItemRemark, setMissingItemRemark] = useState('');
   const [isSavingMissingItem, setIsSavingMissingItem] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [showMaghsal, setShowMaghsal] = useState(false);
   
   // Format date to DD-MM-YYYY
@@ -585,6 +586,52 @@ const SoldItems = () => {
     }
   };
 
+  // Export to CSV (client view)
+  const exportToCSVClient = () => {
+    if (filteredItems.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+
+    const headers = ["Date", "Client", "Status", "Product", "Price"];
+
+    let paidTotal = 0;
+    let unpaidTotal = 0;
+    const rows = filteredItems.map((item) => {
+      const metrics = getItemProfitMetrics(item);
+      if (item.paymentStatus === 'Paid') paidTotal += metrics.unitSellPrice;
+      else if (item.paymentStatus === 'Unpaid') unpaidTotal += metrics.unitSellPrice;
+      return [
+        formatDateTimeForCSV(item.dateScanned),
+        item.customerName || "N/A",
+        item.paymentStatus || "N/A",
+        item.name || "N/A",
+        metrics.unitSellPrice.toFixed(2),
+      ];
+    });
+
+    const summaryRows = [
+      ["", "", "", "TOTAL PAID", paidTotal.toFixed(2)],
+      ["", "", "", "TOTAL UNPAID", unpaidTotal.toFixed(2)],
+      ["", "", "", "GRAND TOTAL", (paidTotal + unpaidTotal).toFixed(2)],
+    ];
+
+    const csvContent =
+      "﻿" +
+      [headers, ...rows, [], ...summaryRows]
+        .map((row) => row.map((cell) => `"${cell}"`).join(","))
+        .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `client_export_${formatDate(new Date())}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Export to CSV
   const exportToCSV = () => {
     if (filteredItems.length === 0) {
@@ -944,9 +991,31 @@ const SoldItems = () => {
           <button className="btn-secondary" onClick={clearAllFilters}>
             Clear Filters
           </button>
-          <button className="btn-primary" onClick={exportToCSV}>
-            Export CSV
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="btn-primary" onClick={() => setShowExportDropdown(v => !v)}>
+              Export ▾
+            </button>
+            {showExportDropdown && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, zIndex: 100,
+                background: '#fff', border: '1px solid #ccc', borderRadius: 6,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)', minWidth: 160,
+              }}>
+                <button
+                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { exportToCSV(); setShowExportDropdown(false); }}
+                >
+                  Full Export
+                </button>
+                <button
+                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { exportToCSVClient(); setShowExportDropdown(false); }}
+                >
+                  Export as Client
+                </button>
+              </div>
+            )}
+          </div>
           <button 
             className="btn-secondary" 
             onClick={openMissingItemsModal}

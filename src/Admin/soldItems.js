@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
 import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
@@ -586,14 +588,12 @@ const SoldItems = () => {
     }
   };
 
-  // Export to CSV (client view)
+  // Export to PDF (client view)
   const exportToCSVClient = () => {
     if (filteredItems.length === 0) {
       alert("No data to export.");
       return;
     }
-
-    const headers = ["Date", "Client", "Status", "Product", "Price"];
 
     let paidTotal = 0;
     let unpaidTotal = 0;
@@ -606,30 +606,34 @@ const SoldItems = () => {
         item.customerName || "N/A",
         item.paymentStatus || "N/A",
         item.name || "N/A",
-        metrics.unitSellPrice.toFixed(2),
+        `$${metrics.unitSellPrice.toFixed(2)}`,
       ];
     });
 
-    const summaryRows = [
-      ["", "", "", "TOTAL PAID", paidTotal.toFixed(2)],
-      ["", "", "", "TOTAL UNPAID", unpaidTotal.toFixed(2)],
-      ["", "", "", "GRAND TOTAL", (paidTotal + unpaidTotal).toFixed(2)],
-    ];
+    const doc = new jsPDF();
 
-    const csvContent =
-      "﻿" +
-      [headers, ...rows, [], ...summaryRows]
-        .map((row) => row.map((cell) => `"${cell}"`).join(","))
-        .join("\n");
+    doc.setFontSize(14);
+    doc.text(customerFilter || "Client Export", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Date: ${formatDate(new Date())}`, 14, 22);
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `client_export_${formatDate(new Date())}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    autoTable(doc, {
+      head: [["Date", "Client", "Status", "Product", "Price"]],
+      body: rows,
+      startY: 28,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [41, 128, 185] },
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(10);
+    doc.text(`Total Paid: $${paidTotal.toFixed(2)}`, 14, finalY);
+    doc.text(`Total Unpaid: $${unpaidTotal.toFixed(2)}`, 14, finalY + 6);
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Grand Total: $${(paidTotal + unpaidTotal).toFixed(2)}`, 14, finalY + 14);
+
+    doc.save(`client_export_${formatDate(new Date())}.pdf`);
   };
 
   // Export to CSV

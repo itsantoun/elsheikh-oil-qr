@@ -602,10 +602,11 @@ const SoldItems = () => {
       if (item.paymentStatus === 'Paid') paidTotal += metrics.unitSellPrice;
       else if (item.paymentStatus === 'Unpaid') unpaidTotal += metrics.unitSellPrice;
       return [
-        formatDateTimeForCSV(item.dateScanned),
+        formatDate(item.dateScanned),
         item.customerName || "N/A",
         item.paymentStatus || "N/A",
         item.name || "N/A",
+        metrics.quantity,
         `$${metrics.unitSellPrice.toFixed(2)}`,
       ];
     });
@@ -615,23 +616,29 @@ const SoldItems = () => {
     doc.setFontSize(14);
     doc.text(customerFilter || "Client Export", 14, 15);
     doc.setFontSize(10);
-    doc.text(`Date: ${formatDate(new Date())}`, 14, 22);
+    const fromLabel = dateFromFilter ? getDateDisplay(dateFromFilter) : formatDate(filteredItems[0]?.dateScanned);
+    const toLabel = dateToFilter ? getDateDisplay(dateToFilter) : formatDate(filteredItems[filteredItems.length - 1]?.dateScanned);
+    doc.text(`Date: From ${fromLabel} to ${toLabel}`, 14, 22);
 
     autoTable(doc, {
-      head: [["Date", "Client", "Status", "Product", "Price"]],
+      head: [["Date", "Client", "Status", "Product", "Quantity", "Price"]],
       body: rows,
       startY: 28,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [41, 128, 185] },
+      columnStyles: {
+        5: { halign: 'right' },
+      },
     });
 
     const finalY = doc.lastAutoTable.finalY + 8;
+    const pageWidth = doc.internal.pageSize.getWidth();
     doc.setFontSize(10);
-    doc.text(`Total Paid: $${paidTotal.toFixed(2)}`, 14, finalY);
-    doc.text(`Total Unpaid: $${unpaidTotal.toFixed(2)}`, 14, finalY + 6);
+    doc.text(`Total Paid: $${paidTotal.toFixed(2)}`, pageWidth - 14, finalY, { align: 'right' });
+    doc.text(`Total Unpaid: $${unpaidTotal.toFixed(2)}`, pageWidth - 14, finalY + 6, { align: 'right' });
     doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
-    doc.text(`Grand Total: $${(paidTotal + unpaidTotal).toFixed(2)}`, 14, finalY + 14);
+    doc.text(`Grand Total: $${(paidTotal + unpaidTotal).toFixed(2)}`, pageWidth - 14, finalY + 14, { align: 'right' });
 
     doc.save(`client_export_${formatDate(new Date())}.pdf`);
   };

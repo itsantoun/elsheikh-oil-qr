@@ -47,8 +47,9 @@ export const calculateStockForDateRange = async (barcode, database, fromDate = n
           (item.name && productName && 
            item.name.toLowerCase() === productName.toLowerCase());
         
-        // Only count PAID items (not unpaid or stock)
-        if (matchesProduct && item.paymentStatus === 'Paid') {
+        // Count Paid, Unpaid, and Maghsal — skip Stock-like statuses
+        const isStockLike = String(item.paymentStatus || '').toLowerCase().startsWith('stock');
+        if (matchesProduct && !isStockLike) {
           totalSold += parseFloat(item.quantity) || 0;
         }
       });

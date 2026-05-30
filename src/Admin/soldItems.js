@@ -704,7 +704,7 @@ const SoldItems = () => {
     setMissingItemCustomerId('');
     setMissingItemDate(getTodayDateForInput());
     setMissingItemQuantity('1');
-    setMissingItemPaymentStatus('Unpaid');
+    setMissingItemPaymentStatus(showMaghsal ? 'Maghsal' : 'Unpaid');
     setMissingItemRemark('');
   };
 
@@ -747,19 +747,20 @@ const SoldItems = () => {
 
     const paymentStatusValue = missingItemPaymentStatus || 'Unpaid';
     const isStock = isStockLikeStatus(paymentStatusValue);
+    const isMaghsalStatus = paymentStatusValue === 'Maghsal';
 
-    // Customer only required for Paid / Unpaid sales — not for stock purchases
-    if (!isStock && !missingItemCustomerId) {
+    // Customer only required for Paid / Unpaid sales — not for stock or Maghsal
+    if (!isStock && !isMaghsalStatus && !missingItemCustomerId) {
       setErrorMessage('Please select a customer.');
       setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
-    const selectedCustomer = !isStock
+    const selectedCustomer = (!isStock && !isMaghsalStatus)
       ? customers.find((customer) => customer.id === missingItemCustomerId)
       : null;
 
-    if (!isStock && !selectedCustomer) {
+    if (!isStock && !isMaghsalStatus && !selectedCustomer) {
       setErrorMessage('Selected customer is no longer available.');
       setTimeout(() => setErrorMessage(null), 3000);
       return;
@@ -854,7 +855,7 @@ const SoldItems = () => {
   const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
   const canSaveMissingItem = Boolean(
     selectedProduct &&
-    (isStockLikeStatus(missingItemPaymentStatus) || missingItemCustomerId) &&
+    (isStockLikeStatus(missingItemPaymentStatus) || missingItemPaymentStatus === 'Maghsal' || missingItemCustomerId) &&
     missingItemDate &&
     missingItemQuantityValue > 0 &&
     !isSavingMissingItem
@@ -975,6 +976,7 @@ const SoldItems = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
+              <option value="Maghsal">Maghsal</option>
             </select>
           </div>
 
@@ -1317,6 +1319,7 @@ const SoldItems = () => {
                         <option value="Paid">Paid</option>
                         <option value="Unpaid">Unpaid</option>
                         <option value="Stock">Stock</option>
+                        <option value="Maghsal">Maghsal</option>
                       </select>
                     ) : (
                       <div className="payment-status">
@@ -1491,6 +1494,7 @@ const SoldItems = () => {
                           <option value="Paid">Paid</option>
                           <option value="Unpaid">Unpaid</option>
                           <option value="Stock">Stock</option>
+                          <option value="Maghsal">Maghsal</option>
                         </select>
                       </div>
                     </div>

@@ -4,28 +4,39 @@ import Admin from './Admin/admin';
 import BarcodeScanner from './Pages/BarcodeScanner';
 import Login from './Pages/login';
 import { auth } from './Auth/firebase';
+import { resolveUserAccess } from './Auth/accessControl';
+import { NotificationProvider } from './Auth/notificationContext';
+import { useIdleLogout } from './Auth/useIdleLogout';
 import './App.css';
 
 const App = () => {
   const [currentPage, setCurrentPage] = useState('login');
+  useIdleLogout();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        // User is signed in, redirect to the appropriate page
-        if (user.email === 'doris@elsheikh.lb') {
-          setCurrentPage('admin');
-        } else {
-          setCurrentPage('scanner');
-        }
-      } else {
-        // User is signed out, stay on the login page
+    let isActive = true;
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (!isActive) return;
+
+      if (!user) {
         setCurrentPage('login');
+        return;
       }
+
+      const access = await resolveUserAccess(user);
+      if (!isActive) return;
+      if (access.status !== 'active') {
+        await auth.signOut();
+        setCurrentPage('login');
+        return;
+      }
+      setCurrentPage(access.role === 'admin' ? 'admin' : 'scanner');
     });
 
-    // Cleanup subscription on unmount
-    return () => unsubscribe();
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
   }, []);
 
   const renderPage = () => {
@@ -40,9 +51,11 @@ const App = () => {
   };
 
   return (
-    <UserProvider>
-      <div>{renderPage()}</div>
-    </UserProvider>
+    <NotificationProvider>
+      <UserProvider>
+        <div>{renderPage()}</div>
+      </UserProvider>
+    </NotificationProvider>
   );
 };
 

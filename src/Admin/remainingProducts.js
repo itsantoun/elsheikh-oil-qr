@@ -8,6 +8,7 @@ import {
   IconXCircle, IconPause, IconCamera, IconArchive, IconCalendar, IconFolderOpen,
   IconClipboard, IconArrowUp, IconArrowDown, IconCheckCircle, IconCornerUpLeft,
 } from '../utils/icons';
+import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 
 // ─── Firebase nodes used ──────────────────────────────────────────────────────
 // products/{id}                          — live product data
@@ -64,6 +65,8 @@ const RemainingProducts = () => {
 
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage]     = useState(null);
+
+  useExpiryNotifications({ successMessage, errorMessage });
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 

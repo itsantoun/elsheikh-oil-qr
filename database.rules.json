@@ -1,0 +1,90 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      ".read": "auth.token.admin === true",
+      ".indexOn": ["email"],
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
+        ".write": "auth.token.admin === true",
+        ".validate": "newData.hasChildren(['email','name','role','status'])",
+        "email":     { ".validate": "newData.isString() && newData.val().length <= 254" },
+        "name":      { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "role":      { ".validate": "newData.isString() && (newData.val() === 'admin' || newData.val() === 'user')" },
+        "status":    { ".validate": "newData.isString() && (newData.val() === 'active' || newData.val() === 'inactive')" },
+        "createdAt": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "deactivatedAt": { ".validate": "newData.isString() || newData.val() === null" },
+        "$other":    { ".validate": false }
+      }
+    },
+
+    "products": {
+      ".read": "auth != null",
+      ".write": "auth.token.admin === true",
+      "$pid": {
+        ".validate": "newData.hasChildren(['name','quantity']) || !newData.exists()",
+        "name":     { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+        "quantity": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000" },
+        "price":    { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
+        "barcode":  { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 64)" },
+        "expiry":   { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
+        "$other":   { ".validate": true }
+      }
+    },
+
+    "heldProducts": {
+      ".read": "auth != null",
+      ".write": "auth.token.admin === true"
+    },
+
+    "customers": {
+      ".read": "auth != null",
+      ".write": "auth.token.admin === true",
+      "$cid": {
+        "name":       { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+        "nameArabic": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "$other":     { ".validate": true }
+      }
+    },
+
+    "productArchives": {
+      ".read": "auth.token.admin === true",
+      ".write": "auth.token.admin === true"
+    },
+
+    "stockArchives": {
+      ".read": "auth.token.admin === true",
+      ".write": "auth.token.admin === true"
+    },
+
+    "stockChecks": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "stockCheckHistory": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "SoldItems": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$id": {
+        ".validate": "newData.hasChildren() || !newData.exists()",
+        "$field": { ".validate": "!newData.isString() || newData.val().length <= 500" }
+      }
+    },
+
+    "transactions": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$id": {
+        ".validate": "newData.hasChildren() || !newData.exists()",
+        "$field": { ".validate": "!newData.isString() || newData.val().length <= 500" }
+      }
+    }
+  }
+}

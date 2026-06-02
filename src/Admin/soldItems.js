@@ -7,6 +7,7 @@ import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
 import { IconRefresh, IconX } from '../utils/icons';
+import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 
 const isMaghsalItem = (item, productsList) => {
   const product = productsList.find(p => p.id === item.barcode || p.id === item.productId);
@@ -68,6 +69,8 @@ const SoldItems = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [showMaghsal, setShowMaghsal] = useState(false);
+
+  useExpiryNotifications({ errorMessage });
   
   // Format date to DD-MM-YYYY
   const formatDate = (dateString) => {
@@ -156,6 +159,12 @@ const SoldItems = () => {
 
   const formatCurrency = (value) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const sanitizeCSVCell = (value) => {
+    const raw = value == null ? '' : String(value);
+    const flattened = raw.replace(/\r?\n/g, ' ');
+    return /^[=+\-@]/.test(flattened) ? `'${flattened}` : flattened;
+  };
 
   const toNumber = (value) => {
     const parsed = parseFloat(value);
@@ -591,7 +600,8 @@ const SoldItems = () => {
   // Export to PDF (client view)
   const exportToCSVClient = () => {
     if (filteredItems.length === 0) {
-      alert("No data to export.");
+      setErrorMessage("No data to export.");
+      setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
@@ -599,8 +609,9 @@ const SoldItems = () => {
     let unpaidTotal = 0;
     const rows = filteredItems.map((item) => {
       const metrics = getItemProfitMetrics(item);
-      if (item.paymentStatus === 'Paid') paidTotal += metrics.unitSellPrice;
-      else if (item.paymentStatus === 'Unpaid') unpaidTotal += metrics.unitSellPrice;
+      const lineTotal = metrics.revenue;
+      if (item.paymentStatus === 'Paid') paidTotal += lineTotal;
+      else if (item.paymentStatus === 'Unpaid') unpaidTotal += lineTotal;
       return [
         formatDate(item.dateScanned),
         item.customerName || "N/A",
@@ -608,6 +619,7 @@ const SoldItems = () => {
         item.name || "N/A",
         metrics.quantity,
         `$${metrics.unitSellPrice.toFixed(2)}`,
+        `$${lineTotal.toFixed(2)}`,
       ];
     });
 
@@ -621,13 +633,14 @@ const SoldItems = () => {
     doc.text(`Date: From ${fromLabel} to ${toLabel}`, 14, 22);
 
     autoTable(doc, {
-      head: [["Date", "Client", "Status", "Product", "Quantity", "Price"]],
+      head: [["Date", "Client", "Status", "Product", "Quantity", "Unit Price", "Total"]],
       body: rows,
       startY: 28,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [41, 128, 185] },
       columnStyles: {
         5: { halign: 'right' },
+        6: { halign: 'right' },
       },
     });
 
@@ -646,13 +659,14 @@ const SoldItems = () => {
   // Export to CSV
   const exportToCSV = () => {
     if (filteredItems.length === 0) {
-      alert("No data to export.");
+      setErrorMessage("No data to export.");
+      setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
     const headers = [
       "Date", "Customer", "Product Type", "Quantity Sold", "Price",
-      "Item Cost", "Purchase Price", "Profit", "Employee", "Remarks", "Total Cost", "Payment Status"
+      "Item Cost", "Purchase Price", "Unit Profit", "Total Profit", "Employee", "Remarks", "Total Cost", "Payment Status"
     ];
 
     const rows = filteredItems.map((item) => {
@@ -666,6 +680,7 @@ const SoldItems = () => {
         metrics.unitSellPrice.toFixed(2),
         metrics.unitPurchasePrice.toFixed(2),
         metrics.profit.toFixed(2),
+        metrics.totalProfitAmount.toFixed(2),
         item.scannedBy || "N/A",
         item.remark || "N/A",
         metrics.revenue.toFixed(2),
@@ -676,7 +691,10 @@ const SoldItems = () => {
     const csvContent =
       "\ufeff" +
       [headers, ...rows]
-        .map((row) => row.map((cell) => `"${cell}"`).join(","))
+        .map((row) => row.map((cell) => {
+          const safeCell = sanitizeCSVCell(cell).replace(/"/g, '""');
+          return `"${safeCell}"`;
+        }).join(","))
         .join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -1305,8 +1323,8 @@ const SoldItems = () => {
                   </td>
                   <td>{`$${rowMetrics.revenue.toFixed(2)}`}</td>
                   <td>
-                    <span style={{ color: rowMetrics.profit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}>
-                      ${rowMetrics.profit.toFixed(2)}
+                    <span style={{ color: rowMetrics.totalProfitAmount >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}>
+                      ${rowMetrics.totalProfitAmount.toFixed(2)}
                     </span>
                   </td>
                   <td>

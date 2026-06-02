@@ -208,6 +208,7 @@ import { database } from '../Auth/firebase';
 import { ref, get, set, update, remove, push } from 'firebase/database';
 import '../CSS/addCustomer.css';
 import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash } from '../utils/icons';
+import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -228,6 +229,8 @@ const AddCustomer = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useExpiryNotifications({ successMessage, errorMessage });
 
   useEffect(() => {
     fetchCustomers();

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ref, get, set, remove, push } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
-import * as XLSX from 'xlsx';
 import { IconRefresh, IconArchive, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
+import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 
 const FetchProducts = () => {
   const [products, setProducts] = useState([]);
@@ -25,6 +25,8 @@ const FetchProducts = () => {
   const [activeTab, setActiveTab] = useState('products');
   const [heldProducts, setHeldProducts] = useState([]);
   const [sortBy, setSortBy] = useState({ field: 'name', order: 'asc' });
+
+  useExpiryNotifications({ successMessage, errorMessage });
 
   const rowRef = useRef(null);
 
@@ -91,6 +93,12 @@ const FetchProducts = () => {
       console.error('Error formatting date:', error);
       return 'Invalid Date';
     }
+  };
+
+  const sanitizeCSVCell = (value) => {
+    const raw = value == null ? '' : String(value);
+    const flattened = raw.replace(/\r?\n/g, ' ');
+    return /^[=+\-@]/.test(flattened) ? `'${flattened}` : flattened;
   };
 
   const fetchProducts = async () => {
@@ -410,23 +418,54 @@ const FetchProducts = () => {
 
   const handleExportToExcel = () => {
     if (products.length === 0) {
-      alert("No products available to export.");
+      setErrorMessage("No products available to export.");
+      setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
-    const exportRows = products.map((product) => {
+    const headers = [
+      'Barcode',
+      'Product Name',
+      'Type',
+      'Selling Price',
+      'Purchasing Price',
+      'Quantity',
+      'Unit Profit',
+      'Total Profit',
+    ];
+
+    const rows = products.map((product) => {
       const metrics = getProfitMetrics(product);
-      return {
-        ...product,
-        unitProfit: Number(metrics.unitProfit.toFixed(2)),
-        totalProfit: Number(metrics.totalProfit.toFixed(2)),
-      };
+      return [
+        product.id,
+        product.name || '',
+        product.productType || '',
+        Number(metrics.unitSellPrice.toFixed(2)),
+        Number(metrics.unitPurchasePrice.toFixed(2)),
+        Number(metrics.quantity.toFixed(2)),
+        Number(metrics.unitProfit.toFixed(2)),
+        Number(metrics.totalProfit.toFixed(2)),
+      ];
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(exportRows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
-    XLSX.writeFile(workbook, `products_${formatDate(new Date())}.xlsx`);
+    const csvContent =
+      "\ufeff" +
+      [headers, ...rows]
+        .map((row) => row.map((cell) => {
+          const safeCell = sanitizeCSVCell(cell).replace(/"/g, '""');
+          return `"${safeCell}"`;
+        }).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `products_${formatDate(new Date())}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleArchiveAndResetQuantities = async () => {
@@ -563,7 +602,7 @@ const FetchProducts = () => {
             <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </button>
           <button onClick={handleExportToExcel} className="btn-primary">
-            <IconBarChart /> Export Excel
+            <IconBarChart /> Export CSV
           </button>
         </div>
       </div>

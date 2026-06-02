@@ -29,7 +29,7 @@
 //   const [isProcessing, setIsProcessing] = useState(false);
 //   const [customersLoaded, setCustomersLoaded] = useState(false);
 //   const [cameraActive, setCameraActive] = useState(true); // NEW: Control camera state
-//   const [scannerPaused, setScannerPaused] = useState(false); // NEW: Pause scanning
+//   const [scannerPaused, setScannerPaused] = useState(false);
 
 //   const scannerRef = React.useRef(null);
 //   const codeReaderRef = React.useRef(null);
@@ -775,6 +775,7 @@ import '../CSS/BarcodeScanner.css';
 import { signOut } from 'firebase/auth';
 import { auth } from '../Auth/firebase';
 import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import {
   IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
   IconTag, IconBarChart, IconDollarSign, IconUser, IconHash, IconTrendingUp,
@@ -804,6 +805,8 @@ const BarcodeScanner = () => {
   const [customersLoaded, setCustomersLoaded] = useState(false);
   const [cameraActive, setCameraActive] = useState(true);
   const [scannerPaused, setScannerPaused] = useState(false);
+
+  useExpiryNotifications({ successMessage, errorMessage: dialogMessage });
 
   const scannerRef = React.useRef(null);
   const codeReaderRef = React.useRef(null);

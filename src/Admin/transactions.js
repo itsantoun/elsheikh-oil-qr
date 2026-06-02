@@ -478,8 +478,10 @@ import { database } from '../Auth/firebase';
 import { ref, get, update, remove } from 'firebase/database';
 import '../CSS/transactions.css';
 import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, IconTrash, IconBarChart, IconAlertTriangle } from '../utils/icons';
+import { useNotifications } from '../Auth/notificationContext';
 
 const Transactions = () => {
+  const { notifySuccess, notifyError } = useNotifications();
   const [transactions, setTransactions] = useState([]);
   const [editing, setEditing] = useState(null);
   const [editedValues, setEditedValues] = useState({});
@@ -688,6 +690,7 @@ const Transactions = () => {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      notifyError('Failed to fetch transactions data.');
     } finally {
       setIsRefreshing(false);
     }
@@ -779,8 +782,10 @@ const Transactions = () => {
       }
 
       await update(ref(database), updates);
+      notifySuccess('Transaction confirmed.');
     } catch (error) {
       console.error('Error confirming transaction:', error);
+      notifyError('Failed to confirm transaction.');
       setTransactions(prev =>
         prev.map(t => t.id === id ? { ...t, paymentStatus: 'Pending' } : t)
       );
@@ -816,8 +821,10 @@ const Transactions = () => {
       }
 
       await update(ref(database), updates);
+      notifySuccess('Transaction set to pending.');
     } catch (error) {
       console.error('Error unconfirming transaction:', error);
+      notifyError('Failed to update transaction status.');
       setTransactions(prev =>
         prev.map(t => t.id === id ? { ...t, paymentStatus: 'Confirmed' } : t)
       );
@@ -868,8 +875,10 @@ const Transactions = () => {
 
       setEditing(null);
       setEditedValues({});
+      notifySuccess('Transaction updated.');
     } catch (error) {
       console.error('Error updating transaction:', error);
+      notifyError('Failed to update transaction.');
     }
   };
 
@@ -893,8 +902,10 @@ const Transactions = () => {
         setTransactions(prev => prev.filter(t => t.id !== itemToDelete));
         setShowDeleteConfirm(false);
         setItemToDelete(null);
+        notifySuccess('Transaction deleted.');
       } catch (error) {
         console.error('Error deleting transaction:', error);
+        notifyError('Failed to delete transaction.');
       }
     }
   };

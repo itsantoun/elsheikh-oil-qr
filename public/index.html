@@ -9,6 +9,40 @@
       name="description"
       content="Elsheikh.Inc"
     />
+    <!--
+      Security headers. These are best-effort via <meta> because the site is hosted
+      on GitHub Pages, which does not let us set real HTTP response headers. For
+      production-grade hardening, host behind Cloudflare/Netlify and set these as
+      real response headers (especially CSP and HSTS).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.googleapis.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' data: https://fonts.gstatic.com;
+      img-src 'self' data: blob: https:;
+      media-src 'self' blob:;
+      connect-src 'self'
+        https://*.googleapis.com
+        https://*.firebaseio.com
+        wss://*.firebaseio.com
+        https://*.firebaseapp.com
+        https://securetoken.googleapis.com
+        https://identitytoolkit.googleapis.com
+        https://firebaseinstallations.googleapis.com
+        https://firebaseappcheck.googleapis.com
+        https://content-firebaseappcheck.googleapis.com;
+      frame-src 'self' https://*.firebaseapp.com https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/;
+      worker-src 'self' blob:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      frame-ancestors 'none';
+      upgrade-insecure-requests;
+    " />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), payment=()" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--
       manifest.json provides metadata used when your web app is installed on a
@@ -24,10 +58,6 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <link
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
-    rel="stylesheet"
-  />
     <title>El Sheikh</title>
   </head>
   <body>

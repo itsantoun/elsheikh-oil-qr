@@ -1,7 +1,8 @@
 import React, { useState, useContext } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../Auth/firebase';
 import { UserContext } from '../Auth/userContext';
+import { resolveUserAccess } from '../Auth/accessControl';
 import '../CSS/login.css';
 
 // ── Lock Icon ────────────────────────────────────────────────────────────────
@@ -41,11 +42,13 @@ function Login({ onLogin }) {
       const user = userCredential.user;
       setUser(user);
 
-      if (user.email === 'doris@elsheikh.lb') {
-        onLogin('admin');
-      } else {
-        onLogin('scanner');
+      const access = await resolveUserAccess(user);
+      if (access.status !== 'active') {
+        await signOut(auth);
+        setLoginError('This profile is deactivated. Contact admin.');
+        return;
       }
+      onLogin(access.role === 'admin' ? 'admin' : 'scanner');
     } catch (error) {
       setLoginError('Invalid email or password. Please try again.');
     } finally {

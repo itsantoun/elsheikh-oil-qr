@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ref, get } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
+import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 
 const Archives = () => {
   const [archives, setArchives] = useState([]);
@@ -13,6 +14,8 @@ const Archives = () => {
   const [detailView, setDetailView] = useState('products');
   const [detailSearchTerm, setDetailSearchTerm] = useState('');
   const [errorMessage, setErrorMessage] = useState(null);
+
+  useExpiryNotifications({ errorMessage });
 
   const showError = (msg) => {
     setErrorMessage(msg);

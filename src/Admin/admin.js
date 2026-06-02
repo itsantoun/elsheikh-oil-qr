@@ -11,16 +11,40 @@ import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
 import { signOut } from 'firebase/auth';
+import { resolveUserAccess } from '../Auth/accessControl';
 
 const Admin = () => {
   const { user, setUser } = useContext(UserContext);
   const [activeSection, setActiveSection] = useState('addUsers');
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isAuthCheckComplete, setIsAuthCheckComplete] = useState(false);
 
   useEffect(() => {
-    if (!user || user.email !== 'doris@elsheikh.lb') {
-      window.location.href = '/';
-    }
-  }, [user]);
+    let isActive = true;
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      if (!isActive) return;
+      if (!firebaseUser) {
+        setIsAuthorized(false);
+        setIsAuthCheckComplete(true);
+        window.location.href = '/';
+        return;
+      }
+
+      const access = await resolveUserAccess(firebaseUser);
+      if (!isActive) return;
+      const allowed = access.status === 'active' && access.role === 'admin';
+      setIsAuthorized(allowed);
+      setIsAuthCheckComplete(true);
+      if (!allowed) {
+        window.location.href = '/';
+      }
+    });
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -31,7 +55,11 @@ const Admin = () => {
     }
   };
 
-  if (!user || user.email !== 'doris@elsheikh.lb') {
+  if (!isAuthCheckComplete) {
+    return null;
+  }
+
+  if (!user || !isAuthorized) {
     return null;
   }
 

@@ -7,6 +7,7 @@ import AddCustomer from './addCustomer';
 import RemainingProducts from './remainingProducts';
 import Transactions from './transactions';
 import Archives from './archives';
+import Settings from './settings';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
@@ -73,6 +74,7 @@ const Admin = () => {
       case 'stock':        return <RemainingProducts />;
       case 'transactions': return <Transactions />;
       case 'archives':     return <Archives />;
+      case 'settings':     return <Settings />;
       default:             return <AddUsers />;
     }
   };

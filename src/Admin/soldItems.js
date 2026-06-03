@@ -8,6 +8,7 @@ import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
 import { IconRefresh, IconX } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { saveBlobToExportFolder } from '../utils/exportFolder';
 
 const isMaghsalItem = (item, productsList) => {
   const product = productsList.find(p => p.id === item.barcode || p.id === item.productId);
@@ -597,8 +598,35 @@ const SoldItems = () => {
     }
   };
 
+  // Build "<client>_<dateOrRange>" filename slug from active filters.
+  const buildExportFilename = (extension) => {
+    const sanitize = (s) =>
+      String(s || '')
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, '')
+        .replace(/\s+/g, '_')
+        .slice(0, 80);
+
+    const clientPart = sanitize(customerFilter) || 'all_clients';
+
+    let datePart;
+    if (dateFromFilter && dateToFilter) {
+      datePart = dateFromFilter === dateToFilter
+        ? getDateDisplay(dateFromFilter)
+        : `${getDateDisplay(dateFromFilter)}_to_${getDateDisplay(dateToFilter)}`;
+    } else if (dateFromFilter) {
+      datePart = `from_${getDateDisplay(dateFromFilter)}`;
+    } else if (dateToFilter) {
+      datePart = `to_${getDateDisplay(dateToFilter)}`;
+    } else {
+      datePart = formatDate(new Date());
+    }
+
+    return `${clientPart}_${datePart}.${extension}`;
+  };
+
   // Export to PDF (client view)
-  const exportToCSVClient = () => {
+  const exportToCSVClient = async () => {
     if (filteredItems.length === 0) {
       setErrorMessage("No data to export.");
       setTimeout(() => setErrorMessage(null), 3000);
@@ -653,11 +681,17 @@ const SoldItems = () => {
     doc.setFont(undefined, 'bold');
     doc.text(`Grand Total: $${(paidTotal + unpaidTotal).toFixed(2)}`, pageWidth - 14, finalY + 14, { align: 'right' });
 
-    doc.save(`client_export_${formatDate(new Date())}.pdf`);
+    const filename = buildExportFilename('pdf');
+    const pdfBlob = doc.output('blob');
+    const result = await saveBlobToExportFolder(pdfBlob, filename);
+    if (result.strategy === 'folder') {
+      setErrorMessage(`Saved to "${result.folderName}/${filename}"`);
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
   };
 
   // Export to CSV
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     if (filteredItems.length === 0) {
       setErrorMessage("No data to export.");
       setTimeout(() => setErrorMessage(null), 3000);
@@ -698,13 +732,12 @@ const SoldItems = () => {
         .join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `sold_items_${formatDate(new Date())}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const filename = buildExportFilename('csv');
+    const result = await saveBlobToExportFolder(blob, filename);
+    if (result.strategy === 'folder') {
+      setErrorMessage(`Saved to "${result.folderName}/${filename}"`);
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
   };
 
   // Format date input value for display in active filters

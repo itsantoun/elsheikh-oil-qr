@@ -299,10 +299,7 @@ const AddUser = () => {
           </div>
 
         </div>
-        <p className="page-subtitle">
-          Security mode: password is used only to create Firebase Auth user and is never stored in database.
-        </p>
-
+       
         <div className="form-actions">
           <button onClick={handleAddUser} className="btn-primary">
             <span className="button-icon"><IconPlus /></span>

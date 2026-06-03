@@ -1,0 +1,156 @@
+/* ============================================================
+   ELSHEIKH — settings.css
+   Settings page styles
+   ============================================================ */
+
+.settings-page {
+  max-width: 760px;
+}
+
+.settings-header {
+  margin-bottom: 20px;
+}
+.settings-header h2 {
+  font-size: 22px;
+  color: var(--text-heading);
+  margin: 0 0 4px 0;
+}
+.settings-subtitle {
+  color: var(--text-muted, #6b7280);
+  margin: 0;
+  font-size: 14px;
+}
+
+.settings-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 1px 2px rgba(13, 24, 41, 0.04);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.settings-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--brand-light);
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.settings-card-header h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: var(--text-heading);
+}
+.settings-card-header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.4;
+}
+
+.settings-current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.settings-label {
+  font-weight: 600;
+  color: var(--text-heading);
+}
+.settings-value {
+  color: var(--text-heading);
+  word-break: break-all;
+}
+.settings-value em {
+  color: var(--text-muted, #6b7280);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.settings-btn {
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.settings-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.settings-btn-primary {
+  background: var(--brand);
+  color: var(--white);
+  border-color: var(--brand);
+}
+.settings-btn-primary:not(:disabled):hover {
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
+}
+.settings-btn-secondary {
+  background: var(--white);
+  color: var(--text-heading);
+  border-color: var(--border-default);
+}
+.settings-btn-secondary:not(:disabled):hover {
+  background: var(--bg-hover);
+}
+
+.settings-warning,
+.settings-success,
+.settings-error,
+.settings-note {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 10px;
+}
+.settings-warning {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  color: var(--amber);
+}
+.settings-success {
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  color: var(--green);
+}
+.settings-error {
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  color: var(--red);
+}
+.settings-note {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted, #6b7280);
+}
+.settings-note strong {
+  color: var(--text-heading);
+}

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { database } from '../Auth/firebase';
+import { ref, get, set, update, push } from 'firebase/database';
 import {
   isFileSystemAccessSupported,
   getSavedExportFolderName,
@@ -7,16 +9,60 @@ import {
 } from '../utils/exportFolder';
 import '../CSS/settings.css';
 
+const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
+
 const IconFolder = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2a2 2 0 0 0-1.66-.9H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
   </svg>
 );
 
+const IconSpray = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3h6v6H3z" />
+    <path d="M9 6h6" />
+    <path d="M15 3v18" />
+    <path d="M18 9h3v12h-6V12" />
+  </svg>
+);
+
+const IconDatabase = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="12" cy="5" rx="9" ry="3" />
+    <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+    <path d="M3 12a9 3 0 0 0 18 0" />
+  </svg>
+);
+
+const isMaghsalRow = (row) => {
+  if (!row || typeof row !== 'object') return false;
+  if (String(row.productType || '').toLowerCase() === 'maghsal') return true;
+  if (String(row.paymentStatus || '').toLowerCase() === 'maghsal') return true;
+  return false;
+};
+
 const Settings = () => {
+  // Export folder
   const [folderName, setFolderName] = useState(null);
   const [supported, setSupported] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [folderBusy, setFolderBusy] = useState(false);
+
+  // Categories
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [newCategory, setNewCategory] = useState('');
+  const [categoriesBusy, setCategoriesBusy] = useState(false);
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editingValue, setEditingValue] = useState('');
+
+  // Migration
+  const [migrationStatus, setMigrationStatus] = useState(null);
+  const [migrationBusy, setMigrationBusy] = useState(false);
+  const [migrationCounts, setMigrationCounts] = useState(null);
+  const [lastMigration, setLastMigration] = useState(null);
+  const [productArchiveBusy, setProductArchiveBusy] = useState(false);
+  const [stockArchiveBusy, setStockArchiveBusy] = useState(false);
+
+  // Flash
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
 
@@ -24,8 +70,47 @@ const Settings = () => {
     const supportedNow = isFileSystemAccessSupported();
     setSupported(supportedNow);
     if (supportedNow) {
-      getSavedExportFolderName().then(setFolderName);
+      getSavedExportFolderName().then(setFolderName).catch((err) => {
+        console.error('Failed to load saved export folder:', err);
+      });
     }
+    // Load categories
+    get(ref(database, 'settings/maghsalCategories'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (Array.isArray(val) && val.length > 0) {
+            setCategories(val);
+          } else if (val && typeof val === 'object') {
+            const arr = Object.values(val).filter((v) => typeof v === 'string' && v.trim().length > 0);
+            if (arr.length > 0) setCategories(arr);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load Maghsal categories:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
+        }
+      });
+    // Load last migration record
+    get(ref(database, 'maghsalMigrations'))
+      .then((snap) => {
+        if (!snap.exists()) return;
+        const records = snap.val();
+        const list = Object.keys(records).map((k) => ({ id: k, ...records[k] }));
+        list.sort((a, b) => new Date(b.runAt).getTime() - new Date(a.runAt).getTime());
+        if (list[0]) setLastMigration(list[0]);
+      })
+      .catch((err) => {
+        console.error('Failed to load Maghsal migration records:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setMigrationStatus('Migration history is admin-claim restricted. Settings can still load, but history is unavailable.');
+        }
+      });
+    // Preview count
+    previewMigrationCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const flashMessage = (msg) => {
@@ -33,22 +118,152 @@ const Settings = () => {
     setError(null);
     setTimeout(() => setMessage(null), 4000);
   };
-
   const flashError = (msg) => {
     setError(msg);
     setMessage(null);
     setTimeout(() => setError(null), 5000);
   };
 
+  const archiveProductsAndResetQuantities = async () => {
+    const confirmed = window.confirm(
+      'Archive all current products and reset all quantities to 0?\n\n' +
+      'Products will stay in the list. Only quantity will reset.'
+    );
+    if (!confirmed) return;
+
+    setProductArchiveBusy(true);
+    const archivedAt = new Date().toISOString();
+    const archiveId = archivedAt.replace(/[.:]/g, '-');
+
+    try {
+      const productsSnap = await get(ref(database, 'products'));
+      if (!productsSnap.exists()) {
+        flashError('No products available to archive.');
+        return;
+      }
+
+      const productsData = productsSnap.val();
+      const productsList = Object.entries(productsData).map(([id, value]) => ({ id, ...value }));
+      const archiveProducts = productsList.reduce((acc, product) => {
+        const qty = parseFloat(product.quantity) || 0;
+        acc[product.id] = { ...product, quantity: qty };
+        return acc;
+      }, {});
+      const resetProducts = productsList.reduce((acc, product) => {
+        const { id, ...rest } = product;
+        acc[id] = { ...rest, quantity: 0 };
+        return acc;
+      }, {});
+      const totalQtyBeforeReset = productsList.reduce(
+        (sum, product) => sum + (parseFloat(product.quantity) || 0),
+        0
+      );
+
+      await set(ref(database, `productArchives/${archiveId}`), {
+        archivedAt,
+        summary: {
+          productsArchived: productsList.length,
+          totalQuantityBeforeReset: totalQtyBeforeReset,
+        },
+        products: archiveProducts,
+      });
+      await set(ref(database, 'products'), resetProducts);
+
+      flashMessage(`Archived ${productsList.length} products and reset all quantities to 0.`);
+    } catch (err) {
+      console.error(err);
+      if (err?.code === 'PERMISSION_DENIED') {
+        flashError('Permission denied. Add read/write rules for "productArchives".');
+      } else {
+        flashError('Failed to archive and reset products. Please try again.');
+      }
+    } finally {
+      setProductArchiveBusy(false);
+    }
+  };
+
+  const archiveStockAndResetAll = async () => {
+    const confirmed = window.confirm(
+      'Archive ALL products + Sold Items and start from scratch?\n\n' +
+      'This creates an archive copy, keeps products, resets product quantities to 0, and clears live SoldItems + stock checks/history.'
+    );
+    if (!confirmed) return;
+
+    setStockArchiveBusy(true);
+    const archivedAt = new Date().toISOString();
+    const archiveId = archivedAt.replace(/[.:]/g, '-');
+
+    try {
+      const [productsSnap, checksSnap, historySnap, soldSnap] = await Promise.all([
+        get(ref(database, 'products')),
+        get(ref(database, 'stockChecks')),
+        get(ref(database, 'stockCheckHistory')),
+        get(ref(database, 'SoldItems')),
+      ]);
+
+      if (!productsSnap.exists()) {
+        flashError('No products available to archive.');
+        return;
+      }
+
+      const allProducts = Object.entries(productsSnap.val()).map(([id, value]) => ({ id, ...value }));
+      const productSnapshot = allProducts.reduce((acc, product) => {
+        acc[product.id] = { ...product };
+        return acc;
+      }, {});
+      const allChecks = checksSnap.exists() ? checksSnap.val() : {};
+      const pendingFromDb = Object.values(allChecks).filter((check) => check?.status === 'pending').length;
+
+      await set(ref(database, `stockArchives/${archiveId}`), {
+        archivedAt,
+        summary: {
+          productsArchived: allProducts.length,
+          soldItemsArchived: soldSnap.exists() ? Object.keys(soldSnap.val()).length : 0,
+          pendingChecksArchived: pendingFromDb,
+          historyMonthsArchived: historySnap.exists() ? Object.keys(historySnap.val()).length : 0,
+        },
+        products: productSnapshot,
+        soldItems: soldSnap.exists() ? soldSnap.val() : {},
+        stockChecks: allChecks,
+        stockCheckHistory: historySnap.exists() ? historySnap.val() : {},
+      });
+
+      const resetProducts = allProducts.reduce((acc, product) => {
+        const { id, ...rest } = product;
+        acc[id] = { ...rest, quantity: 0 };
+        return acc;
+      }, {});
+
+      await Promise.all([
+        set(ref(database, 'products'), resetProducts),
+        set(ref(database, 'stockCheckHistory'), null),
+        set(ref(database, 'SoldItems'), null),
+        set(ref(database, 'stockChecks'), null),
+      ]);
+
+      flashMessage(`Archived stock data and reset quantities to 0 for ${allProducts.length} products.`);
+    } catch (err) {
+      console.error(err);
+      if (err?.code === 'PERMISSION_DENIED') {
+        flashError('Permission denied. Add read/write rules for "stockArchives".');
+      } else {
+        flashError('Failed to archive stock. Please try again.');
+      }
+    } finally {
+      setStockArchiveBusy(false);
+    }
+  };
+
+  // ── Folder handlers ──────────────────────────────────
   const handlePick = async () => {
-    setBusy(true);
+    setFolderBusy(true);
     try {
       const name = await pickExportFolder();
       setFolderName(name);
       flashMessage(`Export folder set to "${name}". Future PDF and CSV exports will save there.`);
     } catch (err) {
       if (err && err.name === 'AbortError') {
-        // user cancelled the picker
+        // user cancelled
       } else if (err && err.message === 'FILE_SYSTEM_ACCESS_UNSUPPORTED') {
         flashError('Your browser does not support choosing an export folder. Try Chrome, Edge, or Brave.');
       } else if (err && err.message === 'PERMISSION_DENIED') {
@@ -58,18 +273,229 @@ const Settings = () => {
         console.error(err);
       }
     } finally {
-      setBusy(false);
+      setFolderBusy(false);
     }
   };
 
   const handleClear = async () => {
-    setBusy(true);
+    setFolderBusy(true);
     try {
       await clearExportFolder();
       setFolderName(null);
       flashMessage('Export folder cleared. Future exports will use the browser download.');
     } finally {
-      setBusy(false);
+      setFolderBusy(false);
+    }
+  };
+
+  // ── Categories handlers ──────────────────────────────
+  const saveCategories = async (next) => {
+    setCategoriesBusy(true);
+    try {
+      await set(ref(database, 'settings/maghsalCategories'), next);
+      setCategories(next);
+      flashMessage('Maghsal categories saved.');
+    } catch (err) {
+      console.error(err);
+      flashError('Failed to save categories. You may not have permission.');
+    } finally {
+      setCategoriesBusy(false);
+    }
+  };
+
+  const addCategory = async () => {
+    const v = newCategory.trim();
+    if (!v) return;
+    if (categories.some((c) => c.toLowerCase() === v.toLowerCase())) {
+      flashError('That category already exists.');
+      return;
+    }
+    await saveCategories([...categories, v]);
+    setNewCategory('');
+  };
+
+  const removeCategory = async (idx) => {
+    const target = categories[idx];
+    if (!window.confirm(`Remove category "${target}"? Existing entries will keep this category text but it won't be selectable for new entries.`)) {
+      return;
+    }
+    const next = categories.filter((_, i) => i !== idx);
+    await saveCategories(next);
+  };
+
+  const startEdit = (idx) => {
+    setEditingIdx(idx);
+    setEditingValue(categories[idx]);
+  };
+
+  const cancelEditCategory = () => {
+    setEditingIdx(null);
+    setEditingValue('');
+  };
+
+  const saveEditCategory = async () => {
+    const v = editingValue.trim();
+    if (!v) return;
+    if (categories.some((c, i) => i !== editingIdx && c.toLowerCase() === v.toLowerCase())) {
+      flashError('Another category with that name already exists.');
+      return;
+    }
+    const next = categories.map((c, i) => (i === editingIdx ? v : c));
+    await saveCategories(next);
+    setEditingIdx(null);
+    setEditingValue('');
+  };
+
+  const resetCategoriesToDefaults = async () => {
+    if (!window.confirm('Reset Maghsal categories to defaults? Custom entries will be removed.')) return;
+    await saveCategories(DEFAULT_CATEGORIES);
+  };
+
+  // ── Migration ────────────────────────────────────────
+  const previewMigrationCounts = async () => {
+    try {
+      const [soldSnap, productsSnap] = await Promise.all([
+        get(ref(database, 'SoldItems')),
+        get(ref(database, 'products')),
+      ]);
+      const counts = { soldItems: 0, products: 0 };
+      if (soldSnap.exists()) {
+        const data = soldSnap.val();
+        for (const k of Object.keys(data)) {
+          if (isMaghsalRow(data[k])) counts.soldItems += 1;
+        }
+      }
+      if (productsSnap.exists()) {
+        const data = productsSnap.val();
+        for (const k of Object.keys(data)) {
+          if (String(data[k]?.productType || '').toLowerCase() === 'maghsal') counts.products += 1;
+        }
+      }
+      setMigrationCounts(counts);
+    } catch (err) {
+      console.error('Preview migration counts failed:', err);
+      setMigrationCounts({ soldItems: 0, products: 0 });
+      if (err?.code === 'PERMISSION_DENIED') {
+        setMigrationStatus('Permission denied while checking migration counts. Admin custom claim may be required for this action.');
+      } else {
+        setMigrationStatus('Could not check migration counts.');
+      }
+    }
+  };
+
+  const runMigration = async () => {
+    if (!window.confirm('This will move existing Maghsal rows from SoldItems into the new maghsalEntries table, and remove Maghsal-typed products from the products list. A backup snapshot is saved first. Continue?')) {
+      return;
+    }
+    setMigrationBusy(true);
+    setMigrationStatus('Reading data...');
+    try {
+      const [soldSnap, productsSnap] = await Promise.all([
+        get(ref(database, 'SoldItems')),
+        get(ref(database, 'products')),
+      ]);
+
+      const soldData = soldSnap.exists() ? soldSnap.val() : {};
+      const productsData = productsSnap.exists() ? productsSnap.val() : {};
+
+      const maghsalSoldKeys = Object.keys(soldData).filter((k) => isMaghsalRow(soldData[k]));
+      const maghsalProductKeys = Object.keys(productsData).filter(
+        (k) => String(productsData[k]?.productType || '').toLowerCase() === 'maghsal'
+      );
+
+      if (maghsalSoldKeys.length === 0 && maghsalProductKeys.length === 0) {
+        setMigrationStatus('No Maghsal data found in SoldItems or products. Nothing to migrate.');
+        setMigrationBusy(false);
+        return;
+      }
+
+      // Backup
+      setMigrationStatus(`Backing up ${maghsalSoldKeys.length} sold row(s) + ${maghsalProductKeys.length} product(s)...`);
+      const backupSold = {};
+      for (const k of maghsalSoldKeys) backupSold[k] = soldData[k];
+      const backupProducts = {};
+      for (const k of maghsalProductKeys) backupProducts[k] = productsData[k];
+
+      const backupRef = await push(ref(database, 'maghsalMigrations'), {
+        runAt: new Date().toISOString(),
+        countSoldItems: maghsalSoldKeys.length,
+        countProducts: maghsalProductKeys.length,
+        backupSold,
+        backupProducts,
+        status: 'in_progress',
+      });
+
+      // Build atomic update
+      setMigrationStatus('Creating new maghsalEntries rows...');
+      const updates = {};
+      let created = 0;
+      for (const k of maghsalSoldKeys) {
+        const old = soldData[k];
+        const customerName =
+          (typeof old.customerName === 'string' && old.customerName) ||
+          old.customer || '';
+        const dateValue = old.dateScanned || old.date || new Date().toISOString();
+        const price = (() => {
+          const itemCost = parseFloat(old.itemCost);
+          const totalCost = parseFloat(old.totalCost);
+          const qty = parseFloat(old.quantity);
+          if (Number.isFinite(itemCost) && Number.isFinite(qty) && qty > 0) return itemCost * qty;
+          if (Number.isFinite(totalCost)) return totalCost;
+          if (Number.isFinite(itemCost)) return itemCost;
+          return 0;
+        })();
+        const statusRaw = String(old.paymentStatus || '').toLowerCase();
+        const paymentStatus = statusRaw === 'paid' ? 'Paid' : 'Unpaid';
+
+        const newEntry = {
+          customerId: old.customerId || '',
+          customerName: customerName || '',
+          customerNameArabic: old.customerNameArabic || '',
+          date: dateValue,
+          category: 'Unspecified',
+          price,
+          paymentStatus,
+          employee: old.scannedBy || old.employee || 'migrated',
+          remark: old.remark || '',
+          createdAt: new Date().toISOString(),
+        };
+        const newRef = push(ref(database, 'maghsalEntries'));
+        updates[`maghsalEntries/${newRef.key}`] = newEntry;
+        created += 1;
+      }
+
+      // Delete migrated SoldItems + products rows
+      for (const k of maghsalSoldKeys) updates[`SoldItems/${k}`] = null;
+      for (const k of maghsalProductKeys) updates[`products/${k}`] = null;
+
+      setMigrationStatus(`Writing ${created} entry(s), cleaning SoldItems and products...`);
+      await update(ref(database), updates);
+
+      await update(ref(database, `maghsalMigrations/${backupRef.key}`), {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        countMigrated: created,
+      });
+
+      setMigrationStatus(
+        `Migration complete: ${created} entry(s) moved to maghsalEntries. ` +
+        `${maghsalSoldKeys.length} SoldItems row(s) and ${maghsalProductKeys.length} product(s) removed.`
+      );
+      setLastMigration({
+        id: backupRef.key,
+        runAt: new Date().toISOString(),
+        countMigrated: created,
+        countSoldItems: maghsalSoldKeys.length,
+        countProducts: maghsalProductKeys.length,
+        status: 'completed',
+      });
+      previewMigrationCounts();
+    } catch (err) {
+      console.error('Migration failed:', err);
+      setMigrationStatus(`Migration failed: ${err.message || err}`);
+      flashError('Migration failed. Check console for details.');
+    } finally {
+      setMigrationBusy(false);
     }
   };
 
@@ -77,9 +503,10 @@ const Settings = () => {
     <div className="settings-page">
       <div className="settings-header">
         <h2>Settings</h2>
-        <p className="settings-subtitle">Configure where exports (PDF & CSV) are saved.</p>
+        <p className="settings-subtitle">Manage exports, Maghsal categories, and data migrations.</p>
       </div>
 
+      {/* Export Folder */}
       <div className="settings-card">
         <div className="settings-card-header">
           <span className="settings-card-icon"><IconFolder /></span>
@@ -107,7 +534,7 @@ const Settings = () => {
           <button
             className="settings-btn settings-btn-primary"
             onClick={handlePick}
-            disabled={!supported || busy}
+            disabled={!supported || folderBusy}
           >
             {folderName ? 'Change Folder' : 'Choose Folder'}
           </button>
@@ -115,17 +542,191 @@ const Settings = () => {
             <button
               className="settings-btn settings-btn-secondary"
               onClick={handleClear}
-              disabled={busy}
+              disabled={folderBusy}
             >
               Clear
             </button>
           )}
         </div>
-
-        {message && <div className="settings-success">{message}</div>}
-        {error && <div className="settings-error">{error}</div>}
-
       </div>
+
+      {/* Maghsal Categories */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconSpray /></span>
+          <div>
+            <h3>Maghsal Categories</h3>
+            <p>Categories shown in the Maghsal entry form. Existing entries are not affected when you remove or rename a category.</p>
+          </div>
+        </div>
+
+        <ul className="settings-list">
+          {categories.length === 0 && (
+            <li className="settings-list-empty">No categories yet. Add one below or reset to defaults.</li>
+          )}
+          {categories.map((cat, idx) => (
+            <li key={`${cat}-${idx}`} className="settings-list-item">
+              {editingIdx === idx ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    className="settings-input"
+                    disabled={categoriesBusy}
+                  />
+                  <button
+                    className="settings-btn settings-btn-primary settings-btn-sm"
+                    onClick={saveEditCategory}
+                    disabled={categoriesBusy || !editingValue.trim()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={cancelEditCategory}
+                    disabled={categoriesBusy}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="settings-list-text">{cat}</span>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={() => startEdit(idx)}
+                    disabled={categoriesBusy}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-danger settings-btn-sm"
+                    onClick={() => removeCategory(idx)}
+                    disabled={categoriesBusy}
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="settings-add-row">
+          <input
+            type="text"
+            placeholder="New category name"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addCategory(); }}
+            className="settings-input"
+            disabled={categoriesBusy}
+          />
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={addCategory}
+            disabled={categoriesBusy || !newCategory.trim()}
+          >
+            Add
+          </button>
+          <button
+            className="settings-btn settings-btn-secondary"
+            onClick={resetCategoriesToDefaults}
+            disabled={categoriesBusy}
+          >
+            Reset to Defaults
+          </button>
+        </div>
+      </div>
+
+      {/* Migration */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconDatabase /></span>
+          <div>
+            <h3>Maghsal Data Migration</h3>
+            <p>One-time move of existing Maghsal rows out of <code>SoldItems</code> into the new <code>maghsalEntries</code> table. A backup snapshot is saved before anything is deleted.</p>
+          </div>
+        </div>
+
+        <div className="settings-current">
+          <span className="settings-label">Pending:</span>
+          <span className="settings-value">
+            {migrationCounts
+              ? `${migrationCounts.soldItems} SoldItems row(s), ${migrationCounts.products} Maghsal product(s)`
+              : 'Calculating...'}
+          </span>
+        </div>
+
+        {lastMigration && (
+          <div className="settings-note">
+            <strong>Last migration:</strong> {new Date(lastMigration.runAt).toLocaleString()} —
+            {' '}{lastMigration.countMigrated ?? 0} entry(s) moved, status: {lastMigration.status}.
+          </div>
+        )}
+
+        <div className="settings-actions">
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={runMigration}
+            disabled={
+              migrationBusy ||
+              (migrationCounts && migrationCounts.soldItems === 0 && migrationCounts.products === 0)
+            }
+          >
+            {migrationBusy ? 'Migrating...' : 'Run Migration'}
+          </button>
+          <button
+            className="settings-btn settings-btn-secondary"
+            onClick={previewMigrationCounts}
+            disabled={migrationBusy}
+          >
+            Recheck
+          </button>
+        </div>
+
+        {migrationStatus && (
+          <div className="settings-note" style={{ marginTop: 10 }}>
+            {migrationStatus}
+          </div>
+        )}
+      </div>
+
+      {/* Archive & Reset */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconDatabase /></span>
+          <div>
+            <h3>Archive & Reset</h3>
+            <p>Administrative reset actions are kept here so they are not exposed in daily Products or Stock workflows.</p>
+          </div>
+        </div>
+
+        <div className="settings-note">
+          These actions create archive snapshots before resetting. Use them only when closing a stock cycle.
+        </div>
+
+        <div className="settings-actions">
+          <button
+            className="settings-btn settings-btn-danger"
+            onClick={archiveProductsAndResetQuantities}
+            disabled={productArchiveBusy || stockArchiveBusy}
+          >
+            {productArchiveBusy ? 'Archiving Products...' : 'Archive Products & Reset Qty'}
+          </button>
+          <button
+            className="settings-btn settings-btn-danger"
+            onClick={archiveStockAndResetAll}
+            disabled={productArchiveBusy || stockArchiveBusy}
+          >
+            {stockArchiveBusy ? 'Archiving Stock...' : 'Archive Stock Data & Reset All'}
+          </button>
+        </div>
+      </div>
+
+      {message && <div className="settings-success">{message}</div>}
+      {error && <div className="settings-error">{error}</div>}
     </div>
   );
 };

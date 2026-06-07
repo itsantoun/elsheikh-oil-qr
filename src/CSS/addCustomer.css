@@ -4,6 +4,27 @@
    ============================================================ */
 
 /* Customer-specific form layout */
+.customers-page {
+  gap: 18px;
+}
+
+.customers-page .page-header {
+  padding-bottom: 0;
+}
+
+.customers-page .form-card,
+.customers-page .table-card {
+  width: 100%;
+}
+
+.customers-page .table-header {
+  align-items: flex-start;
+}
+
+.customers-page .table-header-right {
+  align-items: center;
+}
+
 .customer-form .form-grid {
   padding: 20px;
   display: grid;
@@ -64,4 +85,19 @@
   font-size: 36px;
   margin-bottom: 10px;
   opacity: 0.4;
+}
+
+@media (max-width: 768px) {
+  .customers-page .table-header-right {
+    width: 100%;
+  }
+
+  .customers-page .search-input-group {
+    width: 100%;
+  }
+
+  .customers-page .search-input {
+    width: 100%;
+    min-width: 0;
+  }
 }

@@ -9,8 +9,19 @@ import Barcode from 'react-barcode';
 import { IconRefresh, IconX } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
+import {
+  addReceiptHeader,
+  createReceiptDoc,
+  drawTotalsBlock,
+  getReceiptDensity,
+  money,
+  receiptTableOptions,
+} from '../utils/pdfReceipt';
 
-const isMaghsalItem = (item, productsList) => {
+// Legacy safety filter: hides any leftover Maghsal-typed rows from Oil/Filter view
+// until the Settings → Maghsal Migration is run.
+const isLegacyMaghsalItem = (item, productsList) => {
+  if (String(item?.paymentStatus || '').toLowerCase() === 'maghsal') return true;
   const product = productsList.find(p => p.id === item.barcode || p.id === item.productId);
   return String(product?.productType || '').toLowerCase() === 'maghsal';
 };
@@ -69,7 +80,6 @@ const SoldItems = () => {
   const [isSavingMissingItem, setIsSavingMissingItem] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
-  const [showMaghsal, setShowMaghsal] = useState(false);
 
   useExpiryNotifications({ errorMessage });
   
@@ -297,10 +307,8 @@ const SoldItems = () => {
 
   // Apply filters
   useEffect(() => {
-    // Separate Maghsal from main items first — same split as Stock Checker.
-    let filtered = soldItems.filter(item =>
-      showMaghsal ? isMaghsalItem(item, products) : !isMaghsalItem(item, products)
-    );
+    // Oil/Filter only — hide any legacy Maghsal rows until migration is run.
+    let filtered = soldItems.filter(item => !isLegacyMaghsalItem(item, products));
 
     if (customerFilter) {
       filtered = filtered.filter((item) =>
@@ -339,13 +347,7 @@ const SoldItems = () => {
     }
 
     if (paymentStatusFilter !== 'All') {
-      if (paymentStatusFilter === 'Unpaid') {
-        filtered = filtered.filter((item) => item.paymentStatus === 'Unpaid');
-      } else if (paymentStatusFilter === 'Paid') {
-        filtered = filtered.filter((item) => item.paymentStatus === 'Paid');
-      } else if (paymentStatusFilter === 'Stock') {
-        filtered = filtered.filter((item) => item.paymentStatus === 'Stock');
-      }
+      filtered = filtered.filter((item) => item.paymentStatus === paymentStatusFilter);
     }
 
     if (checkFilter === 'checked') {
@@ -366,7 +368,6 @@ const SoldItems = () => {
     checkFilter,
     checkedItems,
     soldItems,
-    showMaghsal,
     products,
   ]);
 
@@ -642,44 +643,51 @@ const SoldItems = () => {
       else if (item.paymentStatus === 'Unpaid') unpaidTotal += lineTotal;
       return [
         formatDate(item.dateScanned),
-        item.customerName || "N/A",
-        item.paymentStatus || "N/A",
         item.name || "N/A",
         metrics.quantity,
-        `$${metrics.unitSellPrice.toFixed(2)}`,
-        `$${lineTotal.toFixed(2)}`,
+        money(metrics.unitSellPrice),
+        money(lineTotal),
+        item.paymentStatus || "N/A",
       ];
     });
 
-    const doc = new jsPDF();
-
-    doc.setFontSize(14);
-    doc.text(customerFilter || "Client Export", 14, 15);
-    doc.setFontSize(10);
+    const doc = createReceiptDoc(jsPDF);
+    const density = getReceiptDensity(rows.length);
     const fromLabel = dateFromFilter ? getDateDisplay(dateFromFilter) : formatDate(filteredItems[0]?.dateScanned);
     const toLabel = dateToFilter ? getDateDisplay(dateToFilter) : formatDate(filteredItems[filteredItems.length - 1]?.dateScanned);
-    doc.text(`Date: From ${fromLabel} to ${toLabel}`, 14, 22);
+    const startY = await addReceiptHeader(doc, {
+      title: 'CLIENT RECEIPT',
+      subtitle: 'Oil / Filter Statement',
+      receiptNo: `OF-${Date.now().toString().slice(-8)}`,
+      client: customerFilter || 'All Clients',
+      dateRange: `From ${fromLabel} to ${toLabel}`,
+    });
 
     autoTable(doc, {
-      head: [["Date", "Client", "Status", "Product", "Quantity", "Unit Price", "Total"]],
-      body: rows,
-      startY: 28,
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [41, 128, 185] },
+      ...receiptTableOptions({
+        head: ["Date", "Item", "Qty", "Unit Price", "Total", "Status"],
+        body: rows,
+        startY,
+        rightAlignedColumns: [2, 3, 4],
+        density,
+      }),
       columnStyles: {
-        5: { halign: 'right' },
-        6: { halign: 'right' },
+        0: { cellWidth: 25 },
+        1: { cellWidth: 72 },
+        2: { halign: 'right', cellWidth: 16 },
+        3: { halign: 'right', cellWidth: 24 },
+        4: { halign: 'right', cellWidth: 24 },
+        5: { cellWidth: 26 },
       },
     });
 
-    const finalY = doc.lastAutoTable.finalY + 8;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    doc.setFontSize(10);
-    doc.text(`Total Paid: $${paidTotal.toFixed(2)}`, pageWidth - 14, finalY, { align: 'right' });
-    doc.text(`Total Unpaid: $${unpaidTotal.toFixed(2)}`, pageWidth - 14, finalY + 6, { align: 'right' });
-    doc.setFontSize(11);
-    doc.setFont(undefined, 'bold');
-    doc.text(`Grand Total: $${(paidTotal + unpaidTotal).toFixed(2)}`, pageWidth - 14, finalY + 14, { align: 'right' });
+    drawTotalsBlock(doc, {
+      paid: paidTotal,
+      unpaid: unpaidTotal,
+      grandTotal: paidTotal + unpaidTotal,
+      startY: doc.lastAutoTable.finalY + 4,
+      compact: density.totalsCompact,
+    });
 
     const filename = buildExportFilename('pdf');
     const pdfBlob = doc.output('blob');
@@ -755,7 +763,7 @@ const SoldItems = () => {
     setMissingItemCustomerId('');
     setMissingItemDate(getTodayDateForInput());
     setMissingItemQuantity('1');
-    setMissingItemPaymentStatus(showMaghsal ? 'Maghsal' : 'Unpaid');
+    setMissingItemPaymentStatus('Unpaid');
     setMissingItemRemark('');
   };
 
@@ -798,20 +806,19 @@ const SoldItems = () => {
 
     const paymentStatusValue = missingItemPaymentStatus || 'Unpaid';
     const isStock = isStockLikeStatus(paymentStatusValue);
-    const isMaghsalStatus = paymentStatusValue === 'Maghsal';
 
-    // Customer only required for Paid / Unpaid sales — not for stock or Maghsal
-    if (!isStock && !isMaghsalStatus && !missingItemCustomerId) {
+    // Customer only required for Paid / Unpaid sales — not for stock
+    if (!isStock && !missingItemCustomerId) {
       setErrorMessage('Please select a customer.');
       setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
-    const selectedCustomer = (!isStock && !isMaghsalStatus)
+    const selectedCustomer = !isStock
       ? customers.find((customer) => customer.id === missingItemCustomerId)
       : null;
 
-    if (!isStock && !isMaghsalStatus && !selectedCustomer) {
+    if (!isStock && !selectedCustomer) {
       setErrorMessage('Selected customer is no longer available.');
       setTimeout(() => setErrorMessage(null), 3000);
       return;
@@ -906,7 +913,7 @@ const SoldItems = () => {
   const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
   const canSaveMissingItem = Boolean(
     selectedProduct &&
-    (isStockLikeStatus(missingItemPaymentStatus) || missingItemPaymentStatus === 'Maghsal' || missingItemCustomerId) &&
+    (isStockLikeStatus(missingItemPaymentStatus) || missingItemCustomerId) &&
     missingItemDate &&
     missingItemQuantityValue > 0 &&
     !isSavingMissingItem
@@ -918,32 +925,52 @@ const SoldItems = () => {
     : 'Filtered Profit';
 
   return (
-    <div className="sold-items-container">
+    <div className="page-shell sold-items-container">
       {/* Header */}
-      <div className="header-section">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <h1 className="page-title" style={{ margin: 0 }}>
-            Sold Items{showMaghsal ? ' — Maghsal' : ''}
-          </h1>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              onClick={() => setShowMaghsal(false)}
-              className={`tab-button${!showMaghsal ? ' active' : ''}`}
-              style={{ padding: '4px 14px', fontSize: 13 }}
-            >
-              Oil / Filter
-            </button>
-            <button
-              onClick={() => setShowMaghsal(true)}
-              className={`tab-button${showMaghsal ? ' active' : ''}`}
-              style={{ padding: '4px 14px', fontSize: 13 }}
-            >
-              Maghsal
-            </button>
-          </div>
+      <div className="page-shell-header">
+        <div className="page-shell-header-left">
+          <h1 className="page-shell-header-title">Items Sold</h1>
+          <p className="page-shell-header-subtitle">Oil / Filter</p>
         </div>
-        {errorMessage && <div className="error-message">{errorMessage}</div>}
+        <div className="page-shell-header-actions">
+          <button
+            className="btn-secondary"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <div style={{ position: 'relative' }}>
+            <button className="btn-secondary" onClick={() => setShowExportDropdown(v => !v)}>
+              Export ▾
+            </button>
+            {showExportDropdown && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                background: '#fff', border: '1px solid var(--border-light)', borderRadius: 'var(--r-md)',
+                boxShadow: 'var(--shadow-md)', minWidth: 180, marginTop: 4,
+              }}>
+                <button
+                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { exportToCSV(); setShowExportDropdown(false); }}
+                >
+                  Full Export (CSV)
+                </button>
+                <button
+                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { exportToCSVClient(); setShowExportDropdown(false); }}
+                >
+                  Client Export (PDF)
+                </button>
+              </div>
+            )}
+          </div>
+          <button className="btn-primary" onClick={openMissingItemsModal}>
+            Add Missing Items
+          </button>
+        </div>
       </div>
+      {errorMessage && <div className="error-message">{errorMessage}</div>}
 
       {/* Filters Section */}
       <div className="filters-section">
@@ -1027,7 +1054,7 @@ const SoldItems = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
-              <option value="Maghsal">Maghsal</option>
+              <option value="Stock">Stock</option>
             </select>
           </div>
 
@@ -1054,44 +1081,6 @@ const SoldItems = () => {
         <div className="filter-actions">
           <button className="btn-secondary" onClick={clearAllFilters}>
             Clear Filters
-          </button>
-          <div style={{ position: 'relative' }}>
-            <button className="btn-primary" onClick={() => setShowExportDropdown(v => !v)}>
-              Export ▾
-            </button>
-            {showExportDropdown && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, zIndex: 100,
-                background: '#fff', border: '1px solid #ccc', borderRadius: 6,
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)', minWidth: 160,
-              }}>
-                <button
-                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { exportToCSV(); setShowExportDropdown(false); }}
-                >
-                  Full Export
-                </button>
-                <button
-                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { exportToCSVClient(); setShowExportDropdown(false); }}
-                >
-                  Export as Client
-                </button>
-              </div>
-            )}
-          </div>
-          <button 
-            className="btn-secondary" 
-            onClick={openMissingItemsModal}
-          >
-            Add Missing Items
-          </button>
-          <button 
-            className="btn-secondary" 
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-          >
-            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
           </button>
         </div>
       </div>
@@ -1154,48 +1143,27 @@ const SoldItems = () => {
 
       {/* Summary Cards */}
       {filteredItems.length > 0 && (
-        <div className="summary-cards">
-          <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Total Items</span>
-              <span className="summary-card-value">{filteredTotals.totalItems}</span>
-            </div>
+        <div className="kpi-grid">
+          <div className="kpi-card">
+            <div className="kpi-card-label">Total Items</div>
+            <div className="kpi-card-value">{filteredTotals.totalItems}</div>
           </div>
-          <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Total Quantity</span>
-              <span className="summary-card-value">{formatCurrency(filteredTotals.totalQuantity)}</span>
-            </div>
+          <div className="kpi-card">
+            <div className="kpi-card-label">Total Quantity</div>
+            <div className="kpi-card-value">{formatCurrency(filteredTotals.totalQuantity)}</div>
           </div>
-          <div className="summary-card highlight">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Total Revenue</span>
-              <span className="summary-card-value">${formatCurrency(filteredTotals.totalCost)}</span>
-            </div>
+          <div className="kpi-card tone-green">
+            <div className="kpi-card-label">Total Revenue</div>
+            <div className="kpi-card-value">${formatCurrency(filteredTotals.totalCost)}</div>
           </div>
-          <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Total Purchase Cost</span>
-              <span className="summary-card-value">${formatCurrency(filteredTotals.totalPurchaseCost)}</span>
-            </div>
+          <div className="kpi-card tone-purple">
+            <div className="kpi-card-label">Total Purchase Cost</div>
+            <div className="kpi-card-value">${formatCurrency(filteredTotals.totalPurchaseCost)}</div>
           </div>
-          <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">{profitSummaryLabel}</span>
-              <span
-                className="summary-card-value"
-                style={{ color: filteredTotals.totalProfit >= 0 ? '#198754' : '#dc3545' }}
-              >
-                ${formatCurrency(filteredTotals.totalProfit)}
-              </span>
-            </div>
+          <div className={`kpi-card ${filteredTotals.totalProfit >= 0 ? 'tone-green' : 'tone-red'}`}>
+            <div className="kpi-card-label">{profitSummaryLabel}</div>
+            <div className="kpi-card-value">${formatCurrency(filteredTotals.totalProfit)}</div>
           </div>
-          {/* <div className="summary-card">
-            <div className="summary-card-content">
-              <span className="summary-card-label">Checked Items</span>
-              <span className="summary-card-value">{checkedItems.length}</span>
-            </div>
-          </div> */}
         </div>
       )}
 
@@ -1370,7 +1338,6 @@ const SoldItems = () => {
                         <option value="Paid">Paid</option>
                         <option value="Unpaid">Unpaid</option>
                         <option value="Stock">Stock</option>
-                        <option value="Maghsal">Maghsal</option>
                       </select>
                     ) : (
                       <div className="payment-status">
@@ -1464,10 +1431,7 @@ const SoldItems = () => {
                   >
                     <option value="">Select a Product</option>
                     {products
-                      .filter(p => showMaghsal
-                        ? String(p.productType || '').toLowerCase() === 'maghsal'
-                        : String(p.productType || '').toLowerCase() !== 'maghsal'
-                      )
+                      .filter(p => String(p.productType || '').toLowerCase() !== 'maghsal')
                       .map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.name} - {product.barcode}
@@ -1545,7 +1509,6 @@ const SoldItems = () => {
                           <option value="Paid">Paid</option>
                           <option value="Unpaid">Unpaid</option>
                           <option value="Stock">Stock</option>
-                          <option value="Maghsal">Maghsal</option>
                         </select>
                       </div>
                     </div>

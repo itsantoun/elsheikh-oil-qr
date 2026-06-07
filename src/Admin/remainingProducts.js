@@ -26,7 +26,6 @@ const RemainingProducts = () => {
   const [searchTerm, setSearchTerm]             = useState('');
   const [activeTab, setActiveTab]               = useState('check');
   const [isLoading, setIsLoading]               = useState(false);
-  const [isArchiving, setIsArchiving]           = useState(false);
   const [isRestoring, setIsRestoring]           = useState(false);
 
   const [countedQty, setCountedQty] = useState({});
@@ -61,7 +60,7 @@ const RemainingProducts = () => {
   const [archiveSearchTerm, setArchiveSearchTerm] = useState('');
 
   const [showZeroStock, setShowZeroStock] = useState(false);
-  const [maghsalSearchTerm, setMaghsalSearchTerm] = useState('');
+  const [scopeFilter, setScopeFilter] = useState('all'); // all | oil | filter | maghsal | other
 
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage]     = useState(null);
@@ -111,8 +110,18 @@ const RemainingProducts = () => {
     []
   );
 
-  const isMaghsal = useCallback(
-    (product) => String(product?.productType || '').toLowerCase() === 'maghsal',
+  // Global products are tagged with `scope`. Legacy oil-filter rows are inferred
+  // from productType where possible.
+  const productScope = useCallback(
+    (product) => {
+      const value = String(product?.scope || '').toLowerCase();
+      const type = String(product?.productType || '').toLowerCase();
+      if (value === 'other') return 'other';
+      if (value.startsWith('maghsal') || type === 'maghsal') return 'maghsal';
+      if (value === 'filter' || type.includes('filter')) return 'filter';
+      if (value === 'oil' || type.includes('oil')) return 'oil';
+      return type ? 'other' : 'oil';
+    },
     []
   );
 
@@ -264,16 +273,22 @@ const RemainingProducts = () => {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
-    // Maghsal products are shown in their own dedicated tab, not in Check Stock / Pending.
+    // Filter by scope tab. The Maghsal tab includes both consumables and goods.
+    const inScope = (p) => {
+      if (scopeFilter === 'all') return true;
+      if (scopeFilter === 'maghsal') return productScope(p).startsWith('maghsal');
+      return productScope(p) === scopeFilter;
+    };
+
     const baseProducts = showZeroStock
-      ? products.filter(p => !isMaghsal(p) && getExpectedRemaining(p) <= 0)
-      : products.filter(p => !isMaghsal(p) && hasPositiveExpectedStock(p));
+      ? products.filter(p => inScope(p) && getExpectedRemaining(p) <= 0)
+      : products.filter(p => inScope(p) && hasPositiveExpectedStock(p));
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
-  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, isMaghsal]);
+  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, scopeFilter, productScope]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -708,95 +723,6 @@ const RemainingProducts = () => {
     } catch (err) { console.error(err); showError('Failed to save check.'); }
   };
 
-  // ── Actions: archive all stock and reset ──────────────────────────────────
-
-  const handleArchiveAllStock = async () => {
-    const confirmed = window.confirm(
-      'Archive ALL products + Sold Items and start from scratch?\n\n' +
-      'This creates an archive copy, keeps products (barcode/name/prices/etc.), resets product quantities to 0, and clears live SoldItems + stock checks/history.'
-    );
-    if (!confirmed) return;
-
-    setIsArchiving(true);
-    const archivedAt = new Date().toISOString();
-    const archiveId = archivedAt.replace(/[.:]/g, '-');
-
-    try {
-      const [productsSnap, checksSnap, historySnap, soldSnap] = await Promise.all([
-        get(ref(database, 'products')),
-        get(ref(database, 'stockChecks')),
-        get(ref(database, 'stockCheckHistory')),
-        get(ref(database, 'SoldItems')),
-      ]);
-
-      if (!productsSnap.exists()) {
-        showError('No products available to archive.');
-        return;
-      }
-
-      const allProducts = Object.entries(productsSnap.val()).map(([id, value]) => ({ id, ...value }));
-
-      const productSnapshot = allProducts.reduce((acc, product) => {
-        acc[product.id] = { ...product };
-        return acc;
-      }, {});
-
-      const allChecks = checksSnap.exists() ? checksSnap.val() : {};
-      const pendingFromDb = Object.values(allChecks).filter((check) => check?.status === 'pending').length;
-
-      await set(ref(database, `stockArchives/${archiveId}`), {
-        archivedAt,
-        summary: {
-          productsArchived: allProducts.length,
-          soldItemsArchived: soldSnap.exists() ? Object.keys(soldSnap.val()).length : 0,
-          pendingChecksArchived: pendingFromDb,
-          historyMonthsArchived: historySnap.exists() ? Object.keys(historySnap.val()).length : 0,
-        },
-        products: productSnapshot,
-        soldItems: soldSnap.exists() ? soldSnap.val() : {},
-        stockChecks: allChecks,
-        stockCheckHistory: historySnap.exists() ? historySnap.val() : {},
-      });
-
-      const resetProducts = allProducts.reduce((acc, product) => {
-        const { id, ...rest } = product;
-        acc[id] = { ...rest, quantity: 0 };
-        return acc;
-      }, {});
-
-      await Promise.all([
-        set(ref(database, 'products'), resetProducts),
-        set(ref(database, 'stockCheckHistory'), null),
-        set(ref(database, 'SoldItems'), null),
-        set(ref(database, 'stockChecks'), null),
-      ]);
-
-      // In RemainingProducts, start fresh by clearing the visible stock list immediately.
-      setProducts([]);
-      setFilteredProducts([]);
-      setPendingChecks([]);
-      setAllCheckedProductIds(new Set());
-      setCountedQty({});
-      setCheckDate({});
-      setSoldTotals({});
-      setProductHistoryEntries([]);
-      setHistorySelectedProduct(null);
-      setHistorySearch('');
-      if (activeTab === 'archives') fetchArchives();
-
-      showSuccess(`Archived stock data and reset quantities to 0 for ${allProducts.length} products. Remaining stock list is now cleared.`);
-    } catch (err) {
-      console.error(err);
-      if (err?.code === 'PERMISSION_DENIED') {
-        showError('Permission denied. Add read/write rules for "stockArchives".');
-      } else {
-        showError('Failed to archive stock. Please try again.');
-      }
-    } finally {
-      setIsArchiving(false);
-    }
-  };
-
   const handleRestoreArchive = async () => {
     if (!selectedArchive) {
       showError('Select an archive first.');
@@ -843,27 +769,19 @@ const RemainingProducts = () => {
   // ── Render: Check tab ──────────────────────────────────────────────────────
 
   const renderCheckTab = () => (
-    <div>
-      <div className="header-section">
+    <div className="stock-tab-panel">
+      <div className="header-section stock-panel-header">
         <div className="header-left">
           <h2 className="section-title">Stock Checker</h2>
           <div className="stats-badge">{filteredProducts.length} Products</div>
           {pendingChecks.length > 0 && (
-            <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404', marginLeft: 8 }}>
+            <div className="stats-badge badge-amber">
               {pendingChecks.length} Pending
             </div>
           )}
         </div>
-        <div className="header-right" style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={handleArchiveAllStock}
-            className="btn-danger"
-            disabled={isArchiving || isRestoring || isLoading || products.length === 0}
-            title="Archive data, keep products, reset product quantities to 0, and clear sold/check history data"
-          >
-            <IconArchive /> {isArchiving ? 'Archiving...' : 'Archive & Reset Qty'}
-          </button>
-          <button onClick={() => setScannerOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="header-right">
+          <button onClick={() => setScannerOpen(true)} className="btn-primary">
             <IconCamera /> Scan Barcode
           </button>
           <button onClick={fetchData} className={`btn-secondary ${isLoading ? 'refreshing' : ''}`} disabled={isLoading}>
@@ -872,14 +790,17 @@ const RemainingProducts = () => {
         </div>
       </div>
 
-      <div style={{ margin: '12px 0' }}>
-        <input
-          type="text"
-          placeholder="Search by name, barcode or type..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
-        />
+      <div className="stock-search-card">
+        <div className="search-input-group">
+          <IconSearch />
+          <input
+            type="text"
+            placeholder="Search by name, barcode or type..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="search-input stock-search-input"
+          />
+        </div>
       </div>
 
       <div className="table-section">
@@ -908,7 +829,7 @@ const RemainingProducts = () => {
                   const expectedRemaining = getExpectedRemaining(product, currentStock);
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                   return (
-                    <tr key={product.id} style={isPending ? { backgroundColor: '#fffbeb' } : {}}>
+                    <tr key={product.id} className={isPending ? 'row-warning' : ''}>
                       <td><span className="barcode-cell">{product.id}</span></td>
                       <td><span className="product-name-cell">{product.name}</span></td>
                       <td><span className="type-cell">{product.productType}</span></td>
@@ -939,8 +860,8 @@ const RemainingProducts = () => {
                       </td>
                       <td>
                         {isPending
-                          ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconAlertTriangle /> Pending</span>
-                          : <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconCheck /> OK</span>}
+                          ? <span className="status-badge status-stock"><IconAlertTriangle /> Pending</span>
+                          : <span className="status-badge status-confirmed"><IconCheck /> OK</span>}
                       </td>
                       <td>
                         <div className="action-buttons">
@@ -978,16 +899,16 @@ const RemainingProducts = () => {
     const uncheckedCount  = products.filter(p => !allCheckedProductIds.has(p.id)).length;
 
     return (
-      <div>
-        <div className="header-section">
+      <div className="stock-tab-panel">
+        <div className="header-section stock-panel-header">
           <div className="header-left">
             <h2 className="section-title">Pending Review</h2>
-            <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404' }}>{pendingProducts.length} Items</div>
+            <div className="stats-badge badge-amber">{pendingProducts.length} Items</div>
             {inaccurateCount > 0 && (
-              <div className="stats-badge" style={{ backgroundColor: '#fde8e8', color: '#c0392b', marginLeft: 8 }}>{inaccurateCount} Inaccurate</div>
+              <div className="stats-badge badge-red">{inaccurateCount} Inaccurate</div>
             )}
             {uncheckedCount > 0 && (
-              <div className="stats-badge" style={{ backgroundColor: '#e8f0fe', color: '#1a56db', marginLeft: 8 }}>{uncheckedCount} Not Checked</div>
+              <div className="stats-badge badge-blue">{uncheckedCount} Not Checked</div>
             )}
           </div>
           <div className="header-right">
@@ -1021,7 +942,7 @@ const RemainingProducts = () => {
                     const expectedRemaining = getExpectedRemaining(product, currentStock);
                     const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                     return (
-                      <tr key={product.id} style={{ backgroundColor: isPending ? '#fffbeb' : '#f0f4ff' }}>
+                      <tr key={product.id} className={isPending ? 'row-warning' : 'row-info'}>
                         <td><span className="barcode-cell">{product.id}</span></td>
                         <td><span className="product-name-cell">{product.name}</span></td>
                         <td><span className="type-cell">{product.productType}</span></td>
@@ -1052,8 +973,8 @@ const RemainingProducts = () => {
                         </td>
                         <td>
                           {isPending
-                            ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconAlertTriangle /> Inaccurate</span>
-                            : <span style={{ backgroundColor: '#e8f0fe', color: '#1a56db', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconPackage /> Not Checked</span>}
+                            ? <span className="status-badge status-stock"><IconAlertTriangle /> Inaccurate</span>
+                            : <span className="status-badge status-stock-confirmed"><IconPackage /> Not Checked</span>}
                         </td>
                         <td>
                           <div className="action-buttons">
@@ -1782,131 +1703,6 @@ const RemainingProducts = () => {
     );
   };
 
-  // ── Render: Maghsal tab ───────────────────────────────────────────────────
-
-  const renderMaghsalTab = () => {
-    const allMaghsal = products.filter(isMaghsal);
-    const t = maghsalSearchTerm.trim().toLowerCase();
-    const displayed = t
-      ? allMaghsal.filter(p =>
-          p.name?.toLowerCase().includes(t) ||
-          p.id?.toLowerCase().includes(t)
-        )
-      : allMaghsal;
-
-    const maghsalPendingIds = new Set(pendingChecks.filter(c => allMaghsal.some(p => p.id === c.id)).map(c => c.id));
-
-    return (
-      <div>
-        <div className="header-section">
-          <div className="header-left">
-            <h2 className="section-title">Maghsal Stock</h2>
-            <div className="stats-badge">{allMaghsal.length} Products</div>
-            {maghsalPendingIds.size > 0 && (
-              <div className="stats-badge" style={{ backgroundColor: '#fff3cd', color: '#856404', marginLeft: 8 }}>
-                {maghsalPendingIds.size} Pending
-              </div>
-            )}
-          </div>
-          <div className="header-right">
-            <button onClick={fetchData} className={`btn-secondary ${isLoading ? 'refreshing' : ''}`} disabled={isLoading}>
-              <IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        <div style={{ margin: '12px 0' }}>
-          <input
-            type="text"
-            placeholder="Search Maghsal products..."
-            value={maghsalSearchTerm}
-            onChange={e => setMaghsalSearchTerm(e.target.value)}
-            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <div className="table-section">
-          <div className="table-card">
-            <div className="table-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Barcode</th>
-                    <th>Product Name</th>
-                    <th className="text-right">Current Stock</th>
-                    <th className="text-right" title="Sold since last stock check">Sold Since Check</th>
-                    <th className="text-right">Expected Remaining</th>
-                    <th className="text-right">Counted Qty</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayed.map(product => {
-                    const isPending         = maghsalPendingIds.has(product.id);
-                    const inputVal          = countedQty[product.id] ?? '';
-                    const totalSold         = toNumber(soldTotals[product.id]);
-                    const currentStock      = toNumber(product.quantity);
-                    const expectedRemaining = getExpectedRemaining(product, currentStock);
-                    const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
-                    return (
-                      <tr key={product.id} style={isPending ? { backgroundColor: '#fffbeb' } : {}}>
-                        <td><span className="barcode-cell">{product.id}</span></td>
-                        <td><span className="product-name-cell">{product.name}</span></td>
-                        <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
-                        <td className="text-right">
-                          <span className="quantity-cell" style={{ color: totalSold > 0 ? '#dc3545' : '#6c757d' }}>{totalSold}</span>
-                        </td>
-                        <td className="text-right">
-                          <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
-                            {expectedRemaining}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <input
-                            type="number" min="0" placeholder="Enter count" value={inputVal}
-                            onChange={e => setCountedQty(prev => ({ ...prev, [product.id]: e.target.value }))}
-                            className="edit-input"
-                            style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
-                          />
-                          {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
-                          <input
-                            type="date" value={checkDate[product.id] ?? ''}
-                            max={todayStr()}
-                            onChange={e => setCheckDate(prev => ({ ...prev, [product.id]: e.target.value }))}
-                            style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[product.id] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
-                          />
-                        </td>
-                        <td>
-                          {isPending
-                            ? <span style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconAlertTriangle /> Pending</span>
-                            : <span style={{ backgroundColor: '#e8f5e9', color: '#2e7d32', padding: '3px 8px', borderRadius: 12, fontSize: 12 }}><IconCheck /> OK</span>}
-                        </td>
-                        <td>
-                          <div className="action-buttons">
-                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /> Accurate</button>
-                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /> Inaccurate</button>
-                            <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
-                            <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {displayed.length === 0 && !isLoading && (
-              <div className="empty-table">
-                <div className="empty-icon"><IconPackage /></div>
-                <p>{allMaghsal.length === 0 ? 'No Maghsal products found.' : `No products match "${maghsalSearchTerm}".`}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // ── Render: Scanner modal ──────────────────────────────────────────────────
 
@@ -2012,27 +1808,55 @@ const RemainingProducts = () => {
 
   // ── Main ───────────────────────────────────────────────────────────────────
 
+  const checkedProductsCount = allCheckedProductIds.size;
+  const uncheckedProductsCount = Math.max(products.length - checkedProductsCount, 0);
+  const visibleStockQuantity = filteredProducts.reduce((sum, product) => sum + toNumber(product.quantity), 0);
+
   return (
-    <div className="admin-container">
-      <div className="page-header">
-        <h1 className="page-title">Stock Checker</h1>
-        <p className="page-subtitle">Scan barcodes, count stock, archive old data, and review history</p>
+    <div className="page-shell stock-shell">
+      <div className="page-shell-header">
+        <div className="page-shell-header-left">
+          <h1 className="page-shell-header-title">Stock</h1>
+          <p className="page-shell-header-subtitle">Check inventory for Oil, Filter, and Maghsal products in one place.</p>
+        </div>
       </div>
 
       {successMessage && <div className="success-message"><span className="message-icon"><IconCheck /></span>{successMessage}</div>}
       {errorMessage   && <div className="error-message"><span className="message-icon"><IconAlertTriangle /></span>{errorMessage}</div>}
 
-      <div className="tab-navigation">
+      <div className="summary-cards">
+        <div className="summary-card highlight">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Visible Stock Qty</span>
+            <span className="summary-card-value">{visibleStockQuantity}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Checked</span>
+            <span className="summary-card-value" style={{ color: '#198754' }}>{checkedProductsCount}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Pending</span>
+            <span className="summary-card-value" style={{ color: '#c2740a' }}>{pendingChecks.length}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Not Checked</span>
+            <span className="summary-card-value">{uncheckedProductsCount}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="stock-primary-tabs tab-navigation">
         <button onClick={() => setActiveTab('check')}   className={`tab-button ${activeTab === 'check'   ? 'active' : ''}`}>
           <span className="tab-icon"><IconSearch /></span><span className="tab-label">Check Stock</span>
         </button>
         <button onClick={() => setActiveTab('pending')} className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}>
           <span className="tab-icon"><IconAlertTriangle /></span><span className="tab-label">Pending</span>
-        </button>
-        <button onClick={() => setActiveTab('maghsal')} className={`tab-button ${activeTab === 'maghsal' ? 'active' : ''}`}
-          style={{ borderColor: activeTab === 'maghsal' ? '#0d6efd' : undefined }}>
-          <span className="tab-icon"><IconPackage /></span>
-          <span className="tab-label">Maghsal ({products.filter(isMaghsal).length})</span>
         </button>
         <button onClick={() => setActiveTab('history')} className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}>
           <span className="tab-icon"><IconCalendar /></span><span className="tab-label">History</span>
@@ -2045,10 +1869,30 @@ const RemainingProducts = () => {
         </button>
       </div>
 
+      {/* Scope sub-filter (applies to Check / Pending / Zero Stock views) */}
+      {(activeTab === 'check' || activeTab === 'pending') && (
+        <div className="stock-scope-tabs tab-navigation">
+          <button onClick={() => setScopeFilter('all')} className={`tab-button ${scopeFilter === 'all' ? 'active' : ''}`}>
+            <span className="tab-label">All Scopes</span>
+          </button>
+          <button onClick={() => setScopeFilter('oil')} className={`tab-button ${scopeFilter === 'oil' ? 'active' : ''}`}>
+            <span className="tab-label">Oil</span>
+          </button>
+          <button onClick={() => setScopeFilter('filter')} className={`tab-button ${scopeFilter === 'filter' ? 'active' : ''}`}>
+            <span className="tab-label">Filter</span>
+          </button>
+          <button onClick={() => setScopeFilter('maghsal')} className={`tab-button ${scopeFilter === 'maghsal' ? 'active' : ''}`}>
+            <span className="tab-label">Maghsal</span>
+          </button>
+          <button onClick={() => setScopeFilter('other')} className={`tab-button ${scopeFilter === 'other' ? 'active' : ''}`}>
+            <span className="tab-label">Other</span>
+          </button>
+        </div>
+      )}
+
       <div className="tab-content">
         {activeTab === 'check'    && renderCheckTab()}
         {activeTab === 'pending'  && renderPendingTab()}
-        {activeTab === 'maghsal'  && renderMaghsalTab()}
         {activeTab === 'history'  && renderHistoryTab()}
         {activeTab === 'archives' && renderArchivesTab()}
       </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import '../CSS/navbar.css';
+import elsheikhLogo from '../assets/elsheikh-logo.png';
 
 // ── SVG Icon Components ──────────────────────────────────────────────────────
 
@@ -51,15 +52,6 @@ const IconArchive = () => (
   </svg>
 );
 
-const IconDashboard = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect width="7" height="9" x="3" y="3" rx="1"/>
-    <rect width="7" height="5" x="14" y="3" rx="1"/>
-    <rect width="7" height="9" x="14" y="12" rx="1"/>
-    <rect width="7" height="5" x="3" y="16" rx="1"/>
-  </svg>
-);
-
 const IconMenu = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="4" x2="20" y1="12" y2="12"/>
@@ -89,17 +81,101 @@ const IconSettings = () => (
   </svg>
 );
 
-// ── Nav Items Config ─────────────────────────────────────────────────────────
+const IconDroplet = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+  </svg>
+);
 
-const navItems = [
-  { id: 'addUsers',     Icon: IconUsers,      label: 'Users'        },
-  { id: 'addProducts',  Icon: IconPackage,    label: 'Products'     },
-  { id: 'transactions', Icon: IconCreditCard, label: 'Transactions' },
-  { id: 'itemsSold',    Icon: IconBarChart,   label: 'Items Sold'   },
-  { id: 'addCustomer',  Icon: IconUser,       label: 'Customers'    },
-  { id: 'stock',        Icon: IconArchive,    label: 'Stock'        },
-  { id: 'settings',     Icon: IconSettings,   label: 'Settings'     },
-  // { id: 'archives',     Icon: IconDashboard,  label: 'Archives'     },
+const IconTruck = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="3" width="15" height="13"/>
+    <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+    <circle cx="5.5" cy="18.5" r="2.5"/>
+    <circle cx="18.5" cy="18.5" r="2.5"/>
+  </svg>
+);
+
+const IconHome = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2V9.5z"/>
+  </svg>
+);
+
+const IconSpray = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3h6v6H3z"/>
+    <path d="M9 6h6"/>
+    <path d="M15 3v18"/>
+    <path d="M18 9h3v12h-6V12"/>
+  </svg>
+);
+
+// ── Nav Groups Config ─────────────────────────────────────────────────────────
+// Flat page ids (kept stable so admin.js routing doesn't need restructuring).
+// Each group has a label; children are leaf pages.
+
+const navGroups = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    Icon: IconHome,
+    children: [
+      { id: 'dashboard', Icon: IconHome, label: 'Dashboard' },
+    ],
+  },
+  {
+    id: 'inventory',
+    label: 'Inventory',
+    Icon: IconPackage,
+    children: [
+      { id: 'addProducts',  Icon: IconPackage,    label: 'Products'     },
+      { id: 'transactions', Icon: IconCreditCard, label: 'Transactions' },
+      { id: 'stock',        Icon: IconArchive,    label: 'Stock'        },
+    ],
+  },
+  {
+    id: 'oilFilter',
+    label: 'Oil / Filter',
+    Icon: IconBarChart,
+    children: [
+      { id: 'itemsSold', Icon: IconBarChart, label: 'Items Sold' },
+    ],
+  },
+  {
+    id: 'maghsalGroup',
+    label: 'Maghsal',
+    Icon: IconSpray,
+    children: [
+      { id: 'maghsal', Icon: IconBarChart, label: 'Items Sold' },
+    ],
+  },
+  {
+    id: 'waterFillingGroup',
+    label: 'Water Filling',
+    Icon: IconDroplet,
+    children: [
+      { id: 'waterFilling', Icon: IconDroplet, label: 'Entries', comingSoon: true },
+    ],
+  },
+  {
+    id: 'waterDistributionGroup',
+    label: 'Water Distribution',
+    Icon: IconTruck,
+    children: [
+      { id: 'waterDistribution', Icon: IconTruck, label: 'Entries', comingSoon: true },
+    ],
+  },
+  {
+    id: 'adminGroup',
+    label: 'Admin',
+    Icon: IconSettings,
+    children: [
+      { id: 'addUsers',    Icon: IconUsers,    label: 'Users'     },
+      { id: 'addCustomer', Icon: IconUser,     label: 'Customers' },
+      { id: 'settings',    Icon: IconSettings, label: 'Settings'  },
+    ],
+  },
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -107,94 +183,111 @@ const navItems = [
 const Navbar = ({ onNavigate, activePage, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const handleNavClick = (page) => {
+  const BrandLogo = () => (
+    <div className="brand-logo" aria-label="El Sheikh">
+      <img src={elsheikhLogo} alt="El Sheikh" className="brand-logo-image" />
+    </div>
+  );
+
+  const handleNavClick = (page, opts = {}) => {
+    if (opts.comingSoon) return;
     onNavigate(page);
     setIsMobileMenuOpen(false);
   };
 
-  return (
-    <nav className="navbar">
-      <div className="navbar-container">
-
-        {/* Brand */}
-        <div className="navbar-brand">
-          <div className="brand-logo">
-            <div className="logo-icon" />
-            <div className="brand-text">
-              <h1 className="brand-title">Elsheikh</h1>
-              <p className="brand-subtitle">Business Dashboard</p>
-            </div>
-          </div>
+  const renderGroup = (group, mobile = false) => {
+    const isGroupActive = group.children.some((c) => c.id === activePage);
+    return (
+      <div key={group.id} className={`nav-group${isGroupActive ? ' nav-group-active' : ''}`}>
+        <div className="nav-group-header">
+          <span className="nav-group-icon"><group.Icon /></span>
+          <span className="nav-group-label">{group.label}</span>
         </div>
-
-        {/* Desktop Nav */}
-        <div className="navbar-desktop">
-          <div className="nav-items">
-            {navItems.map(({ id, Icon, label }) => (
+        <div className="nav-group-items">
+          {group.children.map(({ id, Icon, label, comingSoon }) => {
+            const isActive = activePage === id;
+            const cls = mobile ? 'mobile-nav-button' : 'nav-button';
+            return (
               <button
                 key={id}
-                onClick={() => handleNavClick(id)}
-                className={`nav-button ${activePage === id ? 'active' : ''}`}
-                title={label}
+                onClick={() => handleNavClick(id, { comingSoon })}
+                className={`${cls}${isActive ? ' active' : ''}${comingSoon ? ' coming-soon' : ''}`}
+                title={comingSoon ? `${label} — Coming Soon` : label}
               >
-                <span className="nav-button-content">
-                  <span className="nav-icon"><Icon /></span>
-                  <span className="nav-label">{label}</span>
-                </span>
-                {activePage === id && <span className="nav-indicator" />}
+                <span className="nav-icon"><Icon /></span>
+                <span className="nav-label">{label}</span>
+                {comingSoon && <span className="nav-badge">Soon</span>}
+                {isActive && !comingSoon && (
+                  mobile ? <span className="mobile-nav-active-indicator" /> : <span className="nav-indicator-dot" />
+                )}
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
+      </div>
+    );
+  };
 
-        {/* Logout */}
-        {onLogout && (
-          <button onClick={onLogout} className="logout-button">
-            <IconLogOut />
-            Logout
-          </button>
-        )}
-
-        {/* Mobile Menu Button */}
+  return (
+    <>
+      {/* Mobile top bar — only visible on small screens */}
+      <div className="navbar-mobile-topbar">
+        <BrandLogo />
         <button
           className="mobile-menu-button"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           aria-label="Toggle menu"
         >
-          <span className="menu-icon">
-            {isMobileMenuOpen ? <IconX /> : <IconMenu />}
-          </span>
+          {isMobileMenuOpen ? <IconX /> : <IconMenu />}
         </button>
+      </div>
 
-        {/* Mobile Navigation */}
-        {isMobileMenuOpen && (
-          <div className="navbar-mobile">
-            <div className="mobile-nav-overlay" onClick={() => setIsMobileMenuOpen(false)} />
-            <div className="mobile-nav-content">
-              <div className="mobile-nav-header">
-                <h3>Navigation</h3>
-                <button className="mobile-close-button" onClick={() => setIsMobileMenuOpen(false)}>
-                  <IconX />
-                </button>
-              </div>
-              <div className="mobile-nav-items">
-                {navItems.map(({ id, Icon, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => handleNavClick(id)}
-                    className={`mobile-nav-button ${activePage === id ? 'active' : ''}`}
-                  >
-                    <span className="mobile-nav-icon"><Icon /></span>
-                    <span className="mobile-nav-label">{label}</span>
-                    {activePage === id && <span className="mobile-nav-active-indicator" />}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* Desktop sidebar */}
+      <aside className="navbar navbar-sidebar">
+        <div className="sidebar-brand">
+          <BrandLogo />
+        </div>
+
+        <nav className="sidebar-nav">
+          {navGroups.map((g) => renderGroup(g, false))}
+        </nav>
+
+        {onLogout && (
+          <div className="sidebar-footer">
+            <button onClick={onLogout} className="logout-button">
+              <IconLogOut />
+              Logout
+            </button>
           </div>
         )}
-      </div>
-    </nav>
+      </aside>
+
+      {/* Mobile drawer */}
+      {isMobileMenuOpen && (
+        <div className="navbar-mobile">
+          <div className="mobile-nav-overlay" onClick={() => setIsMobileMenuOpen(false)} />
+          <div className="mobile-nav-content">
+            <div className="mobile-nav-header">
+              <h3>Navigation</h3>
+              <button className="mobile-close-button" onClick={() => setIsMobileMenuOpen(false)}>
+                <IconX />
+              </button>
+            </div>
+            <div className="mobile-nav-items">
+              {navGroups.map((g) => renderGroup(g, true))}
+            </div>
+            {onLogout && (
+              <div className="mobile-nav-footer">
+                <button onClick={onLogout} className="logout-button">
+                  <IconLogOut />
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ref, get, set, remove, push } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
-import { IconRefresh, IconArchive, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
+import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 
 const FetchProducts = () => {
@@ -12,19 +12,21 @@ const FetchProducts = () => {
   const [newProduct, setNewProduct] = useState({
     id: '',
     name: '',
-    productType: '',
+    productType: 'Oil',
     itemCost: '',
     purchasingPrice: '',
     quantity: '',
+    scope: 'oil',
+    unit: '',
   });
   const [editingProduct, setEditingProduct] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isArchivingProducts, setIsArchivingProducts] = useState(false);
   const [activeTab, setActiveTab] = useState('products');
   const [heldProducts, setHeldProducts] = useState([]);
   const [sortBy, setSortBy] = useState({ field: 'name', order: 'asc' });
+  const [scopeFilter, setScopeFilter] = useState('all'); // all | oil | filter | maghsal | other
 
   useExpiryNotifications({ successMessage, errorMessage });
 
@@ -33,6 +35,29 @@ const FetchProducts = () => {
   const toNumber = (value) => {
     const parsed = parseFloat(value);
     return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const normalizeScope = (scope, productType = '') => {
+    const value = String(scope || '').toLowerCase();
+    const type = String(productType || '').toLowerCase();
+    if (value === 'other') return 'other';
+    if (value.startsWith('maghsal') || type === 'maghsal') return 'maghsal';
+    if (value === 'filter' || type.includes('filter')) return 'filter';
+    if (value === 'oil' || type.includes('oil')) return 'oil';
+    return type ? 'other' : 'oil';
+  };
+
+  const scopeToProductType = (scope) => {
+    if (scope === 'filter') return 'Filter';
+    if (scope === 'maghsal') return 'Maghsal';
+    if (scope === 'other') return '';
+    return 'Oil';
+  };
+
+  const resolveProductType = (scope, productType) => {
+    const scopeValue = normalizeScope(scope, productType);
+    if (scopeValue === 'other') return String(productType || '').trim();
+    return scopeToProductType(scopeValue);
   };
 
   const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
@@ -155,7 +180,8 @@ const FetchProducts = () => {
 
   useEffect(() => {
     handleSearch();
-  }, [searchTerm, products]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, products, scopeFilter]);
 
   useEffect(() => {
     if (products.length) {
@@ -173,21 +199,24 @@ const FetchProducts = () => {
   };
 
   const handleSearch = () => {
-    if (!searchTerm.trim()) {
-      setFilteredProducts(products);
-      return;
+    const term = searchTerm.toLowerCase().trim();
+    let result = products;
+
+    // Scope-aware filtering. Legacy Maghsal split scopes are merged into "maghsal".
+    if (scopeFilter !== 'all') {
+      result = result.filter((p) => normalizeScope(p.scope, p.productType) === scopeFilter);
     }
 
-    const term = searchTerm.toLowerCase().trim();
-    const filtered = products.filter(product => {
-      return (
-        product.name?.toLowerCase().includes(term) ||
-        product.id?.toLowerCase().includes(term) ||
-        product.productType?.toLowerCase().includes(term)
+    if (term) {
+      result = result.filter((p) =>
+        p.name?.toLowerCase().includes(term) ||
+        p.id?.toLowerCase().includes(term) ||
+        p.productType?.toLowerCase().includes(term) ||
+        p.unit?.toLowerCase().includes(term)
       );
-    });
+    }
 
-    setFilteredProducts(filtered);
+    setFilteredProducts(result);
   };
 
   const sanitizeId = (id) => {
@@ -216,22 +245,33 @@ const FetchProducts = () => {
       const parsedPurchasingPrice = parseFloat(newProduct.purchasingPrice) || 0;
       const parsedQuantity = parseFloat(newProduct.quantity) || 0;
 
+      const scopeValue = normalizeScope(newProduct.scope, newProduct.productType);
+      const productTypeValue = resolveProductType(newProduct.scope, newProduct.productType);
+      if (scopeValue === 'other' && !productTypeValue) {
+        setErrorMessage('Custom type is required when Type is Other.');
+        setTimeout(() => setErrorMessage(null), 3000);
+        return;
+      }
       await set(productRef, {
         name: newProduct.name.trim() || 'Unnamed Product',
-        productType: newProduct.productType.trim() || 'General',
+        productType: productTypeValue,
         itemCost: parsedItemCost,
         purchasingPrice: parsedPurchasingPrice,
         quantity: parsedQuantity,
+        scope: scopeValue,
+        unit: (newProduct.unit || '').trim(),
         createdAt: new Date().toISOString(),
       });
 
       const newProductObj = {
         id: sanitizedId,
         name: newProduct.name.trim() || 'Unnamed Product',
-        productType: newProduct.productType.trim() || 'General',
+        productType: productTypeValue,
         itemCost: parsedItemCost,
         purchasingPrice: parsedPurchasingPrice,
         quantity: parsedQuantity,
+        scope: scopeValue,
+        unit: (newProduct.unit || '').trim(),
       };
 
       const updatedProducts = [...products, newProductObj];
@@ -240,7 +280,7 @@ const FetchProducts = () => {
       setFilteredProducts(sortedProducts);
 
       setSuccessMessage('Product added successfully!');
-      setNewProduct({ id: '', name: '', productType: '', itemCost: '', purchasingPrice: '', quantity: '' });
+      setNewProduct({ id: '', name: '', productType: productTypeValue, itemCost: '', purchasingPrice: '', quantity: '', scope: scopeValue, unit: '' });
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error adding product:', error);
@@ -381,13 +421,22 @@ const FetchProducts = () => {
 
       const existingSnap = await get(newProductRef);
       const existingData = existingSnap.exists() ? existingSnap.val() : {};
+      const scopeValue = normalizeScope(editingProduct.scope, editingProduct.productType);
+      const productTypeValue = resolveProductType(editingProduct.scope, editingProduct.productType);
+      if (scopeValue === 'other' && !productTypeValue) {
+        setErrorMessage('Custom type is required when Type is Other.');
+        setTimeout(() => setErrorMessage(null), 3000);
+        return;
+      }
 
       await set(newProductRef, {
         name: editingProduct.name.trim() || 'Unnamed Product',
-        productType: editingProduct.productType.trim() || 'General',
+        productType: productTypeValue,
         itemCost: parsedItemCost,
         purchasingPrice: parsedPurchasingPrice,
         quantity: parsedQuantity,
+        scope: scopeValue,
+        unit: (editingProduct.unit || '').trim(),
         ...(editingProduct.createdAt ? { createdAt: editingProduct.createdAt } : existingData.createdAt ? { createdAt: existingData.createdAt } : {}),
       });
 
@@ -398,7 +447,9 @@ const FetchProducts = () => {
               id: newId,
               itemCost: parsedItemCost,
               purchasingPrice: parsedPurchasingPrice,
-              quantity: parsedQuantity
+              quantity: parsedQuantity,
+              productType: productTypeValue,
+              scope: scopeValue,
             }
           : product
       );
@@ -468,72 +519,6 @@ const FetchProducts = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleArchiveAndResetQuantities = async () => {
-    if (products.length === 0) {
-      setErrorMessage('No products to archive.');
-      setTimeout(() => setErrorMessage(null), 3000);
-      return;
-    }
-
-    const confirmed = window.confirm(
-      'Archive all current products and reset all quantities to 0?\n\n' +
-      'Products will stay in the list, only quantity will reset.'
-    );
-    if (!confirmed) return;
-
-    setIsArchivingProducts(true);
-    const archivedAt = new Date().toISOString();
-    const archiveId = archivedAt.replace(/[.:]/g, '-');
-
-    try {
-      const archiveProducts = products.reduce((acc, product) => {
-        const qty = parseFloat(product.quantity) || 0;
-        acc[product.id] = { ...product, quantity: qty };
-        return acc;
-      }, {});
-
-      const resetProducts = products.reduce((acc, product) => {
-        const { id, ...rest } = product;
-        acc[id] = { ...rest, quantity: 0 };
-        return acc;
-      }, {});
-
-      const totalQtyBeforeReset = products.reduce(
-        (sum, product) => sum + (parseFloat(product.quantity) || 0),
-        0
-      );
-
-      await set(ref(database, `productArchives/${archiveId}`), {
-        archivedAt,
-        summary: {
-          productsArchived: products.length,
-          totalQuantityBeforeReset: totalQtyBeforeReset,
-        },
-        products: archiveProducts,
-      });
-
-      await set(ref(database, 'products'), resetProducts);
-
-      const resetList = products.map((product) => ({ ...product, quantity: 0 }));
-      const sortedResetList = sortProducts(resetList, sortBy.field, sortBy.order);
-      setProducts(sortedResetList);
-      setFilteredProducts(sortedResetList);
-
-      setSuccessMessage(`Archived ${products.length} products and reset all quantities to 0.`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (error) {
-      console.error('Error archiving products:', error);
-      if (error?.code === 'PERMISSION_DENIED') {
-        setErrorMessage('Permission denied. Add read/write rules for "productArchives".');
-      } else {
-        setErrorMessage('Failed to archive and reset products. Please try again.');
-      }
-      setTimeout(() => setErrorMessage(null), 4000);
-    } finally {
-      setIsArchivingProducts(false);
-    }
-  };
-
   const sortProducts = (products, field, order) => {
     return [...products].sort((a, b) => {
       let aValue = a[field];
@@ -557,7 +542,10 @@ const FetchProducts = () => {
 
   const handleClearSearch = () => {
     setSearchTerm('');
-    setFilteredProducts(products);
+    const scopedProducts = scopeFilter === 'all'
+      ? products
+      : products.filter((product) => normalizeScope(product.scope, product.productType) === scopeFilter);
+    setFilteredProducts(scopedProducts);
   };
 
   const getSortIcon = (field) => {
@@ -570,30 +558,30 @@ const FetchProducts = () => {
     0
   );
 
+  const filteredProductsStockTotal = filteredProducts.reduce(
+    (sum, product) => sum + toNumber(product.quantity),
+    0
+  );
+
+  const filteredProductsValueTotal = filteredProducts.reduce(
+    (sum, product) => sum + getProfitMetrics(product).purchaseCost,
+    0
+  );
+
   const heldProductsProfitTotal = heldProducts.reduce(
     (sum, product) => sum + getProfitMetrics(product).totalProfit,
     0
   );
 
   const renderProductsTab = () => (
-    <div className="products-content">
+    <div className="products-content inventory-page">
       {/* Header Section */}
-      <div className="header-section">
-        <div className="header-left">
-          <h2 className="section-title">Product Management</h2>
-          <div className="stats-badge">
-            {filteredProducts.length} Products
-          </div>
+      <div className="page-shell-header inventory-page-header">
+        <div className="page-shell-header-left">
+          <h2 className="page-shell-header-title">Products</h2>
+          <p className="page-shell-header-subtitle">Manage barcodes, quantities, costs, and Maghsal inventory scopes.</p>
         </div>
-        <div className="header-right">
-          <button
-            onClick={handleArchiveAndResetQuantities}
-            className="btn-danger"
-            disabled={isRefreshing || isArchivingProducts || products.length === 0}
-            title="Archive all products and reset all quantities to 0 while keeping products"
-          >
-            <IconArchive /> {isArchivingProducts ? 'Archiving...' : 'Archive & Reset Qty'}
-          </button>
+        <div className="page-shell-header-actions">
           <button 
             onClick={handleRefresh} 
             className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
@@ -604,6 +592,38 @@ const FetchProducts = () => {
           <button onClick={handleExportToExcel} className="btn-primary">
             <IconBarChart /> Export CSV
           </button>
+        </div>
+      </div>
+
+      <div className="summary-cards">
+        <div className="summary-card highlight">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Visible Products</span>
+            <span className="summary-card-value">{filteredProducts.length}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Total Quantity</span>
+            <span className="summary-card-value">{filteredProductsStockTotal}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Stock Value</span>
+            <span className="summary-card-value">${filteredProductsValueTotal.toFixed(2)}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Potential Profit</span>
+            <span
+              className="summary-card-value"
+              style={{ color: filteredProductsProfitTotal >= 0 ? '#198754' : '#dc3545' }}
+            >
+              ${filteredProductsProfitTotal.toFixed(2)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -654,15 +674,56 @@ const FetchProducts = () => {
             </div>
 
             <div className="form-group">
-              <label>Product Type</label>
+              <label>Type</label>
+              <select
+                value={editingProduct
+                  ? normalizeScope(editingProduct.scope, editingProduct.productType)
+                  : normalizeScope(newProduct.scope, newProduct.productType)}
+                onChange={(e) => {
+                  const scopeValue = e.target.value;
+                  const productTypeValue = scopeToProductType(scopeValue);
+                  editingProduct
+                    ? setEditingProduct({ ...editingProduct, scope: scopeValue, productType: productTypeValue })
+                    : setNewProduct({ ...newProduct, scope: scopeValue, productType: productTypeValue });
+                }}
+                className="form-select"
+              >
+                <option value="oil">Oil</option>
+                <option value="filter">Filter</option>
+                <option value="maghsal">Maghsal</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            {(editingProduct
+              ? normalizeScope(editingProduct.scope, editingProduct.productType)
+              : normalizeScope(newProduct.scope, newProduct.productType)) === 'other' && (
+              <div className="form-group">
+                <label>Custom Type</label>
+                <input
+                  type="text"
+                  placeholder="Enter custom product type"
+                  value={editingProduct ? editingProduct.productType : newProduct.productType}
+                  onChange={(e) =>
+                    editingProduct
+                      ? setEditingProduct({ ...editingProduct, productType: e.target.value })
+                      : setNewProduct({ ...newProduct, productType: e.target.value })
+                  }
+                  className="form-input"
+                />
+              </div>
+            )}
+
+            <div className="form-group">
+              <label>Unit</label>
               <input
                 type="text"
-                placeholder="e.g., Oil, Filter"
-                value={editingProduct ? editingProduct.productType : newProduct.productType}
+                placeholder="e.g., ml, kg, piece"
+                value={editingProduct ? (editingProduct.unit || '') : newProduct.unit}
                 onChange={(e) =>
                   editingProduct
-                    ? setEditingProduct({ ...editingProduct, productType: e.target.value })
-                    : setNewProduct({ ...newProduct, productType: e.target.value })
+                    ? setEditingProduct({ ...editingProduct, unit: e.target.value })
+                    : setNewProduct({ ...newProduct, unit: e.target.value })
                 }
                 className="form-input"
               />
@@ -730,12 +791,38 @@ const FetchProducts = () => {
         </div>
       </div>
 
+      {/* Scope Tabs */}
+      <div className="inventory-filter-row">
+        <div className="tab-navigation">
+          <button
+            className={`tab-button ${scopeFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setScopeFilter('all')}
+          >All</button>
+          <button
+            className={`tab-button ${scopeFilter === 'oil' ? 'active' : ''}`}
+            onClick={() => setScopeFilter('oil')}
+          >Oil</button>
+          <button
+            className={`tab-button ${scopeFilter === 'filter' ? 'active' : ''}`}
+            onClick={() => setScopeFilter('filter')}
+          >Filter</button>
+          <button
+            className={`tab-button ${scopeFilter === 'maghsal' ? 'active' : ''}`}
+            onClick={() => setScopeFilter('maghsal')}
+          >Maghsal</button>
+          <button
+            className={`tab-button ${scopeFilter === 'other' ? 'active' : ''}`}
+            onClick={() => setScopeFilter('other')}
+          >Other</button>
+        </div>
+      </div>
+
       {/* Search Section */}
       <div className="search-section">
         <div className="search-card">
           <div className="search-header">
-            <h3>Search Products</h3>
-            {searchTerm && (
+            <h3>Find Product</h3>
+            {(searchTerm || scopeFilter !== 'all') && (
               <span className="search-results">
                 Found {filteredProducts.length} product(s)
               </span>
@@ -745,7 +832,7 @@ const FetchProducts = () => {
             <div className="search-input-group">
               <input
                 type="text"
-                placeholder="Search by name, barcode, or type..."
+                placeholder="Search by name, barcode, type, or unit..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="search-input"
@@ -764,7 +851,7 @@ const FetchProducts = () => {
       <div className="table-section">
         <div className="table-card">
           <div className="table-header">
-            <h3>Product List</h3>
+            <h3 className="table-title"><IconPackage /> Product List</h3>
             <div className="table-stats">
               Showing {filteredProducts.length} of {products.length} products • Potential Profit: ${filteredProductsProfitTotal.toFixed(2)}
             </div>
@@ -848,14 +935,35 @@ const FetchProducts = () => {
                     </td>
                     <td>
                       {editingProduct && editingProduct.id === product.id ? (
-                        <input
-                          type="text"
-                          value={editingProduct.productType}
-                          onChange={(e) =>
-                            setEditingProduct({ ...editingProduct, productType: e.target.value })
-                          }
-                          className="edit-input"
-                        />
+                        <>
+                          <select
+                            value={normalizeScope(editingProduct.scope, editingProduct.productType)}
+                            onChange={(e) => {
+                              const scopeValue = e.target.value;
+                              setEditingProduct({
+                                ...editingProduct,
+                                scope: scopeValue,
+                                productType: scopeToProductType(scopeValue),
+                              });
+                            }}
+                            className="edit-input"
+                          >
+                            <option value="oil">Oil</option>
+                            <option value="filter">Filter</option>
+                            <option value="maghsal">Maghsal</option>
+                            <option value="other">Other</option>
+                          </select>
+                          {normalizeScope(editingProduct.scope, editingProduct.productType) === 'other' && (
+                            <input
+                              type="text"
+                              value={editingProduct.productType}
+                              onChange={(e) => setEditingProduct({ ...editingProduct, productType: e.target.value })}
+                              className="edit-input"
+                              placeholder="Custom type"
+                              style={{ marginTop: 6 }}
+                            />
+                          )}
+                        </>
                       ) : (
                         <span className="type-cell">{product.productType}</span>
                       )}
@@ -969,18 +1077,15 @@ const FetchProducts = () => {
   );
 
   const renderHoldsTab = () => (
-    <div className="holds-content">
-      <div className="header-section">
-        <div className="header-left">
-          <h2 className="section-title">Hold Products</h2>
-          <div className="stats-badge">
-            {heldProducts.length} Hold
-          </div>
-          <div className="stats-badge">
-            Potential Profit: ${heldProductsProfitTotal.toFixed(2)}
-          </div>
+    <div className="holds-content inventory-page">
+      <div className="page-shell-header inventory-page-header">
+        <div className="page-shell-header-left">
+          <h2 className="page-shell-header-title">Hold Products</h2>
+          <p className="page-shell-header-subtitle">Review products removed from active inventory and restore them when needed.</p>
         </div>
-        <div className="header-right">
+        <div className="page-shell-header-actions">
+          <span className="stats-badge">{heldProducts.length} Hold</span>
+          <span className="stats-badge">Potential Profit: ${heldProductsProfitTotal.toFixed(2)}</span>
           <button 
             onClick={handleRefresh} 
             className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
@@ -993,6 +1098,12 @@ const FetchProducts = () => {
 
       <div className="table-section">
         <div className="table-card">
+          <div className="table-header">
+            <h3 className="table-title"><IconPause /> Hold Product List</h3>
+            <div className="table-stats">
+              Showing {heldProducts.length} hold products
+            </div>
+          </div>
           <div className="table-container">
             <table className="data-table">
               <thead>
@@ -1068,7 +1179,7 @@ const FetchProducts = () => {
           {heldProducts.length === 0 && (
             <div className="empty-table">
               <div className="empty-icon"><IconPause /></div>
-              <p>No held products found</p>
+              <p>No hold products found</p>
             </div>
           )}
         </div>
@@ -1077,13 +1188,7 @@ const FetchProducts = () => {
   );
 
   return (
-    <div className="admin-container">
-      {/* Page Header */}
-      <div className="page-header">
-        <h1 className="page-title">Product Management</h1>
-        <p className="page-subtitle">Manage your products, inventory, and held items</p>
-      </div>
-
+    <div className="page-shell inventory-shell">
       {/* Messages */}
       {successMessage && (
         <div className="success-message">
@@ -1099,7 +1204,7 @@ const FetchProducts = () => {
       )}
 
       {/* Tab Navigation */}
-      <div className="tab-navigation">
+      <div className="inventory-primary-tabs tab-navigation">
         <button
           onClick={() => setActiveTab('products')}
           className={`tab-button ${activeTab === 'products' ? 'active' : ''}`}
@@ -1112,7 +1217,7 @@ const FetchProducts = () => {
           className={`tab-button ${activeTab === 'holds' ? 'active' : ''}`}
         >
           <span className="tab-icon"><IconPause /></span>
-          <span className="tab-label">Held ({heldProducts.length})</span>
+          <span className="tab-label">Hold ({heldProducts.length})</span>
         </button>
       </div>
 

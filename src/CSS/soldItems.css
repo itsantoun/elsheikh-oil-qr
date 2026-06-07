@@ -175,10 +175,8 @@
 }
 
 /* ── Compact table — reduce spacing, not text ───── */
-.sold-items-container {
-  padding: 12px;
-  max-width: none;
-}
+/* (Layout is now provided by .page-shell; this class only scopes the dense
+   table cell/action overrides so the page header & filters use the global look.) */
 
 .sold-items-container .table-container {
   overflow-x: visible;

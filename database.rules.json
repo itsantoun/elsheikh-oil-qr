@@ -30,6 +30,9 @@
         "price":    { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
         "barcode":  { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 64)" },
         "expiry":   { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
+        "scope":    { ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'oil' || newData.val() === 'filter' || newData.val() === 'maghsal' || newData.val() === 'other' || newData.val() === 'oil-filter' || newData.val() === 'maghsal-consumable' || newData.val() === 'maghsal-goods'))" },
+        "itemType": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
+        "unit":     { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
         "$other":   { ".validate": true }
       }
     },
@@ -85,6 +88,46 @@
         ".validate": "newData.hasChildren() || !newData.exists()",
         "$field": { ".validate": "!newData.isString() || newData.val().length <= 500" }
       }
+    },
+
+    "maghsalEntries": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$id": {
+        ".validate": "newData.hasChildren() || !newData.exists()",
+        "customerId":         { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 120)" },
+        "customerName":       { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "customerNameArabic": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "date":               { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "category":           { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 80)" },
+        "price":              { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+        "servicePrice":       { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000)" },
+        "goodsTotal":         { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000)" },
+        "totalPrice":         { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000)" },
+        "consumablesUsed":    { ".validate": "!newData.exists() || newData.hasChildren()" },
+        "goodsSold":          { ".validate": "!newData.exists() || newData.hasChildren()" },
+        "paymentStatus":      { ".validate": "newData.isString() && (newData.val() === 'Paid' || newData.val() === 'Unpaid')" },
+        "employee":           { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "employeeId":         { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 120)" },
+        "remark":             { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)" },
+        "createdAt":          { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
+        "$other":             { ".validate": false }
+      }
+    },
+
+
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth.token.admin === true",
+      "maghsalCategories": {
+        ".validate": "newData.hasChildren() || !newData.exists()",
+        "$idx": { ".validate": "newData.isString() && newData.val().length <= 80" }
+      }
+    },
+
+    "maghsalMigrations": {
+      ".read": "auth.token.admin === true",
+      ".write": "auth.token.admin === true"
     }
   }
 }

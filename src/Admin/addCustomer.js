@@ -386,7 +386,7 @@ const AddCustomer = () => {
     .sort((a, b) => sortByName(a, b));
 
   return (
-    <div className="admin-container">
+    <div className="page-shell customers-page">
       {/* Page Header */}
       <div className="page-header">
         <h1 className="page-title">Customer Management</h1>

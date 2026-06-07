@@ -1,0 +1,242 @@
+import elsheikhLogo from '../assets/elsheikh-logo.png';
+
+const BRAND_BLUE = [25, 58, 130];
+const TEXT_DARK = [22, 31, 45];
+const TEXT_MUTED = [91, 104, 124];
+const BORDER = [218, 226, 238];
+const SOFT_BG = [245, 249, 253];
+const TOTALS_BOTTOM_RESERVE = 30;
+
+let logoDataUrlPromise = null;
+
+const loadLogoDataUrl = () => {
+  if (logoDataUrlPromise) return logoDataUrlPromise;
+
+  logoDataUrlPromise = new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = reject;
+    img.src = elsheikhLogo;
+  });
+
+  return logoDataUrlPromise;
+};
+
+export const money = (value) =>
+  `$${Number(value || 0).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+export const createReceiptDoc = (jsPDF) =>
+  new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a5' });
+
+export const addReceiptHeader = async (doc, {
+  title = 'RECEIPT',
+  subtitle = '',
+  receiptNo = '',
+  client = '',
+  dateRange = '',
+  issuedAt = new Date(),
+} = {}) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 10;
+
+  doc.setFillColor(...SOFT_BG);
+  doc.roundedRect(margin, 6, pageWidth - margin * 2, 35, 3, 3, 'F');
+
+  try {
+    const logoDataUrl = await loadLogoDataUrl();
+    doc.addImage(logoDataUrl, 'PNG', margin + 5, 7, 36, 22.5);
+  } catch (error) {
+    doc.setFontSize(15);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...BRAND_BLUE);
+    doc.text('El Sheikh', margin + 23, 21, { align: 'center' });
+  }
+
+  doc.setFontSize(7);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text('+961 81 708 870', margin + 23, 33.5, { align: 'center' });
+  doc.text('Nabay, Lebanon', margin + 23, 37, { align: 'center' });
+
+  doc.setFontSize(17);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(...BRAND_BLUE);
+  doc.text(title, pageWidth - margin - 3, 16, { align: 'right' });
+
+  if (subtitle) {
+    doc.setFontSize(8.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...TEXT_MUTED);
+    doc.text(subtitle, pageWidth - margin - 3, 22, { align: 'right' });
+  }
+
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.25);
+  doc.line(pageWidth - 76, 27, pageWidth - margin - 3, 27);
+
+  doc.setFontSize(8);
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text('Receipt No.', pageWidth - 76, 32);
+  doc.text('Issued', pageWidth - 76, 37);
+  doc.setTextColor(...TEXT_DARK);
+  doc.setFont(undefined, 'bold');
+  doc.text(receiptNo || '-', pageWidth - margin - 3, 32, { align: 'right' });
+  doc.text(formatIssuedAt(issuedAt), pageWidth - margin - 3, 37, { align: 'right' });
+
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(margin, 44, pageWidth - margin * 2, 11.5, 2, 2, 'F');
+  doc.setDrawColor(...BORDER);
+  doc.roundedRect(margin, 44, pageWidth - margin * 2, 11.5, 2, 2, 'S');
+
+  doc.setFontSize(7.5);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text('Bill To', margin + 4, 48.5);
+  doc.text('Date Range', pageWidth / 2, 48.5);
+
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(...TEXT_DARK);
+  doc.text(client || 'All Clients', margin + 4, 53);
+  doc.text(dateRange || '-', pageWidth / 2, 53);
+
+  return 59;
+};
+
+export const getReceiptDensity = (rowCount) => {
+  if (rowCount > 18) return { fontSize: 6.4, verticalPadding: 0.7, totalsCompact: true };
+  if (rowCount > 12) return { fontSize: 7, verticalPadding: 1, totalsCompact: true };
+  return { fontSize: 8, verticalPadding: 1.6, totalsCompact: false };
+};
+
+export const receiptTableOptions = ({
+  head,
+  body,
+  startY,
+  rightAlignedColumns = [],
+  density = getReceiptDensity(body.length),
+}) => ({
+  head: [head],
+  body,
+  startY,
+  margin: { left: 10, right: 10, bottom: TOTALS_BOTTOM_RESERVE },
+  theme: 'plain',
+  tableLineColor: BORDER,
+  tableLineWidth: 0.2,
+  styles: {
+    fontSize: density.fontSize,
+    cellPadding: { top: density.verticalPadding, right: 1.8, bottom: density.verticalPadding, left: 1.8 },
+    textColor: TEXT_DARK,
+    lineColor: BORDER,
+    lineWidth: 0.15,
+    overflow: 'linebreak',
+  },
+  headStyles: {
+    fillColor: BRAND_BLUE,
+    textColor: [255, 255, 255],
+    fontStyle: 'bold',
+    halign: 'left',
+  },
+  alternateRowStyles: {
+    fillColor: [250, 252, 255],
+  },
+  columnStyles: rightAlignedColumns.reduce((acc, col) => {
+    acc[col] = { halign: 'right' };
+    return acc;
+  }, {}),
+  didDrawPage: (data) => {
+    const pageCount = docPageCount(data.doc);
+    if (pageCount > 1) drawPageFooter(data.doc);
+  },
+});
+
+export const drawTotalsBlock = (doc, {
+  paid = 0,
+  unpaid = 0,
+  grandTotal = 0,
+  startY,
+  compact = false,
+} = {}) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
+  const minY = currentPage > 1 ? 16 : 0;
+  let y = Math.max(startY, minY);
+  const boxH = compact ? 18 : 20;
+  const requiredBottom = boxH + 10;
+  if (y > pageHeight - requiredBottom) {
+    const pageCount = docPageCount(doc);
+    if (pageCount === 1 && currentPage === 1) {
+      y = pageHeight - requiredBottom;
+    } else {
+      doc.addPage();
+      y = 16;
+    }
+  }
+
+  const boxX = pageWidth - 76;
+  const boxW = 66;
+  doc.setFillColor(...SOFT_BG);
+  doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'F');
+  doc.setDrawColor(...BORDER);
+  doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'S');
+
+  drawTotalLine(doc, 'Paid', paid, boxX + 4, y + 5, boxW);
+  drawTotalLine(doc, 'Unpaid', unpaid, boxX + 4, y + 9.8, boxW);
+
+  doc.setDrawColor(...BORDER);
+  doc.line(boxX + 4, y + 12.4, boxX + boxW - 4, y + 12.4);
+  doc.setFontSize(compact ? 9 : 10);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(...BRAND_BLUE);
+  doc.text('Grand Total', boxX + 4, y + 17);
+  doc.text(money(grandTotal), boxX + boxW - 4, y + 17, { align: 'right' });
+
+  drawPageFooter(doc);
+};
+
+const drawTotalLine = (doc, label, value, x, y, width) => {
+  doc.setFontSize(8.5);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text(label, x, y);
+  doc.setTextColor(...TEXT_DARK);
+  doc.text(money(value), x + width - 8, y, { align: 'right' });
+};
+
+const drawPageFooter = (doc) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFontSize(7);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text('El Sheikh - Water distribution, car wash and services', 10, pageHeight - 6);
+  doc.text(`Page ${doc.internal.getCurrentPageInfo().pageNumber}`, pageWidth - 10, pageHeight - 6, { align: 'right' });
+};
+
+const docPageCount = (doc) => {
+  if (doc.internal?.getNumberOfPages) return doc.internal.getNumberOfPages();
+  return doc.internal.pages?.length ? doc.internal.pages.length - 1 : 1;
+};
+
+const formatIssuedAt = (dateInput) => {
+  const date = new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return '-';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${day}-${month}-${year} ${hours}:${minutes}`;
+};

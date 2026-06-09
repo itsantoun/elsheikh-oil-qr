@@ -21,18 +21,6 @@ const isMaghsalSold = (item) => {
 const formatCurrency = (v) =>
   Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const formatTime = (d) => {
-  try {
-    const date = new Date(d);
-    if (isNaN(date.getTime())) return '';
-    let h = date.getHours();
-    const m = String(date.getMinutes()).padStart(2, '0');
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h}:${m} ${ampm}`;
-  } catch { return ''; }
-};
-
 const formatDay = (d) => {
   try {
     const date = new Date(d);
@@ -50,12 +38,6 @@ const endOfToday = () => {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
   return d.getTime();
-};
-
-const initials = (name) => {
-  if (!name) return '?';
-  const parts = String(name).trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() || '').join('') || '?';
 };
 
 // ── Icons ────────────────────────────────────────────────────────────────
@@ -105,13 +87,6 @@ const IconUsers = () => (
     <circle cx="9" cy="7" r="4"/>
   </svg>
 );
-const IconArrowRight = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="5" y1="12" x2="19" y2="12"/>
-    <polyline points="12 5 19 12 12 19"/>
-  </svg>
-);
-
 const Dashboard = ({ onNavigate }) => {
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
@@ -207,22 +182,6 @@ const Dashboard = ({ onNavigate }) => {
     };
   }, [soldItems, maghsalEntries, products]);
 
-  // ── Recent activity ──────────────────────────────────
-  const recentSold = useMemo(() => {
-    const valid = soldItems.filter(
-      (i) => !isStockLike(i.paymentStatus) && !isMaghsalSold(i)
-    );
-    return [...valid]
-      .sort((a, b) => new Date(b.dateScanned).getTime() - new Date(a.dateScanned).getTime())
-      .slice(0, 6);
-  }, [soldItems]);
-
-  const recentMaghsal = useMemo(() => {
-    return [...maghsalEntries]
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 5);
-  }, [maghsalEntries]);
-
   const today = new Date();
   const greeting = (() => {
     const h = today.getHours();
@@ -233,7 +192,7 @@ const Dashboard = ({ onNavigate }) => {
   const displayName = user?.name || user?.displayName || (user?.email || '').split('@')[0] || 'there';
 
   return (
-    <div className="page-shell">
+    <div className="page-shell dashboard-page">
       {/* Header */}
       <div className="page-shell-header">
         <div className="page-shell-header-left">
@@ -299,125 +258,6 @@ const Dashboard = ({ onNavigate }) => {
             <span className="quick-action-label">Add Customer</span>
             <span className="quick-action-sub">Add to customer book</span>
           </button>
-        </div>
-      </div>
-
-      {/* Activity row */}
-      <div className="section-grid-2">
-        {/* Recent Sold Items */}
-        <div className="ui-card">
-          <div className="ui-card-header">
-            <h2 className="ui-card-title">Recent Sold Items</h2>
-            <button
-              className="pill tone-brand"
-              style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
-              onClick={() => onNavigate && onNavigate('itemsSold')}
-            >
-              View all <IconArrowRight />
-            </button>
-          </div>
-          {recentSold.length === 0 ? (
-            <div className="empty-state-card">No recent sold items.</div>
-          ) : (
-            <div className="activity-list">
-              {recentSold.map((item) => {
-                const qty = toNumber(item.quantity);
-                const unit = toNumber(item.itemCost);
-                const total = Number.isFinite(parseFloat(item.totalCost)) ? toNumber(item.totalCost) : unit * qty;
-                return (
-                  <div className="activity-item" key={item.id}>
-                    <div className="activity-avatar">{initials(item.customerName)}</div>
-                    <div className="activity-body">
-                      <span className="activity-title">{item.customerName || 'Unknown customer'}</span>
-                      <span className="activity-sub">
-                        {item.name || 'Item'} · {qty} · {formatTime(item.dateScanned)}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
-                      <span className="activity-end">${formatCurrency(total)}</span>
-                      <span className={`pill ${item.paymentStatus === 'Paid' ? 'tone-green' : item.paymentStatus === 'Unpaid' ? 'tone-amber' : ''}`}>
-                        {item.paymentStatus || 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Low Stock + Recent Maghsal */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-5)' }}>
-          <div className="ui-card">
-            <div className="ui-card-header">
-              <h2 className="ui-card-title">Low Stock Alert</h2>
-              <button
-                className="pill tone-brand"
-                style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
-                onClick={() => onNavigate && onNavigate('stock')}
-              >
-                View stock <IconArrowRight />
-              </button>
-            </div>
-            {stats.lowStock.length === 0 ? (
-              <div className="empty-state-card">All products are above the {LOW_STOCK_THRESHOLD}-unit threshold. 🎉</div>
-            ) : (
-              <div className="activity-list">
-                {stats.lowStock.slice(0, 5).map((p) => (
-                  <div className="activity-item" key={p.id}>
-                    <div className="activity-avatar" style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}>
-                      <IconPackage />
-                    </div>
-                    <div className="activity-body">
-                      <span className="activity-title">{p.name || 'Unnamed product'}</span>
-                      <span className="activity-sub">{p.productType || 'General'}</span>
-                    </div>
-                    <div className="activity-end">
-                      <span className={`pill ${p.qty === 0 ? 'tone-red' : 'tone-amber'}`}>
-                        {p.qty === 0 ? 'Out of stock' : `${p.qty} left`}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="ui-card">
-            <div className="ui-card-header">
-              <h2 className="ui-card-title">Recent Maghsal Entries</h2>
-              <button
-                className="pill tone-brand"
-                style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
-                onClick={() => onNavigate && onNavigate('maghsal')}
-              >
-                View all <IconArrowRight />
-              </button>
-            </div>
-            {recentMaghsal.length === 0 ? (
-              <div className="empty-state-card">No Maghsal entries yet.</div>
-            ) : (
-              <div className="activity-list">
-                {recentMaghsal.map((m) => (
-                  <div className="activity-item" key={m.id}>
-                    <div className="activity-avatar" style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}>
-                      <IconSpray />
-                    </div>
-                    <div className="activity-body">
-                      <span className="activity-title">{m.customerName || 'Unknown'}</span>
-                      <span className="activity-sub">{m.category || 'Unspecified'} · {formatTime(m.date)}</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
-                      <span className="activity-end">${formatCurrency(toNumber(m.price))}</span>
-                      <span className={`pill ${m.paymentStatus === 'Paid' ? 'tone-green' : 'tone-amber'}`}>
-                        {m.paymentStatus || 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

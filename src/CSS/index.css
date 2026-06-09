@@ -367,3 +367,29 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   font-size: 11.5px;
   color: var(--text-muted);
 }
+
+/* Dashboard typography */
+.dashboard-page .page-shell-header-title {
+  font-size: 30px;
+}
+.dashboard-page .page-shell-header-subtitle {
+  font-size: 16px;
+}
+.dashboard-page .ui-card-title {
+  font-size: 18px;
+}
+.dashboard-page .kpi-card-label {
+  font-size: 13.5px;
+}
+.dashboard-page .kpi-card-value {
+  font-size: 34px;
+}
+.dashboard-page .kpi-card-hint {
+  font-size: 14px;
+}
+.dashboard-page .quick-action-label {
+  font-size: 16px;
+}
+.dashboard-page .quick-action-sub {
+  font-size: 13.5px;
+}

@@ -27,14 +27,15 @@
 /* ── Login Card ──────────────────────────────────── */
 .login-container {
   width: 100%;
-  max-width: 400px;
+  max-width: 460px;
   background: var(--white);
   border: 1px solid var(--border-light);
   border-radius: var(--r-2xl);
   box-shadow: var(--shadow-lg);
-  padding: 40px;
+  padding: 34px 38px 38px;
   position: relative;
   z-index: 1;
+  overflow: hidden;
 }
 
 /* ── Logo Mark ───────────────────────────────────── */
@@ -42,24 +43,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
-.login-logo-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--r-lg);
-  background: var(--brand);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(22,55,107,0.25);
+.login-logo-image {
+  display: block;
+  width: min(100%, 230px);
+  height: auto;
+  object-fit: contain;
 }
 
 /* ── Heading ─────────────────────────────────────── */
 .login-heading {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .title {
@@ -116,6 +113,26 @@
 
 .input::placeholder { color: var(--text-muted); }
 
+.remember-me {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-me input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand-mid);
+  cursor: pointer;
+}
+
 /* ── Submit Button ───────────────────────────────── */
 .button {
   width: 100%;
@@ -168,6 +185,11 @@
 
 /* ── Responsive ──────────────────────────────────── */
 @media (max-width: 480px) {
-  .login-container { padding: 28px 22px; }
+  .login-page { padding: 18px; }
+  .login-container {
+    max-width: 420px;
+    padding: 28px 22px;
+  }
+  .login-logo-image { width: min(100%, 210px); }
   .title { font-size: 20px; }
 }

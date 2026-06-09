@@ -440,8 +440,8 @@ const Maghsal = () => {
         servicePrice,
         goodsTotal,
         totalPrice,
-        consumablesUsed: consumablesSnapshot,
-        goodsSold: goodsSnapshot,
+        ...(consumablesSnapshot.length > 0 ? { consumablesUsed: consumablesSnapshot } : {}),
+        ...(goodsSnapshot.length > 0 ? { goodsSold: goodsSnapshot } : {}),
         paymentStatus: formPaymentStatus,
         employee: user?.name || user?.displayName || user?.email || 'Unknown',
         employeeId: user?.uid || '',
@@ -449,30 +449,47 @@ const Maghsal = () => {
         createdAt: new Date().toISOString(),
       };
 
-      // Build atomic update: write entry + decrement products
+      // Save the entry first, then update stock. Product stock permissions can
+      // vary by Firebase rules; they should not block the receipt entry itself.
       const entryRef = push(ref(database, 'maghsalEntries'));
-      const updates = {};
-      updates[`maghsalEntries/${entryRef.key}`] = newEntry;
+      try {
+        await update(entryRef, newEntry);
+      } catch (entryErr) {
+        console.error('Maghsal entry save failed:', entryErr, 'payload:', newEntry);
+        flash(`Failed to save entry: ${entryErr?.message || entryErr}`, 'error');
+        return;
+      }
 
       // Aggregate decrements
       const decrements = new Map();
       for (const l of [...consumablesSnapshot, ...goodsSnapshot]) {
         decrements.set(l.productId, (decrements.get(l.productId) || 0) + toNumber(l.quantity));
       }
-      for (const [pid, qty] of decrements.entries()) {
-        const p = getProduct(pid);
-        if (!p) continue;
-        const newQty = Math.max(0, toNumber(p.quantity) - qty);
-        updates[`products/${pid}/quantity`] = newQty;
-        updates[`products/${pid}/updatedAt`] = new Date().toISOString();
+
+      if (decrements.size > 0) {
+        try {
+          await Promise.all([...decrements.entries()].map(async ([pid, qty]) => {
+            const p = getProduct(pid);
+            if (!p) return;
+            const newQty = Math.max(0, toNumber(p.quantity) - qty);
+            await update(ref(database, `products/${pid}`), {
+              quantity: newQty,
+              updatedAt: new Date().toISOString(),
+            });
+          }));
+        } catch (stockErr) {
+          console.error('Maghsal stock update failed:', stockErr);
+          closeAddModal();
+          flash('Entry saved, but stock quantity was not updated. Publish the latest database rules.', 'error');
+          return;
+        }
       }
 
-      await update(ref(database), updates);
       closeAddModal();
       flash('Entry saved.');
     } catch (err) {
       console.error('Maghsal save failed:', err);
-      flash('Failed to save entry.', 'error');
+      flash(`Failed to save entry: ${err?.message || err}`, 'error');
     } finally {
       setIsSaving(false);
     }

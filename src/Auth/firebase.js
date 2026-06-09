@@ -50,6 +50,9 @@ const selectedPersistence = persistenceMode === 'local'
   ? browserLocalPersistence
   : browserSessionPersistence;
 
+export const setAuthPersistenceForRememberMe = (rememberMe) =>
+  setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+
 // Default to session persistence for safer shared-device behavior.
 setPersistence(auth, selectedPersistence)
   .then(() => {

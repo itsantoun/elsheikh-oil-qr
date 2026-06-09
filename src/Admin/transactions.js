@@ -477,7 +477,7 @@ import React, { useEffect, useState } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, update, remove } from 'firebase/database';
 import '../CSS/transactions.css';
-import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, IconTrash, IconBarChart, IconAlertTriangle } from '../utils/icons';
+import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, IconTrash, IconBarChart } from '../utils/icons';
 import { useNotifications } from '../Auth/notificationContext';
 
 const Transactions = () => {
@@ -497,21 +497,6 @@ const Transactions = () => {
   });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
-
-  // Format date to DD-MM-YYYY
-  const formatDate = (dateString) => {
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      return `${day}-${month}-${year}`;
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return 'Invalid Date';
-    }
-  };
 
   // Format date and time to DD-MM-YYYY HH:MM AM/PM
   const formatDateTime = (dateString) => {
@@ -697,9 +682,8 @@ const Transactions = () => {
   };
 
   // Fetch data on component mount
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData(); }, []);
 
   // Calculate totals whenever filtered transactions change
   useEffect(() => {
@@ -722,6 +706,8 @@ const Transactions = () => {
     } else {
       setFilteredTotals({ totalQuantity: 0, totalCost: 0, totalPurchaseCost: 0, totalProfit: 0 });
     }
+    // filteredTransactions is derived from the listed deps; recomputing here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth, selectedProduct, transactions, products]);
 
   // Get unique product names from transactions for the filter dropdown

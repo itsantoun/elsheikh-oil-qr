@@ -766,21 +766,18 @@
 
 // export default BarcodeScanner;
 
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/library';
-import { database } from '../Auth/firebase';
-import { ref, get, update, child, push, onValue, off, query, orderByChild, startAt, equalTo } from "firebase/database";
-import { UserContext } from '../Auth/userContext';  
+import { database, auth } from '../Auth/firebase';
+import { ref, get, update, child, push, onValue, off, query, orderByChild, startAt, limitToLast } from "firebase/database";
 import '../CSS/BarcodeScanner.css';
-import { signOut } from 'firebase/auth';
-import { auth } from '../Auth/firebase';
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import {
   IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
   IconTag, IconBarChart, IconDollarSign, IconUser, IconHash, IconTrendingUp,
   IconCreditCard, IconFileText, IconSettings, IconEdit, IconSave, IconEye, IconEyeOff,
-  IconLightbulb, IconClipboard, IconCalendar, IconInbox, IconLogOut, IconAlertTriangle,
+  IconLightbulb, IconClipboard, IconCalendar, IconInbox, IconLogOut,
 } from '../utils/icons';
 
 const BarcodeScanner = () => {
@@ -793,7 +790,6 @@ const BarcodeScanner = () => {
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [loading, setLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [paymentStatus, setPaymentStatus] = useState('Unpaid');
   const [remark, setRemark] = useState('');
@@ -815,7 +811,7 @@ const BarcodeScanner = () => {
   const isScanningRef = React.useRef(false);
   const isProcessingRef = React.useRef(false);
   const scannerPausedRef = React.useRef(false);
-  const authInstance = getAuth();
+  const applyZoomRef = React.useRef(() => {});
   const [user, setUser] = useState(null);
 
   // Memoized custom date calculation
@@ -833,14 +829,8 @@ const BarcodeScanner = () => {
 
   // Authentication effect
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(authInstance, (currentUser) => {
-      if (currentUser) {
-        console.log("User authenticated:", currentUser.uid);
-        setUser(currentUser);
-      } else {
-        console.log("No user found");
-        setUser(null);
-      }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser || null);
     });
 
     return () => unsubscribe();
@@ -875,8 +865,6 @@ const BarcodeScanner = () => {
   useEffect(() => {
     const fetchCustomers = async () => {
       if (customersLoaded) return;
-      
-      setLoading(true);
       const customersRef = ref(database, 'customers');
 
       try {
@@ -896,8 +884,6 @@ const BarcodeScanner = () => {
       } catch (error) {
         console.error("Error fetching customers:", error);
       }
-
-      setLoading(false);
     };
 
     if (user?.uid) {
@@ -907,13 +893,15 @@ const BarcodeScanner = () => {
 
   // Camera setup effect
   useEffect(() => {
-    if (!user?.uid || !name || !customersLoaded || !cameraActive) return;
+    if (!user?.uid || !name || !customersLoaded || !cameraActive || scannerPaused) return;
+
+    const videoEl = scannerRef.current; // capture for cleanup
 
     const setupCamera = async () => {
       try {
         const codeReader = new BrowserMultiFormatReader();
         codeReaderRef.current = codeReader;
-        const videoElement = scannerRef.current;
+        const videoElement = videoEl;
 
         await codeReader.decodeFromVideoDevice(
           null, 
@@ -944,15 +932,15 @@ const BarcodeScanner = () => {
             constraints: {
               video: {
                 facingMode: 'environment',
-                width: { ideal: 960 },
-                height: { ideal: 720 },
-                frameRate: { ideal: 24 },
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                frameRate: { ideal: 12, max: 15 },
               },
             },
           }
         );
 
-        applyZoom();
+        applyZoomRef.current();
       } catch (err) {
         console.error('Camera initialization failed:', err);
         setScanStatus('Camera initialization failed. Please check permissions.');
@@ -970,8 +958,18 @@ const BarcodeScanner = () => {
         codeReaderRef.current.reset();
         codeReaderRef.current = null;
       }
+      // Also explicitly stop every video track so the camera LED/sensor power down
+      if (videoEl?.srcObject) {
+        try {
+          videoEl.srcObject.getTracks().forEach((t) => t.stop());
+        } catch {}
+        videoEl.srcObject = null;
+      }
     };
-  }, [user, name, customersLoaded, cameraActive]);
+    // fetchProductDetails has stable identity (useCallback with []); applyZoom
+    // is accessed via ref so zoom changes don't restart the camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, name, customersLoaded, cameraActive, scannerPaused]);
 
   useEffect(() => {
     isScanningRef.current = isScanning;
@@ -985,16 +983,24 @@ const BarcodeScanner = () => {
     scannerPausedRef.current = scannerPaused;
   }, [scannerPaused]);
 
-  // Scanned items listener
+  // Pause the camera whenever any modal is open (popup or edit)
   useEffect(() => {
-    if (!user?.uid || !name || !showScannedItems) return;
+    if (isPopupOpen || editingItem) {
+      setScannerPaused(true);
+    }
+  }, [isPopupOpen, editingItem]);
+
+  // Scanned items listener — also gated on cameraActive so it pauses when the tab is hidden
+  useEffect(() => {
+    if (!user?.uid || !name || !showScannedItems || !cameraActive) return;
 
     const startTimestamp = customDate.getTime();
     
     const soldItemsQuery = query(
       ref(database, "SoldItems"),
       orderByChild('dateScanned'),
-      startAt(new Date(startTimestamp).toISOString())
+      startAt(new Date(startTimestamp).toISOString()),
+      limitToLast(150)
     );
 
     let debounceTimeout;
@@ -1021,12 +1027,12 @@ const BarcodeScanner = () => {
       clearTimeout(debounceTimeout);
       off(soldItemsQuery, "value", listener);
     };
-  }, [user, name, customDate, showScannedItems]);
+  }, [user, name, customDate, showScannedItems, cameraActive]);
 
   // Zoom application effect
   useEffect(() => {
     if (scannerRef.current?.srcObject && cameraActive) {
-      applyZoom();
+      applyZoomRef.current();
     }
   }, [zoomLevel, cameraActive]);
 
@@ -1059,18 +1065,20 @@ const BarcodeScanner = () => {
 
       const capabilities = track.getCapabilities();
       if ('zoom' in capabilities) {
-        const constraints = {
-          advanced: [
-            { zoom: zoomLevel }, 
-            { focusMode: 'continuous' }
-          ],
-        };
-        await track.applyConstraints(constraints);
+        const advanced = [{ zoom: zoomLevel }];
+        if (Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes('single-shot')) {
+          advanced.push({ focusMode: 'single-shot' });
+        }
+        await track.applyConstraints({ advanced });
       }
     } catch (error) {
       console.error('Failed to apply zoom or focus:', error);
     }
   }, [zoomLevel]);
+
+  useEffect(() => {
+    applyZoomRef.current = applyZoom;
+  }, [applyZoom]);
 
   const changeZoom = useCallback(async (level) => {
     const videoElement = scannerRef.current;
@@ -1276,7 +1284,7 @@ const BarcodeScanner = () => {
   const handleLogout = useCallback(async () => {
     try {
       setCameraActive(false);
-      await signOut(authInstance);
+      await signOut(auth);
       setUser(null);
     } catch (error) {
       console.error('Error signing out:', error);

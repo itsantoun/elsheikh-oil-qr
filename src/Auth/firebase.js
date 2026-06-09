@@ -34,11 +34,10 @@ if (recaptchaSiteKey) {
       provider: new ReCaptchaV3Provider(recaptchaSiteKey),
       isTokenAutoRefreshEnabled: true,
     });
-    console.log('App Check initialized.');
   } catch (error) {
     console.error('App Check init failed:', error);
   }
-} else {
+} else if (process.env.NODE_ENV !== 'production') {
   console.warn(
     'App Check is NOT initialized — set REACT_APP_RECAPTCHA_SITE_KEY in .env to enable abuse protection.'
   );
@@ -54,13 +53,9 @@ export const setAuthPersistenceForRememberMe = (rememberMe) =>
   setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
 
 // Default to session persistence for safer shared-device behavior.
-setPersistence(auth, selectedPersistence)
-  .then(() => {
-    console.log(`Persistence set to ${persistenceMode === 'local' ? 'local' : 'session'}`);
-  })
-  .catch((error) => {
-    console.error("Error setting persistence:", error);
-  });
+setPersistence(auth, selectedPersistence).catch((error) => {
+  console.error("Error setting persistence:", error);
+});
 
 export const database = getDatabase(app);
 export { app, auth };

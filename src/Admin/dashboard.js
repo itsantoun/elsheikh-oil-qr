@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, query, orderByChild, limitToLast } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 
 const LOW_STOCK_THRESHOLD = 5;
@@ -94,30 +94,70 @@ const Dashboard = ({ onNavigate }) => {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
-    const soldRef = ref(database, 'SoldItems');
-    const maghsalRef = ref(database, 'maghsalEntries');
+    // Bound history we pull down for the dashboard. The KPIs only need
+    // today + recent unpaid; pulling everything cost too much battery/data.
+    const soldQuery = query(
+      ref(database, 'SoldItems'),
+      orderByChild('dateScanned'),
+      limitToLast(500),
+    );
+    const maghsalQuery = query(
+      ref(database, 'maghsalEntries'),
+      orderByChild('date'),
+      limitToLast(500),
+    );
     const productsRef = ref(database, 'products');
 
-    const unsubSold = onValue(soldRef, (snap) => {
-      if (!snap.exists()) { setSoldItems([]); return; }
-      const data = snap.val();
-      const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
-      setSoldItems(list);
-    });
-    const unsubMaghsal = onValue(maghsalRef, (snap) => {
-      if (!snap.exists()) { setMaghsalEntries([]); return; }
-      const data = snap.val();
-      const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
-      setMaghsalEntries(list);
-    });
-    const unsubProducts = onValue(productsRef, (snap) => {
-      if (!snap.exists()) { setProducts([]); return; }
-      const data = snap.val();
-      const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
-      setProducts(list);
-    });
+    let pauseListeners = false;
+    let unsubSold = null;
+    let unsubMaghsal = null;
+    let unsubProducts = null;
 
-    return () => { unsubSold(); unsubMaghsal(); unsubProducts(); };
+    const subscribe = () => {
+      unsubSold = onValue(soldQuery, (snap) => {
+        if (!snap.exists()) { setSoldItems([]); return; }
+        const data = snap.val();
+        const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
+        setSoldItems(list);
+      });
+      unsubMaghsal = onValue(maghsalQuery, (snap) => {
+        if (!snap.exists()) { setMaghsalEntries([]); return; }
+        const data = snap.val();
+        const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
+        setMaghsalEntries(list);
+      });
+      unsubProducts = onValue(productsRef, (snap) => {
+        if (!snap.exists()) { setProducts([]); return; }
+        const data = snap.val();
+        const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
+        setProducts(list);
+      });
+    };
+
+    const unsubscribe = () => {
+      if (unsubSold) { unsubSold(); unsubSold = null; }
+      if (unsubMaghsal) { unsubMaghsal(); unsubMaghsal = null; }
+      if (unsubProducts) { unsubProducts(); unsubProducts = null; }
+    };
+
+    subscribe();
+
+    // Drop listeners while the tab is hidden so the phone can sleep.
+    const handleVisibility = () => {
+      if (document.hidden) {
+        pauseListeners = true;
+        unsubscribe();
+      } else if (pauseListeners) {
+        pauseListeners = false;
+        subscribe();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      unsubscribe();
+    };
   }, []);
 
   // ── Compute KPIs ────────────────────────────────────

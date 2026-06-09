@@ -173,10 +173,8 @@ const FetchProducts = () => {
     }
   };
 
-  useEffect(() => {
-    fetchProducts();
-    fetchHeldProducts();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchProducts(); fetchHeldProducts(); }, []);
 
   useEffect(() => {
     handleSearch();
@@ -189,6 +187,7 @@ const FetchProducts = () => {
       setProducts(sorted);
       handleSearch();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortBy]);
 
   const handleRefresh = () => {

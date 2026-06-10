@@ -31,9 +31,14 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const normalizeScope = (scope) => {
-  const value = String(scope || 'oil').toLowerCase();
-  return value.startsWith('maghsal') ? 'maghsal' : 'oil';
+// A product is considered "maghsal" if EITHER its scope or productType
+// contains "maghsal" anywhere (case-insensitive). This covers all the legacy
+// values: "maghsal", "Maghsal", "maghsal-consumable", "maghsal-goods", etc.
+const normalizeScope = (scope, productType = '') => {
+  const value = String(scope || '').toLowerCase();
+  const type = String(productType || '').toLowerCase();
+  if (value.includes('maghsal') || type.includes('maghsal')) return 'maghsal';
+  return 'oil';
 };
 
 const Maghsal = () => {
@@ -204,7 +209,10 @@ const Maghsal = () => {
     };
   }, []);
 
-  const maghsalProducts = useMemo(() => products.filter((p) => normalizeScope(p.scope) === 'maghsal'), [products]);
+  const maghsalProducts = useMemo(
+    () => products.filter((p) => normalizeScope(p.scope, p.productType) === 'maghsal'),
+    [products],
+  );
   const consumables = maghsalProducts;
   const goods       = maghsalProducts;
 
@@ -381,12 +389,12 @@ const Maghsal = () => {
     // Validate line items have valid product selections
     const badConsumable = formConsumables.find((l) => !l.productId || toNumber(l.quantity) <= 0);
     if (badConsumable) {
-      flash('Each consumable line needs a product and quantity > 0.', 'error');
+      flash('Each Used line needs an item and quantity > 0.', 'error');
       return;
     }
     const badGood = formGoods.find((l) => !l.productId || toNumber(l.quantity) <= 0);
     if (badGood) {
-      flash('Each goods line needs a product and quantity > 0.', 'error');
+      flash('Each Good Sold line needs an item and quantity > 0.', 'error');
       return;
     }
 
@@ -638,7 +646,7 @@ const Maghsal = () => {
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Service', 'Status', 'Service Price', 'Goods', 'Total'],
+        head: ['Date', 'Service', 'Status', 'Service Price', 'Good Sold', 'Total'],
         body: rows,
         startY,
         rightAlignedColumns: [3, 4, 5],
@@ -670,7 +678,7 @@ const Maghsal = () => {
 
   const exportCSV = async () => {
     if (filtered.length === 0) { flash('No data to export.', 'error'); return; }
-    const headers = ['Date','Customer','Category','Payment Status','Service Price','Goods Total','Total','Employee','Remark','Consumables','Goods Sold'];
+    const headers = ['Date','Customer','Category','Payment Status','Service Price','Good Sold Total','Total','Employee','Remark','Used','Good Sold'];
     const rows = filtered.map((e) => {
       const m = entryTotals(e);
       const cons = (e.consumablesUsed || []).map((c) => `${c.name} x${c.quantity}`).join('; ');
@@ -754,7 +762,7 @@ const Maghsal = () => {
             <div className="kpi-card-value">${formatCurrency(totals.service)}</div>
           </div>
           <div className="kpi-card tone-cyan">
-            <div className="kpi-card-label">Goods Revenue</div>
+            <div className="kpi-card-label">Good Sold Revenue</div>
             <div className="kpi-card-value">${formatCurrency(totals.goods)}</div>
           </div>
           <div className="kpi-card tone-green">
@@ -847,7 +855,7 @@ const Maghsal = () => {
                 <th>Customer</th>
                 <th>Category</th>
                 <th className="text-right">Service</th>
-                <th className="text-right">Goods</th>
+                <th className="text-right">Good Sold</th>
                 <th className="text-right">Total</th>
                 <th>Status</th>
                 <th>Employee</th>
@@ -929,7 +937,7 @@ const Maghsal = () => {
                         ) : (
                           <>
                             {(consCount + goodsCount > 0) && (
-                              <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View consumables & goods">
+                              <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used items & good sold">
                                 Details
                               </button>
                             )}
@@ -993,20 +1001,20 @@ const Maghsal = () => {
                 </div>
               </div>
 
-              {/* Consumables used */}
+              {/* Used items */}
               <div style={{ marginTop: 'var(--s-4)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Consumables Used</label>
+                  <label className="form-label" style={{ margin: 0 }}>Used</label>
                   <button className="btn-small btn-secondary" onClick={addConsumableLine} disabled={isSaving || consumables.length === 0} type="button">
                     <IconPlus /> Add Line
                   </button>
                 </div>
                 {consumables.length === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    No consumables in inventory. Add them from <strong>Inventory → Products</strong> (scope: Maghsal).
+                    No items in inventory. Add them from <strong>Inventory → Products</strong> (scope: Maghsal).
                   </p>
                 ) : formConsumables.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to log a consumable.</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to log a used item.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
                     {formConsumables.map((line, idx) => {
@@ -1018,7 +1026,7 @@ const Maghsal = () => {
                             className="form-select"
                             disabled={isSaving}
                           >
-                            <option value="">Select consumable…</option>
+                            <option value="">Select item…</option>
                             {consumables.map((c) => (
                               <option key={c.id} value={c.id}>{c.name} {c.unit ? `(${c.unit})` : ''} · stock {toNumber(c.quantity)}</option>
                             ))}
@@ -1047,20 +1055,20 @@ const Maghsal = () => {
                 )}
               </div>
 
-              {/* Goods sold */}
+              {/* Good Sold */}
               <div style={{ marginTop: 'var(--s-4)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Goods Sold</label>
+                  <label className="form-label" style={{ margin: 0 }}>Good Sold</label>
                   <button className="btn-small btn-secondary" onClick={addGoodLine} disabled={isSaving || goods.length === 0} type="button">
                     <IconPlus /> Add Line
                   </button>
                 </div>
                 {goods.length === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    No goods in inventory. Add them from <strong>Inventory → Products</strong> (scope: Maghsal).
+                    No items in inventory. Add them from <strong>Inventory → Products</strong> (scope: Maghsal).
                   </p>
                 ) : formGoods.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to sell a retail item.</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to sell an item.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
                     {formGoods.map((line, idx) => (
@@ -1071,7 +1079,7 @@ const Maghsal = () => {
                           className="form-select"
                           disabled={isSaving}
                         >
-                          <option value="">Select good…</option>
+                          <option value="">Select item…</option>
                           {goods.map((g) => (
                             <option key={g.id} value={g.id}>{g.name} · stock {toNumber(g.quantity)}</option>
                           ))}
@@ -1149,7 +1157,7 @@ const Maghsal = () => {
               </div>
 
               <div style={{ marginTop: 'var(--s-4)' }}>
-                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Consumables Used</h4>
+                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Used</h4>
                 {Array.isArray(detailsEntry.consumablesUsed) && detailsEntry.consumablesUsed.length > 0 ? (
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {detailsEntry.consumablesUsed.map((c, i) => (
@@ -1163,7 +1171,7 @@ const Maghsal = () => {
               </div>
 
               <div>
-                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Goods Sold</h4>
+                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Good Sold</h4>
                 {Array.isArray(detailsEntry.goodsSold) && detailsEntry.goodsSold.length > 0 ? (
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {detailsEntry.goodsSold.map((g, i) => (

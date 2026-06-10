@@ -28,33 +28,24 @@ function Login({ onLogin }) {
     }
     setSubmitting(true);
     try {
-      console.log('[LOGIN] 1. setting persistence');
       await setAuthPersistenceForRememberMe(rememberMe);
-      console.log('[LOGIN] 2. signing in');
       const userCredential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
       const user = userCredential.user;
-      console.log('[LOGIN] 3. signed in as', user.uid, user.email);
 
       setLoginError('');
       setUser(user); // Update the user context with the full user object
 
-      console.log('[LOGIN] 4. calling resolveUserAccess');
       const access = await resolveUserAccess(user);
-      console.log('[LOGIN] 5. access result =', access);
       if (access.status !== 'active') {
         await signOut(auth);
         setLoginError('This profile is deactivated. Contact admin.');
         return;
       }
-      console.log('[LOGIN] 6. calling onLogin with', access.role);
       onLogin(access.role === 'admin' ? 'admin' : 'scanner');
-      console.log('[LOGIN] 7. onLogin returned');
     } catch (error) {
-      console.error('[LOGIN] FAILED at some step:', error);
       // Generic message — do not leak whether the email exists.
       setLoginError('Invalid email or password. Please try again.');
     } finally {
-      console.log('[LOGIN] 8. finally — resetting submitting');
       setSubmitting(false);
     }
   };

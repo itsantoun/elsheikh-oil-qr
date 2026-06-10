@@ -16,7 +16,6 @@ const App = () => {
   useEffect(() => {
     let isActive = true;
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      console.log('[APP] auth state changed; user =', user?.email || null);
       if (!isActive) return;
 
       if (!user) {
@@ -24,18 +23,14 @@ const App = () => {
         return;
       }
 
-      console.log('[APP] resolving access for', user.email);
       const access = await resolveUserAccess(user);
-      console.log('[APP] access =', access);
       if (!isActive) return;
       if (access.status !== 'active') {
         await auth.signOut();
         setCurrentPage('login');
         return;
       }
-      const nextPage = access.role === 'admin' ? 'admin' : 'scanner';
-      console.log('[APP] setCurrentPage =', nextPage);
-      setCurrentPage(nextPage);
+      setCurrentPage(access.role === 'admin' ? 'admin' : 'scanner');
     });
 
     return () => {

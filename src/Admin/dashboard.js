@@ -87,6 +87,13 @@ const IconUsers = () => (
     <circle cx="9" cy="7" r="4"/>
   </svg>
 );
+const IconArrowRight = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="12" x2="19" y2="12"/>
+    <polyline points="12 5 19 12 12 19"/>
+  </svg>
+);
+
 const Dashboard = ({ onNavigate }) => {
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
@@ -299,6 +306,42 @@ const Dashboard = ({ onNavigate }) => {
             <span className="quick-action-sub">Add to customer book</span>
           </button>
         </div>
+      </div>
+
+      {/* Low Stock Alert */}
+      <div className="ui-card">
+        <div className="ui-card-header">
+          <h2 className="ui-card-title">Low Stock Alert</h2>
+          <button
+            className="pill tone-brand"
+            style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
+            onClick={() => onNavigate && onNavigate('stock')}
+          >
+            View stock <IconArrowRight />
+          </button>
+        </div>
+        {stats.lowStock.length === 0 ? (
+          <div className="empty-state-card">All products are above the {LOW_STOCK_THRESHOLD}-unit threshold.</div>
+        ) : (
+          <div className="activity-list">
+            {stats.lowStock.slice(0, 10).map((p) => (
+              <div className="activity-item" key={p.id}>
+                <div className="activity-avatar" style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}>
+                  <IconPackage />
+                </div>
+                <div className="activity-body">
+                  <span className="activity-title">{p.name || 'Unnamed product'}</span>
+                  <span className="activity-sub">{p.productType || 'General'}</span>
+                </div>
+                <div className="activity-end">
+                  <span className={`pill ${p.qty === 0 ? 'tone-red' : 'tone-amber'}`}>
+                    {p.qty === 0 ? 'Out of stock' : `${p.qty} left`}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

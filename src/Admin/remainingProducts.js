@@ -61,6 +61,7 @@ const RemainingProducts = () => {
 
   const [showZeroStock, setShowZeroStock] = useState(false);
   const [scopeFilter, setScopeFilter] = useState('all'); // all | oil | filter | maghsal | other
+  const [stockGroup, setStockGroup] = useState('oil-filter'); // 'oil-filter' | 'maghsal'
 
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage]     = useState(null);
@@ -272,8 +273,19 @@ const RemainingProducts = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Whenever the top-level stock group flips, drop any drill-down filter so the
+  // user immediately sees everything in the chosen stock.
+  useEffect(() => { setScopeFilter('all'); }, [stockGroup]);
+
   useEffect(() => {
-    // Filter by scope tab. The Maghsal tab includes both consumables and goods.
+    // Top-level: only items from the active stock group are visible at all.
+    const inGroup = (p) => {
+      const s = productScope(p);
+      if (stockGroup === 'maghsal') return s === 'maghsal';
+      return s !== 'maghsal';
+    };
+
+    // Within oil-filter, the sub-tab can drill down to Oil / Filter / Other.
     const inScope = (p) => {
       if (scopeFilter === 'all') return true;
       if (scopeFilter === 'maghsal') return productScope(p).startsWith('maghsal');
@@ -281,14 +293,14 @@ const RemainingProducts = () => {
     };
 
     const baseProducts = showZeroStock
-      ? products.filter(p => inScope(p) && getExpectedRemaining(p) <= 0)
-      : products.filter(p => inScope(p) && hasPositiveExpectedStock(p));
+      ? products.filter(p => inGroup(p) && inScope(p) && getExpectedRemaining(p) <= 0)
+      : products.filter(p => inGroup(p) && inScope(p) && hasPositiveExpectedStock(p));
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
-  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, scopeFilter, productScope]);
+  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, scopeFilter, stockGroup, productScope]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -1817,8 +1829,38 @@ const RemainingProducts = () => {
       <div className="page-shell-header">
         <div className="page-shell-header-left">
           <h1 className="page-shell-header-title">Stock</h1>
-          <p className="page-shell-header-subtitle">Check inventory for Oil, Filter, and Maghsal products in one place.</p>
+          <p className="page-shell-header-subtitle">
+            {stockGroup === 'maghsal'
+              ? 'Maghsal stock — items used or sold during services.'
+              : 'Oil & Filter stock — main inventory.'}
+          </p>
         </div>
+      </div>
+
+      {/* Stock Group Selector */}
+      <div className="stock-group-selector">
+        <button
+          type="button"
+          className={`stock-group-button ${stockGroup === 'oil-filter' ? 'active' : ''}`}
+          onClick={() => setStockGroup('oil-filter')}
+        >
+          <IconPackage />
+          <span className="stock-group-label">
+            <span className="stock-group-title">Oil &amp; Filter Stock</span>
+            <span className="stock-group-sub">Oil, Filter, and other items</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`stock-group-button ${stockGroup === 'maghsal' ? 'active' : ''}`}
+          onClick={() => setStockGroup('maghsal')}
+        >
+          <IconPackage />
+          <span className="stock-group-label">
+            <span className="stock-group-title">Maghsal Stock</span>
+            <span className="stock-group-sub">Items used or sold during services</span>
+          </span>
+        </button>
       </div>
 
       {successMessage && <div className="success-message"><span className="message-icon"><IconCheck /></span>{successMessage}</div>}
@@ -1869,20 +1911,18 @@ const RemainingProducts = () => {
         </button>
       </div>
 
-      {/* Scope sub-filter (applies to Check / Pending / Zero Stock views) */}
-      {(activeTab === 'check' || activeTab === 'pending') && (
+      {/* Scope sub-filter (applies to Check / Pending views). Maghsal stock has
+          no sub-categories so the row is hidden there. */}
+      {(activeTab === 'check' || activeTab === 'pending') && stockGroup === 'oil-filter' && (
         <div className="stock-scope-tabs tab-navigation">
           <button onClick={() => setScopeFilter('all')} className={`tab-button ${scopeFilter === 'all' ? 'active' : ''}`}>
-            <span className="tab-label">All Scopes</span>
+            <span className="tab-label">All</span>
           </button>
           <button onClick={() => setScopeFilter('oil')} className={`tab-button ${scopeFilter === 'oil' ? 'active' : ''}`}>
             <span className="tab-label">Oil</span>
           </button>
           <button onClick={() => setScopeFilter('filter')} className={`tab-button ${scopeFilter === 'filter' ? 'active' : ''}`}>
             <span className="tab-label">Filter</span>
-          </button>
-          <button onClick={() => setScopeFilter('maghsal')} className={`tab-button ${scopeFilter === 'maghsal' ? 'active' : ''}`}>
-            <span className="tab-label">Maghsal</span>
           </button>
           <button onClick={() => setScopeFilter('other')} className={`tab-button ${scopeFilter === 'other' ? 'active' : ''}`}>
             <span className="tab-label">Other</span>

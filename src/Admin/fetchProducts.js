@@ -27,8 +27,33 @@ const FetchProducts = () => {
   const [heldProducts, setHeldProducts] = useState([]);
   const [sortBy, setSortBy] = useState({ field: 'name', order: 'asc' });
   const [scopeFilter, setScopeFilter] = useState('all'); // all | oil | filter | maghsal | other
+  const [stockGroup, setStockGroup] = useState('oil-filter'); // 'oil-filter' | 'maghsal'
 
   useExpiryNotifications({ successMessage, errorMessage });
+
+  // Whether a product belongs to the currently selected stock group.
+  const inStockGroup = (p) => {
+    const s = normalizeScope(p.scope, p.productType);
+    if (stockGroup === 'maghsal') return s === 'maghsal';
+    return s !== 'maghsal'; // oil-filter stock contains everything that's not maghsal
+  };
+
+  // Switching stock groups: reset sub-filter and align the add-form defaults
+  // so the user can immediately add a product to the chosen stock.
+  useEffect(() => {
+    setScopeFilter('all');
+    setNewProduct((prev) => {
+      if (stockGroup === 'maghsal') {
+        return { ...prev, scope: 'maghsal', productType: 'Maghsal' };
+      }
+      if (prev.scope === 'maghsal') {
+        return { ...prev, scope: 'oil', productType: 'Oil' };
+      }
+      return prev;
+    });
+    // editingProduct is left untouched on purpose — if the admin is mid-edit,
+    // they finish that edit even if they flip the tab.
+  }, [stockGroup]);
 
   const rowRef = useRef(null);
 
@@ -179,7 +204,7 @@ const FetchProducts = () => {
   useEffect(() => {
     handleSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, products, scopeFilter]);
+  }, [searchTerm, products, scopeFilter, stockGroup]);
 
   useEffect(() => {
     if (products.length) {
@@ -199,9 +224,10 @@ const FetchProducts = () => {
 
   const handleSearch = () => {
     const term = searchTerm.toLowerCase().trim();
-    let result = products;
+    // Top-level: only items from the active stock group are visible at all.
+    let result = products.filter(inStockGroup);
 
-    // Scope-aware filtering. Legacy Maghsal split scopes are merged into "maghsal".
+    // Within oil-filter, the sub-tab can drill down to Oil / Filter / Other.
     if (scopeFilter !== 'all') {
       result = result.filter((p) => normalizeScope(p.scope, p.productType) === scopeFilter);
     }
@@ -541,9 +567,10 @@ const FetchProducts = () => {
 
   const handleClearSearch = () => {
     setSearchTerm('');
+    const base = products.filter(inStockGroup);
     const scopedProducts = scopeFilter === 'all'
-      ? products
-      : products.filter((product) => normalizeScope(product.scope, product.productType) === scopeFilter);
+      ? base
+      : base.filter((product) => normalizeScope(product.scope, product.productType) === scopeFilter);
     setFilteredProducts(scopedProducts);
   };
 
@@ -578,11 +605,15 @@ const FetchProducts = () => {
       <div className="page-shell-header inventory-page-header">
         <div className="page-shell-header-left">
           <h2 className="page-shell-header-title">Products</h2>
-          <p className="page-shell-header-subtitle">Manage barcodes, quantities, costs, and Maghsal inventory scopes.</p>
+          <p className="page-shell-header-subtitle">
+            {stockGroup === 'maghsal'
+              ? 'Manage Maghsal stock items used or sold during services.'
+              : 'Manage Oil, Filter, and other inventory items.'}
+          </p>
         </div>
         <div className="page-shell-header-actions">
-          <button 
-            onClick={handleRefresh} 
+          <button
+            onClick={handleRefresh}
             className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
             disabled={isRefreshing}
           >
@@ -592,6 +623,32 @@ const FetchProducts = () => {
             <IconBarChart /> Export CSV
           </button>
         </div>
+      </div>
+
+      {/* Stock Group Selector — top-level split between Oil/Filter stock and Maghsal stock */}
+      <div className="stock-group-selector">
+        <button
+          type="button"
+          className={`stock-group-button ${stockGroup === 'oil-filter' ? 'active' : ''}`}
+          onClick={() => setStockGroup('oil-filter')}
+        >
+          <IconPackage />
+          <span className="stock-group-label">
+            <span className="stock-group-title">Oil &amp; Filter Stock</span>
+            <span className="stock-group-sub">Oil, Filter, and other items</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`stock-group-button ${stockGroup === 'maghsal' ? 'active' : ''}`}
+          onClick={() => setStockGroup('maghsal')}
+        >
+          <IconPackage />
+          <span className="stock-group-label">
+            <span className="stock-group-title">Maghsal Stock</span>
+            <span className="stock-group-sub">Items used or sold during services</span>
+          </span>
+        </button>
       </div>
 
       <div className="summary-cards">
@@ -790,31 +847,29 @@ const FetchProducts = () => {
         </div>
       </div>
 
-      {/* Scope Tabs */}
-      <div className="inventory-filter-row">
-        <div className="tab-navigation">
-          <button
-            className={`tab-button ${scopeFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setScopeFilter('all')}
-          >All</button>
-          <button
-            className={`tab-button ${scopeFilter === 'oil' ? 'active' : ''}`}
-            onClick={() => setScopeFilter('oil')}
-          >Oil</button>
-          <button
-            className={`tab-button ${scopeFilter === 'filter' ? 'active' : ''}`}
-            onClick={() => setScopeFilter('filter')}
-          >Filter</button>
-          <button
-            className={`tab-button ${scopeFilter === 'maghsal' ? 'active' : ''}`}
-            onClick={() => setScopeFilter('maghsal')}
-          >Maghsal</button>
-          <button
-            className={`tab-button ${scopeFilter === 'other' ? 'active' : ''}`}
-            onClick={() => setScopeFilter('other')}
-          >Other</button>
+      {/* Scope sub-tabs — only shown for the Oil & Filter group; Maghsal has no sub-categories */}
+      {stockGroup === 'oil-filter' && (
+        <div className="inventory-filter-row">
+          <div className="tab-navigation">
+            <button
+              className={`tab-button ${scopeFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setScopeFilter('all')}
+            >All</button>
+            <button
+              className={`tab-button ${scopeFilter === 'oil' ? 'active' : ''}`}
+              onClick={() => setScopeFilter('oil')}
+            >Oil</button>
+            <button
+              className={`tab-button ${scopeFilter === 'filter' ? 'active' : ''}`}
+              onClick={() => setScopeFilter('filter')}
+            >Filter</button>
+            <button
+              className={`tab-button ${scopeFilter === 'other' ? 'active' : ''}`}
+              onClick={() => setScopeFilter('other')}
+            >Other</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Search Section */}
       <div className="search-section">

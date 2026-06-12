@@ -1431,7 +1431,12 @@ const SoldItems = () => {
                   >
                     <option value="">Select a Product</option>
                     {products
-                      .filter(p => String(p.productType || '').toLowerCase() !== 'maghsal')
+                      .filter((p) => {
+                        // Maghsal items must be sold from the Maghsal page only.
+                        const scope = String(p.scope || '').toLowerCase();
+                        const type = String(p.productType || '').toLowerCase();
+                        return !scope.includes('maghsal') && !type.includes('maghsal');
+                      })
                       .map((product) => (
                         <option key={product.id} value={product.id}>
                           {product.name} - {product.barcode}

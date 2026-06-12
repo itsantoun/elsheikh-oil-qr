@@ -453,3 +453,44 @@
   .tab-navigation { flex-direction: column; width: 100%; }
   .tab-button { width: 100%; justify-content: flex-start; }
 }
+
+/* Stock Group Selector — top-level split between Oil/Filter vs Maghsal stock */
+.stock-group-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+.stock-group-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 2px solid var(--border, #e2e8f0);
+  background: var(--surface, #ffffff);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  text-align: left;
+  color: var(--text-primary, #1f2937);
+}
+.stock-group-button:hover {
+  border-color: var(--brand, #4f46e5);
+  background: var(--surface-hover, #f8fafc);
+}
+.stock-group-button:active { transform: scale(0.99); }
+.stock-group-button.active {
+  border-color: var(--brand, #4f46e5);
+  background: var(--brand-bg, #eef2ff);
+  color: var(--brand, #4f46e5);
+  font-weight: 600;
+}
+.stock-group-button svg { flex-shrink: 0; width: 22px; height: 22px; }
+.stock-group-label { display: flex; flex-direction: column; gap: 2px; }
+.stock-group-title { font-size: 15px; font-weight: 600; }
+.stock-group-sub { font-size: 12px; color: var(--text-secondary, #64748b); font-weight: 400; }
+.stock-group-button.active .stock-group-sub { color: var(--brand, #4f46e5); opacity: 0.85; }
+
+@media (max-width: 640px) {
+  .stock-group-selector { grid-template-columns: 1fr; }
+}

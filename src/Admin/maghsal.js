@@ -1058,7 +1058,7 @@ const Maghsal = () => {
               {/* Good Sold */}
               <div style={{ marginTop: 'var(--s-4)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Good Sold</label>
+                  <label className="form-label" style={{ margin: 0 }}>Sold</label>
                   <button className="btn-small btn-secondary" onClick={addGoodLine} disabled={isSaving || goods.length === 0} type="button">
                     <IconPlus /> Add Line
                   </button>

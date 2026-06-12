@@ -6,7 +6,7 @@ import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
-import { IconRefresh, IconX } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconTrash } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import {
@@ -966,7 +966,7 @@ const SoldItems = () => {
             )}
           </div>
           <button className="btn-primary" onClick={openMissingItemsModal}>
-            Add Missing Items
+            <IconPlus /> Add Sold Item
           </button>
         </div>
       </div>

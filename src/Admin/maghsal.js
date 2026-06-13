@@ -257,10 +257,12 @@ const Maghsal = () => {
         }, 0)
       : 0;
 
-    // Net profit = revenue − cost of goods sold − cost of consumables used.
-    // Services have no direct cost; consumables consumed during the service
-    // are what reduce service profit.
-    const netProfit = totalPrice - goodsCost - consumablesCost;
+    // Net profit (per the business owner's formula):
+    //   Net Profit = Sales (service + sold revenue) − Cost of items USED
+    // Items sold are tracked at full revenue here; their purchasing cost is
+    // managed elsewhere. Only consumables actually used in services reduce
+    // profit on this page.
+    const netProfit = totalPrice - consumablesCost;
 
     return { servicePrice, goodsTotal, totalPrice, consumablesCost, goodsCost, netProfit };
   };
@@ -331,6 +333,41 @@ const Maghsal = () => {
     return t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, products]);
+
+  // ── Per-month profit history (independent of filters) ─────────────
+  // Builds { '2026-06': { year, month, sales, usedCost, profit, count }, ... }
+  // for every month that has at least one entry. Sorted newest first.
+  const profitByMonth = useMemo(() => {
+    const buckets = {};
+    for (const e of entries) {
+      const d = new Date(e.date);
+      if (isNaN(d.getTime())) continue;
+      const year = d.getFullYear();
+      const month = d.getMonth(); // 0-11
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+      if (!buckets[key]) {
+        buckets[key] = { key, year, month, sales: 0, usedCost: 0, profit: 0, count: 0 };
+      }
+      const t = entryTotals(e);
+      buckets[key].sales += t.totalPrice;
+      buckets[key].usedCost += t.consumablesCost;
+      buckets[key].profit += (t.totalPrice - t.consumablesCost);
+      buckets[key].count += 1;
+    }
+    return Object.values(buckets).sort((a, b) => b.key.localeCompare(a.key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, products]);
+
+  // The KPI card always reflects the CURRENT calendar month.
+  const monthlyProfit = useMemo(() => {
+    const now = new Date();
+    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return profitByMonth.find((m) => m.key === key) || {
+      sales: 0, usedCost: 0, profit: 0, count: 0,
+    };
+  }, [profitByMonth]);
+
+  const [showMonthlyHistory, setShowMonthlyHistory] = useState(false);
 
   // ── Clear / Refresh ──────────────────────────────
   const clearAllFilters = () => {
@@ -511,7 +548,7 @@ const Maghsal = () => {
     }
     const badGood = formGoods.find((l) => !l.productId || toNumber(l.quantity) <= 0);
     if (badGood) {
-      flash('Each Good Sold line needs an item and quantity > 0.', 'error');
+      flash('Each Sold line needs an item and quantity > 0.', 'error');
       return;
     }
 
@@ -767,7 +804,7 @@ const Maghsal = () => {
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Service', 'Status', 'Service Price', 'Good Sold', 'Total'],
+        head: ['Date', 'Service', 'Status', 'Service Price', 'Sold', 'Total'],
         body: rows,
         startY,
         rightAlignedColumns: [3, 4, 5],
@@ -799,7 +836,7 @@ const Maghsal = () => {
 
   const exportCSV = async () => {
     if (filtered.length === 0) { flash('No data to export.', 'error'); return; }
-    const headers = ['Date','Customer','Category','Payment Status','Service Price','Good Sold Total','Total','Employee','Remark','Used','Good Sold'];
+    const headers = ['Date','Customer','Category','Payment Status','Service Price','Sold Total','Total','Employee','Remark','Used','Sold'];
     const rows = filtered.map((e) => {
       const m = entryTotals(e);
       const cons = (e.consumablesUsed || []).map((c) => `${c.name} x${c.quantity}`).join('; ');
@@ -883,7 +920,7 @@ const Maghsal = () => {
             <div className="kpi-card-value">${formatCurrency(totals.service)}</div>
           </div>
           <div className="kpi-card tone-cyan">
-            <div className="kpi-card-label">Good Sold Revenue</div>
+            <div className="kpi-card-label">Sold Revenue</div>
             <div className="kpi-card-value">${formatCurrency(totals.goods)}</div>
           </div>
           <div className="kpi-card tone-green">
@@ -891,16 +928,30 @@ const Maghsal = () => {
             <div className="kpi-card-value">${formatCurrency(totals.total)}</div>
             <div className="kpi-card-hint">Paid ${formatCurrency(totals.paid)} · Unpaid ${formatCurrency(totals.unpaid)}</div>
           </div>
-          <div className="kpi-card" style={{ borderLeft: `4px solid ${totals.netProfit >= 0 ? '#198754' : '#dc3545'}` }}>
-            <div className="kpi-card-label">Net Profit</div>
+          <div
+            className="kpi-card"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowMonthlyHistory(true)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowMonthlyHistory(true); }}
+            style={{
+              borderLeft: `4px solid ${monthlyProfit.profit >= 0 ? '#198754' : '#dc3545'}`,
+              cursor: 'pointer',
+            }}
+            title="Click to see profit history by month"
+          >
+            <div className="kpi-card-label">
+              Net Profit · {monthNames[new Date().getMonth()]}
+            </div>
             <div
               className="kpi-card-value"
-              style={{ color: totals.netProfit >= 0 ? '#198754' : '#dc3545' }}
+              style={{ color: monthlyProfit.profit >= 0 ? '#198754' : '#dc3545' }}
             >
-              ${formatCurrency(totals.netProfit)}
+              ${formatCurrency(monthlyProfit.profit)}
             </div>
             <div className="kpi-card-hint">
-              − Used ${formatCurrency(totals.consumablesCost)} · − Goods Cost ${formatCurrency(totals.goodsCost)}
+              {monthlyProfit.count} entry(s) · Sales ${formatCurrency(monthlyProfit.sales)} − Used ${formatCurrency(monthlyProfit.usedCost)}
+              <span style={{ marginLeft: 8, color: 'var(--brand)', fontWeight: 500 }}>· See history →</span>
             </div>
           </div>
         </div>
@@ -988,7 +1039,7 @@ const Maghsal = () => {
                 <th>Customer</th>
                 <th>Category</th>
                 <th className="text-right">Service</th>
-                <th className="text-right">Good Sold</th>
+                <th className="text-right">Sold</th>
                 <th className="text-right">Total</th>
                 <th className="text-right">Profit</th>
                 <th>Status</th>
@@ -1054,7 +1105,7 @@ const Maghsal = () => {
                       <span
                         className="price-cell"
                         style={{ fontWeight: 600, color: m.netProfit >= 0 ? '#198754' : '#dc3545' }}
-                        title={`Revenue $${m.totalPrice.toFixed(2)} − Goods cost $${m.goodsCost.toFixed(2)} − Used cost $${m.consumablesCost.toFixed(2)}`}
+                        title={`Sales $${m.totalPrice.toFixed(2)} − Used cost $${m.consumablesCost.toFixed(2)}`}
                       >
                         ${m.netProfit.toFixed(2)}
                       </span>
@@ -1357,7 +1408,7 @@ const Maghsal = () => {
               {formPaymentStatus !== 'Stock' && (
                 <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
                   <span>Service: ${toNumber(formServicePrice).toFixed(2)}</span>
-                  <span>Goods: ${formGoodsTotal.toFixed(2)}</span>
+                  <span>Sold: ${formGoodsTotal.toFixed(2)}</span>
                   <span style={{ color: 'var(--brand)' }}>Total: ${formTotal.toFixed(2)}</span>
                 </div>
               )}
@@ -1405,7 +1456,7 @@ const Maghsal = () => {
               </div>
 
               <div>
-                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Good Sold</h4>
+                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Sold</h4>
                 {Array.isArray(detailsEntry.goodsSold) && detailsEntry.goodsSold.length > 0 ? (
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {detailsEntry.goodsSold.map((g, i) => (
@@ -1420,7 +1471,7 @@ const Maghsal = () => {
 
               <div className="missing-item-summary">
                 <span>Service: ${entryTotals(detailsEntry).servicePrice.toFixed(2)}</span>
-                <span>Goods: ${entryTotals(detailsEntry).goodsTotal.toFixed(2)}</span>
+                <span>Sold: ${entryTotals(detailsEntry).goodsTotal.toFixed(2)}</span>
                 <span style={{ color: 'var(--brand)' }}>Total: ${entryTotals(detailsEntry).totalPrice.toFixed(2)}</span>
               </div>
 
@@ -1433,6 +1484,73 @@ const Maghsal = () => {
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setDetailsEntry(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly Profit History */}
+      {showMonthlyHistory && (
+        <div className="modal-overlay" onClick={() => setShowMonthlyHistory(false)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Net Profit · Monthly History</h3>
+              <button className="modal-close" onClick={() => setShowMonthlyHistory(false)}><IconX /></button>
+            </div>
+            <div className="modal-content">
+              {profitByMonth.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '24px 0' }}>
+                  No entries recorded yet.
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
+                  {profitByMonth.map((row) => {
+                    const isCurrent = row.key === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+                    return (
+                      <div
+                        key={row.key}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          gap: 'var(--s-3)',
+                          alignItems: 'center',
+                          padding: '12px 14px',
+                          background: isCurrent ? 'var(--brand-light, #eef2ff)' : 'var(--surface, #fff)',
+                          border: `1px solid ${isCurrent ? 'var(--brand, #4f46e5)' : 'var(--border, #e2e8f0)'}`,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>
+                            {monthNames[row.month]} {row.year}
+                            {isCurrent && (
+                              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--brand, #4f46e5)' }}>
+                                CURRENT
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {row.count} entry(s) · Sales ${formatCurrency(row.sales)} − Used ${formatCurrency(row.usedCost)}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: 16,
+                            color: row.profit >= 0 ? '#198754' : '#dc3545',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          ${formatCurrency(row.profit)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowMonthlyHistory(false)}>Close</button>
             </div>
           </div>
         </div>

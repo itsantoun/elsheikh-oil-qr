@@ -6,7 +6,7 @@ import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
-import { IconRefresh, IconX, IconPlus, IconTrash } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import {

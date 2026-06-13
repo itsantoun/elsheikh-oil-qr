@@ -63,3 +63,97 @@
   color: var(--text-heading);
 }
 .date-display { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+
+/* ── Compact Transactions Table — fit without horizontal scroll ──────── */
+.transactions-container .table-container {
+  overflow-x: hidden;  /* no more sliding */
+}
+.transactions-container .data-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;        /* override the inherited 600px min */
+  font-size: 13.5px;
+}
+.transactions-container .data-table th,
+.transactions-container .data-table td {
+  padding: 8px 10px;   /* tighter than default but still comfortable */
+  white-space: normal;
+  word-break: break-word;
+  vertical-align: middle;
+}
+.transactions-container .data-table th {
+  font-size: 12.5px;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+}
+/* Column widths — sum ≈ 100%; the Product column flexes */
+.transactions-container .data-table th:nth-child(1),  /* Date */
+.transactions-container .data-table td:nth-child(1) { width: 11%; }
+.transactions-container .data-table th:nth-child(2),  /* Barcode */
+.transactions-container .data-table td:nth-child(2) { width: 10%; }
+.transactions-container .data-table th:nth-child(3),  /* Product */
+.transactions-container .data-table td:nth-child(3) { width: auto; }
+.transactions-container .data-table th:nth-child(4),  /* Quantity */
+.transactions-container .data-table td:nth-child(4) { width: 6%; text-align: right; }
+.transactions-container .data-table th:nth-child(5),  /* Sell Price */
+.transactions-container .data-table td:nth-child(5) { width: 8%; text-align: right; }
+.transactions-container .data-table th:nth-child(6),  /* Purchasing Price */
+.transactions-container .data-table td:nth-child(6) { width: 9%; text-align: right; }
+.transactions-container .data-table th:nth-child(7),  /* Total Sell Price */
+.transactions-container .data-table td:nth-child(7) { width: 9%; text-align: right; }
+.transactions-container .data-table th:nth-child(8),  /* Profit */
+.transactions-container .data-table td:nth-child(8) { width: 8%; text-align: right; }
+.transactions-container .data-table th:nth-child(9),  /* Status */
+.transactions-container .data-table td:nth-child(9) { width: 8%; }
+.transactions-container .data-table th:nth-child(10), /* Actions */
+.transactions-container .data-table td:nth-child(10) { width: 10%; }
+
+/* Truncate product names that are too long instead of forcing column wide */
+.transactions-container .product-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Compact action buttons row */
+.transactions-container .action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  justify-content: flex-start;
+}
+.transactions-container .action-buttons .btn-small {
+  padding: 5px 7px;
+  min-width: 0;
+}
+.transactions-container .action-buttons .btn-small svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Shrink the barcode pill so it doesn't dominate */
+.transactions-container .barcode-display {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* Status badge stays compact */
+.transactions-container .status-badge { font-size: 12px; padding: 3px 7px; }
+
+/* On narrower laptops, allow date to wrap into two short lines */
+@media (max-width: 1100px) {
+  .transactions-container .date-display { white-space: normal; line-height: 1.3; }
+  .transactions-container .data-table th,
+  .transactions-container .data-table td { padding: 6px 8px; }
+}
+
+/* Mobile: allow horizontal scroll as a fallback so it never breaks */
+@media (max-width: 720px) {
+  .transactions-container .table-container { overflow-x: auto; }
+  .transactions-container .data-table { min-width: 720px; font-size: 12px; }
+}

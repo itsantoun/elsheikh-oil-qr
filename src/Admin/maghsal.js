@@ -71,6 +71,12 @@ const Maghsal = () => {
   const [formRemark, setFormRemark] = useState('');
   const [formConsumables, setFormConsumables] = useState([]); // [{productId, quantity}]
   const [formGoods, setFormGoods] = useState([]);             // [{productId, quantity, unitPrice}]
+  // Stock-in form (only shown when paymentStatus === 'Stock'). Single product
+  // per submission, matching the Oil/Filter "Add Missing Item" stock flow.
+  const [formStockProductId, setFormStockProductId] = useState('');
+  const [formStockQuantity, setFormStockQuantity] = useState('1');
+  const [formStockPurchasingPrice, setFormStockPurchasingPrice] = useState('');
+  const [formStockSellPrice, setFormStockSellPrice] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Details modal
@@ -232,7 +238,31 @@ const Maghsal = () => {
       if (typeof e.totalPrice !== 'undefined') return toNumber(e.totalPrice);
       return servicePrice + goodsTotal;
     })();
-    return { servicePrice, goodsTotal, totalPrice };
+
+    // Cost of consumables used during the service. Falls back to the current
+    // product's purchasingPrice if the entry was saved before we started
+    // snapshotting it.
+    const consumablesCost = Array.isArray(e.consumablesUsed)
+      ? e.consumablesUsed.reduce((acc, c) => {
+          const purchasing = toNumber(c.purchasingPrice) || toNumber(getProduct(c.productId)?.purchasingPrice);
+          return acc + toNumber(c.quantity) * purchasing;
+        }, 0)
+      : 0;
+
+    // Cost of goods sold — same fallback strategy.
+    const goodsCost = Array.isArray(e.goodsSold)
+      ? e.goodsSold.reduce((acc, g) => {
+          const purchasing = toNumber(g.purchasingPrice) || toNumber(getProduct(g.productId)?.purchasingPrice);
+          return acc + toNumber(g.quantity) * purchasing;
+        }, 0)
+      : 0;
+
+    // Net profit = revenue − cost of goods sold − cost of consumables used.
+    // Services have no direct cost; consumables consumed during the service
+    // are what reduce service profit.
+    const netProfit = totalPrice - goodsCost - consumablesCost;
+
+    return { servicePrice, goodsTotal, totalPrice, consumablesCost, goodsCost, netProfit };
   };
 
   // ── Filters ──────────────────────────────────────
@@ -275,19 +305,32 @@ const Maghsal = () => {
   }, [entries, customerFilter, categoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter]);
 
   const totals = useMemo(() => {
-    const t = { count: 0, service: 0, goods: 0, total: 0, paid: 0, unpaid: 0 };
+    const t = {
+      count: 0,
+      service: 0,
+      goods: 0,
+      total: 0,
+      paid: 0,
+      unpaid: 0,
+      consumablesCost: 0,
+      goodsCost: 0,
+      netProfit: 0,
+    };
     for (const e of filtered) {
       const m = entryTotals(e);
       t.count += 1;
       t.service += m.servicePrice;
       t.goods += m.goodsTotal;
       t.total += m.totalPrice;
+      t.consumablesCost += m.consumablesCost;
+      t.goodsCost += m.goodsCost;
+      t.netProfit += m.netProfit;
       if (e.paymentStatus === 'Paid') t.paid += m.totalPrice;
       else if (e.paymentStatus === 'Unpaid') t.unpaid += m.totalPrice;
     }
     return t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered]);
+  }, [filtered, products]);
 
   // ── Clear / Refresh ──────────────────────────────
   const clearAllFilters = () => {
@@ -319,7 +362,20 @@ const Maghsal = () => {
     setFormRemark('');
     setFormConsumables([]);
     setFormGoods([]);
+    setFormStockProductId('');
+    setFormStockQuantity('1');
+    setFormStockPurchasingPrice('');
+    setFormStockSellPrice('');
     setShowAddModal(true);
+  };
+
+  // When the user picks a product in stock-in mode, pre-fill the prices from
+  // the product (both still editable in case supplier or retail price changed).
+  const handleStockProductChange = (productId) => {
+    setFormStockProductId(productId);
+    const p = getProduct(productId);
+    setFormStockPurchasingPrice(p ? String(toNumber(p.purchasingPrice)) : '');
+    setFormStockSellPrice(p ? String(toNumber(p.itemCost)) : '');
   };
 
   const closeAddModal = () => setShowAddModal(false);
@@ -375,16 +431,77 @@ const Maghsal = () => {
     return insufficient;
   };
 
+  const isStockMode = formPaymentStatus === 'Stock';
+
+  // Computed values for the stock-in preview row
+  const stockSelectedProduct = isStockMode ? getProduct(formStockProductId) : null;
+  const stockQuantityValue = toNumber(formStockQuantity);
+  const stockPurchasingPriceValue = toNumber(formStockPurchasingPrice);
+  const stockSellPriceValue = toNumber(formStockSellPrice);
+  const stockTotalCost = stockPurchasingPriceValue * stockQuantityValue;
+
   const canSave = Boolean(
-    formCustomerId &&
-    formCategory &&
     formDate &&
-    (toNumber(formServicePrice) > 0 || formGoods.length > 0) &&
-    !isSaving
+    !isSaving &&
+    (
+      isStockMode
+        // Stock-in: product + positive quantity is enough.
+        ? (formStockProductId && stockQuantityValue > 0)
+        // Sale: same rules as before.
+        : (formCustomerId && formCategory && (toNumber(formServicePrice) > 0 || formGoods.length > 0))
+    )
   );
+
+  // Stock-in path — push a single pending transaction, mirroring the
+  // BarcodeScanner / Oil-Filter Add Missing Item stock flow.
+  const handleSaveStockIn = async () => {
+    if (!formStockProductId || stockQuantityValue <= 0) {
+      flash('Pick a product and enter a quantity greater than zero.', 'error');
+      return;
+    }
+    const product = getProduct(formStockProductId);
+    if (!product) {
+      flash('Selected product is no longer available.', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const scannedBy = user?.name || user?.displayName || user?.email || 'Unknown';
+      const currentDate = convertDateInputToISO(formDate);
+
+      const transaction = {
+        barcode: formStockProductId,
+        productId: formStockProductId,
+        name: product.name || 'Unknown',
+        quantity: stockQuantityValue,
+        dateScanned: currentDate,
+        paymentStatus: 'Pending',
+        itemCost: stockSellPriceValue,
+        purchasingPrice: stockPurchasingPriceValue,
+        totalCost: stockPurchasingPriceValue * stockQuantityValue,
+        scannedBy: scannedBy,
+        remark: formRemark.trim(),
+      };
+      await push(ref(database, 'transactions'), transaction);
+
+      closeAddModal();
+      flash('Stock-in submitted — awaiting confirmation in Transactions.');
+    } catch (err) {
+      console.error('Maghsal stock-in save failed:', err);
+      flash(`Failed to submit stock: ${err?.message || err}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!canSave) return;
+
+    // Stock-in is a separate flow — push to /transactions, not /maghsalEntries.
+    if (isStockMode) {
+      return handleSaveStockIn();
+    }
 
     // Validate line items have valid product selections
     const badConsumable = formConsumables.find((l) => !l.productId || toNumber(l.quantity) <= 0);
@@ -418,14 +535,17 @@ const Maghsal = () => {
       const goodsTotal = formGoodsTotal;
       const totalPrice = servicePrice + goodsTotal;
 
-      // Snapshot consumables/goods with names for historical reporting
+      // Snapshot consumables/goods with names for historical reporting.
+      // purchasingPrice is captured so net profit stays correct even if the
+      // product's price is edited later.
       const consumablesSnapshot = formConsumables.map((l) => {
         const p = getProduct(l.productId);
         return {
           productId: l.productId,
           name: p?.name || 'Unknown',
           quantity: toNumber(l.quantity),
-          unitCost: toNumber(p?.itemCost),
+          unitCost: toNumber(p?.itemCost),               // legacy field — sell price
+          purchasingPrice: toNumber(p?.purchasingPrice), // used to compute profit
         };
       });
       const goodsSnapshot = formGoods.map((l) => {
@@ -435,6 +555,7 @@ const Maghsal = () => {
           name: p?.name || 'Unknown',
           quantity: toNumber(l.quantity),
           unitPrice: toNumber(l.unitPrice),
+          purchasingPrice: toNumber(p?.purchasingPrice),
         };
       });
 
@@ -770,6 +891,18 @@ const Maghsal = () => {
             <div className="kpi-card-value">${formatCurrency(totals.total)}</div>
             <div className="kpi-card-hint">Paid ${formatCurrency(totals.paid)} · Unpaid ${formatCurrency(totals.unpaid)}</div>
           </div>
+          <div className="kpi-card" style={{ borderLeft: `4px solid ${totals.netProfit >= 0 ? '#198754' : '#dc3545'}` }}>
+            <div className="kpi-card-label">Net Profit</div>
+            <div
+              className="kpi-card-value"
+              style={{ color: totals.netProfit >= 0 ? '#198754' : '#dc3545' }}
+            >
+              ${formatCurrency(totals.netProfit)}
+            </div>
+            <div className="kpi-card-hint">
+              − Used ${formatCurrency(totals.consumablesCost)} · − Goods Cost ${formatCurrency(totals.goodsCost)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -857,6 +990,7 @@ const Maghsal = () => {
                 <th className="text-right">Service</th>
                 <th className="text-right">Good Sold</th>
                 <th className="text-right">Total</th>
+                <th className="text-right">Profit</th>
                 <th>Status</th>
                 <th>Employee</th>
                 <th>Actions</th>
@@ -916,6 +1050,15 @@ const Maghsal = () => {
                     <td className="text-right">
                       <span className="price-cell" style={{ fontWeight: 700 }}>${m.totalPrice.toFixed(2)}</span>
                     </td>
+                    <td className="text-right">
+                      <span
+                        className="price-cell"
+                        style={{ fontWeight: 600, color: m.netProfit >= 0 ? '#198754' : '#dc3545' }}
+                        title={`Revenue $${m.totalPrice.toFixed(2)} − Goods cost $${m.goodsCost.toFixed(2)} − Used cost $${m.consumablesCost.toFixed(2)}`}
+                      >
+                        ${m.netProfit.toFixed(2)}
+                      </span>
+                    </td>
                     <td>
                       {isEditing ? (
                         <select value={editPaymentStatus} onChange={(ev) => setEditPaymentStatus(ev.target.value)} className="edit-input">
@@ -960,48 +1103,132 @@ const Maghsal = () => {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 720 }}>
             <div className="modal-header">
-              <h3 className="modal-title">Add Sold Item</h3>
+              <h3 className="modal-title">{formPaymentStatus === 'Stock' ? 'Add Stock In' : 'Add Sold Item'}</h3>
               <button className="modal-close" onClick={closeAddModal}><IconX /></button>
             </div>
             <div className="modal-content">
               {/* Core fields */}
               <div className="missing-item-form-grid">
-                <div className="form-group">
-                  <label className="form-label">Customer</label>
-                  <select value={formCustomerId} onChange={(e) => setFormCustomerId(e.target.value)} className="form-select" disabled={isSaving}>
-                    <option value="">Select Customer</option>
-                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+                {formPaymentStatus !== 'Stock' && (
+                  <div className="form-group">
+                    <label className="form-label">Customer</label>
+                    <select value={formCustomerId} onChange={(e) => setFormCustomerId(e.target.value)} className="form-select" disabled={isSaving}>
+                      <option value="">Select Customer</option>
+                      {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label">Date</label>
                   <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} className="form-input" disabled={isSaving} />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Category</label>
-                  <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
-                    <option value="">Select Category</option>
-                    {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                </div>
+                {formPaymentStatus !== 'Stock' && (
+                  <div className="form-group">
+                    <label className="form-label">Category</label>
+                    <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
+                      <option value="">Select Category</option>
+                      {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+                )}
 
-                <div className="form-group">
-                  <label className="form-label">Service Price</label>
-                  <input type="number" min="0" step="0.01" value={formServicePrice} onChange={(e) => setFormServicePrice(e.target.value)} className="form-input" disabled={isSaving} />
-                </div>
+                {formPaymentStatus !== 'Stock' && (
+                  <div className="form-group">
+                    <label className="form-label">Service Price</label>
+                    <input type="number" min="0" step="0.01" value={formServicePrice} onChange={(e) => setFormServicePrice(e.target.value)} className="form-input" disabled={isSaving} />
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label">Payment Status</label>
                   <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
+                    <option value="Stock">Stock</option>
                   </select>
                 </div>
               </div>
 
-              {/* Used items */}
+              {/* Stock-in form (single product, Oil/Filter style) */}
+              {formPaymentStatus === 'Stock' && (
+                <>
+                  <div className="form-group" style={{ marginTop: 'var(--s-4)' }}>
+                    <label className="form-label">Product</label>
+                    <select
+                      value={formStockProductId}
+                      onChange={(e) => handleStockProductChange(e.target.value)}
+                      className="form-select"
+                      disabled={isSaving || consumables.length === 0}
+                    >
+                      <option value="">Select a Product</option>
+                      {consumables.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.unit ? `(${p.unit})` : ''} · stock {toNumber(p.quantity)}
+                        </option>
+                      ))}
+                    </select>
+                    {consumables.length === 0 && (
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                        No Maghsal items in inventory. Add them from <strong>Add Products → Maghsal Stock</strong>.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="missing-item-form-grid">
+                    <div className="form-group">
+                      <label className="form-label">Quantity</label>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={formStockQuantity}
+                        onChange={(e) => setFormStockQuantity(e.target.value)}
+                        className="form-input"
+                        disabled={isSaving}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Purchasing Price</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formStockPurchasingPrice}
+                        onChange={(e) => setFormStockPurchasingPrice(e.target.value)}
+                        className="form-input"
+                        disabled={isSaving}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Selling Price</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formStockSellPrice}
+                        onChange={(e) => setFormStockSellPrice(e.target.value)}
+                        className="form-input"
+                        disabled={isSaving}
+                      />
+                    </div>
+                  </div>
+
+                  {stockSelectedProduct && (
+                    <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
+                      <span>Unit Purchase: ${stockPurchasingPriceValue.toFixed(2)}</span>
+                      <span>Unit Sell: ${stockSellPriceValue.toFixed(2)}</span>
+                      <span style={{ color: 'var(--brand)' }}>Total Cost: ${stockTotalCost.toFixed(2)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Used items — only for sales (Paid / Unpaid) */}
+              {formPaymentStatus !== 'Stock' && (
               <div style={{ marginTop: 'var(--s-4)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
                   <label className="form-label" style={{ margin: 0 }}>Used</label>
@@ -1054,8 +1281,10 @@ const Maghsal = () => {
                   </div>
                 )}
               </div>
+              )}
 
-              {/* Good Sold */}
+              {/* Good Sold — hidden when stocking in (use the section above instead) */}
+              {formPaymentStatus !== 'Stock' && (
               <div style={{ marginTop: 'var(--s-4)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
                   <label className="form-label" style={{ margin: 0 }}>Sold</label>
@@ -1116,6 +1345,7 @@ const Maghsal = () => {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Remark */}
               <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
@@ -1123,16 +1353,20 @@ const Maghsal = () => {
                 <textarea value={formRemark} onChange={(e) => setFormRemark(e.target.value)} className="form-textarea" rows="2" disabled={isSaving} />
               </div>
 
-              {/* Totals */}
-              <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-                <span>Service: ${toNumber(formServicePrice).toFixed(2)}</span>
-                <span>Goods: ${formGoodsTotal.toFixed(2)}</span>
-                <span style={{ color: 'var(--brand)' }}>Total: ${formTotal.toFixed(2)}</span>
-              </div>
+              {/* Totals — only meaningful for sales, not stock-in */}
+              {formPaymentStatus !== 'Stock' && (
+                <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
+                  <span>Service: ${toNumber(formServicePrice).toFixed(2)}</span>
+                  <span>Goods: ${formGoodsTotal.toFixed(2)}</span>
+                  <span style={{ color: 'var(--brand)' }}>Total: ${formTotal.toFixed(2)}</span>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
-                {isSaving ? 'Saving...' : 'Save Sold Item'}
+                {isSaving
+                  ? 'Saving...'
+                  : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Sold Item')}
               </button>
               <button className="btn-secondary" onClick={closeAddModal} disabled={isSaving}>Close</button>
             </div>

@@ -1207,121 +1207,19 @@ const SoldItems = () => {
             </thead>
             <tbody>
               {filteredItems.map((item) => {
-                const liveMetrics = getItemProfitMetrics(item);
-                const isEditing = editingItem && editingItem.id === item.id;
-                const editedStatus = newPaymentStatus || item.paymentStatus;
-                const editedQuantity = toNumber(newQuantity);
-                const editedSellPrice = toNumber(newSellPrice);
-                const editedPurchasingPrice = toNumber(newPurchasingPrice);
-                const editedTotalCost = isStockLikeStatus(editedStatus)
-                  ? 0
-                  : editedSellPrice * editedQuantity;
-                const editingMetrics = isEditing
-                  ? getItemProfitMetrics(item, {
-                    quantity: editedQuantity,
-                    totalCost: editedTotalCost,
-                    paymentStatus: editedStatus,
-                    itemCost: editedSellPrice,
-                    purchasingPrice: editedPurchasingPrice,
-                  })
-                  : null;
-                const rowMetrics = editingMetrics || liveMetrics;
-
+                const rowMetrics = getItemProfitMetrics(item);
                 return (
                 <tr key={item.id} className={checkedItems.includes(item.id) ? 'checked-row' : ''}>
                   <td className="date-cell">
-                    {isEditing ? (
-                      <input
-                        type="datetime-local"
-                        value={newDate || ''}
-                        onChange={(e) => setNewDate(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      <span className="date-display">{formatDateTime(item.dateScanned)}</span>
-                    )}
+                    <span className="date-display">{formatDateTime(item.dateScanned)}</span>
                   </td>
-                  <td>
-                    {isEditing ? (
-                      <select 
-                        value={newCustomer} 
-                        onChange={(e) => setNewCustomer(e.target.value)}
-                        className="edit-select"
-                      >
-                        <option value="">Select Customer</option>
-                        {customers.map((customer) => (
-                          <option key={customer.id} value={customer.name}>
-                            {customer.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      item.customerName || 'N/A'
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={newProductType}
-                        onChange={(e) => setNewProductType(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      item.name || 'N/A'
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={newQuantity}
-                        onChange={(e) => setNewQuantity(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      item.quantity || 0
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={newSellPrice}
-                        onChange={(e) => setNewSellPrice(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      `$${rowMetrics.unitSellPrice.toFixed(2)}`
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={newPurchasingPrice}
-                        onChange={(e) => setNewPurchasingPrice(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      `$${rowMetrics.unitPurchasePrice.toFixed(2)}`
-                    )}
-                  </td>
+                  <td>{item.customerName || 'N/A'}</td>
+                  <td>{item.name || 'N/A'}</td>
+                  <td>{item.quantity || 0}</td>
+                  <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
+                  <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>
                   <td>{item.scannedBy || 'N/A'}</td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={newRemark}
-                        onChange={(e) => setNewRemark(e.target.value)}
-                        className="edit-input"
-                      />
-                    ) : (
-                      item.remark || 'N/A'
-                    )}
-                  </td>
+                  <td>{item.remark || 'N/A'}</td>
                   <td>{`$${rowMetrics.revenue.toFixed(2)}`}</td>
                   <td>
                     <span style={{ color: rowMetrics.totalProfitAmount >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}>
@@ -1329,67 +1227,43 @@ const SoldItems = () => {
                     </span>
                   </td>
                   <td>
-                    {isEditing ? (
-                      <select
-                        value={newPaymentStatus}
-                        onChange={(e) => setNewPaymentStatus(e.target.value)}
-                        className="edit-select"
-                      >
-                        <option value="Paid">Paid</option>
-                        <option value="Unpaid">Unpaid</option>
-                        <option value="Stock">Stock</option>
-                      </select>
-                    ) : (
-                      <div className="payment-status">
-                        <span className={`status-badge status-${item.paymentStatus?.toLowerCase().replace(' ', '-')}`}>
-                          {item.paymentStatus}
-                        </span>
-                        {item.paymentStatus === 'Stock' && (
-                          <button
-                            className="btn-small"
-                            onClick={async () => {
-                              const itemRef = ref(database, `SoldItems/${item.id}`);
-                              try {
-                                await update(itemRef, { paymentStatus: 'Stock Confirmed' });
-                                const updatedItems = soldItems.map((i) => 
-                                  i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
-                                );
-                                setSoldItems(updatedItems);
-                                setFilteredItems(updatedItems);
-                              } catch (error) {
-                                console.error('Error confirming item:', error);
-                              }
-                            }}
-                            disabled={item.paymentStatus === 'Stock Confirmed'}
-                          >
-                            Confirm
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <div className="payment-status">
+                      <span className={`status-badge status-${item.paymentStatus?.toLowerCase().replace(' ', '-')}`}>
+                        {item.paymentStatus}
+                      </span>
+                      {item.paymentStatus === 'Stock' && (
+                        <button
+                          className="btn-small"
+                          onClick={async () => {
+                            const itemRef = ref(database, `SoldItems/${item.id}`);
+                            try {
+                              await update(itemRef, { paymentStatus: 'Stock Confirmed' });
+                              const updatedItems = soldItems.map((i) =>
+                                i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
+                              );
+                              setSoldItems(updatedItems);
+                              setFilteredItems(updatedItems);
+                            } catch (error) {
+                              console.error('Error confirming item:', error);
+                            }
+                          }}
+                          disabled={item.paymentStatus === 'Stock Confirmed'}
+                        >
+                          Confirm
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td>
-                    {isEditing ? (
-                      <div className="action-buttons">
-                        <button className="btn-small btn-success" onClick={saveEditedItem}>
-                          Save
-                        </button>
-                        <button className="btn-small btn-secondary" onClick={() => setEditingItem(null)}>
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="action-buttons">
-                        <button className="btn-small btn-primary" onClick={() => handleEdit(item)}>
-                          Edit
-                        </button>
-                        <button className="btn-small btn-danger" onClick={() => handleDeleteConfirmation(item.id)}>
-                          Delete/Refund
-                        </button>
-                      </div>
-                    )}
+                    <div className="action-buttons">
+                      <button className="btn-small btn-primary" onClick={() => handleEdit(item)}>
+                        Edit
+                      </button>
+                      <button className="btn-small btn-danger" onClick={() => handleDeleteConfirmation(item.id)}>
+                        Delete/Refund
+                      </button>
+                    </div>
                   </td>
-                  {/* CHECKBOX COLUMN - IT'S STILL HERE! */}
                   <td className="checkbox-cell">
                     <input
                       type="checkbox"
@@ -1408,6 +1282,65 @@ const SoldItems = () => {
           </table>
         )}
       </div>
+
+      {/* Edit Item Modal */}
+      {editingItem && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Edit Sold Item</h3>
+              <button className="modal-close" onClick={() => setEditingItem(null)}><IconX /></button>
+            </div>
+            <div className="modal-content">
+              <div className="missing-item-form-grid">
+                <div className="form-group">
+                  <label className="form-label">Date</label>
+                  <input type="datetime-local" value={newDate || ''} onChange={(e) => setNewDate(e.target.value)} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Customer</label>
+                  <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)} className="form-select">
+                    <option value="">Select Customer</option>
+                    {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Product</label>
+                  <input type="text" value={newProductType} onChange={(e) => setNewProductType(e.target.value)} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Quantity</label>
+                  <input type="number" min="0" value={newQuantity} onChange={(e) => setNewQuantity(e.target.value)} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Sell Price</label>
+                  <input type="number" min="0" step="0.01" value={newSellPrice} onChange={(e) => setNewSellPrice(e.target.value)} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Purchasing Price</label>
+                  <input type="number" min="0" step="0.01" value={newPurchasingPrice} onChange={(e) => setNewPurchasingPrice(e.target.value)} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Payment Status</label>
+                  <select value={newPaymentStatus} onChange={(e) => setNewPaymentStatus(e.target.value)} className="form-select">
+                    <option value="Paid">Paid</option>
+                    <option value="Unpaid">Unpaid</option>
+                    <option value="Stock">Stock</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
+                <label className="form-label">Remark</label>
+                <input type="text" value={newRemark} onChange={(e) => setNewRemark(e.target.value)} className="form-input" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-primary" onClick={saveEditedItem}>Update Item</button>
+              <button className="btn-secondary" onClick={() => setEditingItem(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Missing Items Modal */}
       {showMissingItemsModal && (

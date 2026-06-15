@@ -182,13 +182,22 @@
   overflow-x: visible;
 }
 
-/* Tighter cell padding only — font size and content untouched */
+/* Tighter cell padding + wrapping headers only — font size & content untouched */
 .sold-items-container .data-table th {
-  padding: 8px 5px;
+  padding: 7px 3px;
+  white-space: normal;      /* let long headers wrap instead of forcing column width */
+  letter-spacing: 0.2px;
+  line-height: 1.2;
 }
 
 .sold-items-container .data-table td {
-  padding: 7px 5px;
+  padding: 6px 3px;
+}
+
+/* Keep monetary / numeric values on a single line */
+.sold-items-container .data-table .price-cell,
+.sold-items-container .data-table .date-display {
+  white-space: nowrap;
 }
 
 /* Stack Edit / Delete buttons so Actions column is half as wide */
@@ -216,11 +225,21 @@
 }
 .empty-state p { font-size: 14px; }
 
-/* ── Checkbox label ──────────────────────────────── */
+/* ── Checkbox column ─────────────────────────────── */
+.checkbox-cell {
+  text-align: center;
+  white-space: nowrap;
+}
 .checkbox-label {
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;
   display: block;
   margin-top: 2px;
+}
+.data-table tbody tr.checked-row {
+  background: var(--brand-light, #eef4ff);
+}
+.data-table tbody tr.checked-row:hover {
+  background: var(--brand-light, #eef4ff);
 }

@@ -10,6 +10,7 @@ import Archives from './archives';
 import Settings from './settings';
 import Maghsal from './maghsal';
 import Dashboard from './dashboard';
+import Reports from './reports';
 import ComingSoon from './comingSoon';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
@@ -70,6 +71,7 @@ const Admin = () => {
   const renderSection = () => {
     switch (activeSection) {
       case 'dashboard':          return <Dashboard onNavigate={setActiveSection} />;
+      case 'reports':            return <Reports />;
       case 'addUsers':           return <AddUsers />;
       case 'addProducts':        return <FetchProducts />;
       case 'holdProducts':       return <FetchProducts />;

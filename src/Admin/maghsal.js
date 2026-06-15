@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
-import { ref, get, update, onValue, push } from 'firebase/database';
+import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconTrash } from '../utils/icons';
@@ -31,16 +31,6 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// A product is considered "maghsal" if EITHER its scope or productType
-// contains "maghsal" anywhere (case-insensitive). This covers all the legacy
-// values: "maghsal", "Maghsal", "maghsal-consumable", "maghsal-goods", etc.
-const normalizeScope = (scope, productType = '') => {
-  const value = String(scope || '').toLowerCase();
-  const type = String(productType || '').toLowerCase();
-  if (value.includes('maghsal') || type.includes('maghsal')) return 'maghsal';
-  return 'oil';
-};
-
 const Maghsal = () => {
   const { user } = useContext(UserContext);
   const [entries, setEntries] = useState([]);
@@ -55,6 +45,11 @@ const Maghsal = () => {
   const [dateToFilter, setDateToFilter] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('All');
+  const [checkFilter, setCheckFilter] = useState('all');
+  const [checkedItems, setCheckedItems] = useState(() => {
+    const saved = localStorage.getItem('checkedMaghsalItems');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -83,13 +78,9 @@ const Maghsal = () => {
   const [detailsEntry, setDetailsEntry] = useState(null);
 
   // Inline edit (simple fields only)
-  const [editingId, setEditingId] = useState(null);
-  const [editCustomer, setEditCustomer] = useState('');
-  const [editDate, setEditDate] = useState('');
-  const [editCategory, setEditCategory] = useState('');
-  const [editServicePrice, setEditServicePrice] = useState('');
-  const [editPaymentStatus, setEditPaymentStatus] = useState('');
-  const [editRemark, setEditRemark] = useState('');
+  // Editing reuses the Add modal; this holds the id of the entry being edited
+  // (null when adding a new one).
+  const [editingEntryId, setEditingEntryId] = useState(null);
 
   // Delete
   const [showConfirm, setShowConfirm] = useState(false);
@@ -215,12 +206,16 @@ const Maghsal = () => {
     };
   }, []);
 
-  const maghsalProducts = useMemo(
-    () => products.filter((p) => normalizeScope(p.scope, p.productType) === 'maghsal'),
+  // Used (consumed) / Sold pickers draw from the WHOLE catalogue so any product
+  // — oil, filter, maghsal, etc. — used or sold during a service is recorded for
+  // the Stock checker. (Previously limited to maghsal-scoped products only,
+  // which left the dropdowns empty and nothing got tracked or deducted.)
+  const catalogue = useMemo(
+    () => [...products].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [products],
   );
-  const consumables = maghsalProducts;
-  const goods       = maghsalProducts;
+  const consumables = catalogue;
+  const goods       = catalogue;
 
   const getProduct = (id) => products.find((p) => p.id === id);
 
@@ -303,8 +298,14 @@ const Maghsal = () => {
       result = result.filter((e) => new Date(e.date).getMonth() + 1 === parseInt(monthFilter, 10));
     }
 
+    if (checkFilter === 'checked') {
+      result = result.filter((e) => checkedItems.includes(e.id));
+    } else if (checkFilter === 'unchecked') {
+      result = result.filter((e) => !checkedItems.includes(e.id));
+    }
+
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, categoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter]);
+  }, [entries, customerFilter, categoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
 
   const totals = useMemo(() => {
     const t = {
@@ -367,6 +368,22 @@ const Maghsal = () => {
     };
   }, [profitByMonth]);
 
+  // Current calendar year total, starting January 1.
+  const yearlyProfit = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return profitByMonth
+      .filter((m) => m.year === currentYear)
+      .reduce(
+        (acc, m) => ({
+          sales: acc.sales + m.sales,
+          usedCost: acc.usedCost + m.usedCost,
+          profit: acc.profit + m.profit,
+          count: acc.count + m.count,
+        }),
+        { year: currentYear, sales: 0, usedCost: 0, profit: 0, count: 0 }
+      );
+  }, [profitByMonth]);
+
   const [showMonthlyHistory, setShowMonthlyHistory] = useState(false);
 
   // ── Clear / Refresh ──────────────────────────────
@@ -377,6 +394,22 @@ const Maghsal = () => {
     setDateToFilter('');
     setMonthFilter('');
     setPaymentStatusFilter('All');
+    setCheckFilter('all');
+  };
+
+  const handleCheckboxChange = (entryId) => {
+    setCheckedItems((prev) => {
+      const next = prev.includes(entryId)
+        ? prev.filter((id) => id !== entryId)
+        : [...prev, entryId];
+      localStorage.setItem('checkedMaghsalItems', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const clearAllChecks = () => {
+    localStorage.removeItem('checkedMaghsalItems');
+    setCheckedItems([]);
   };
 
   const handleRefresh = async () => {
@@ -415,7 +448,7 @@ const Maghsal = () => {
     setFormStockSellPrice(p ? String(toNumber(p.itemCost)) : '');
   };
 
-  const closeAddModal = () => setShowAddModal(false);
+  const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); };
 
   // Line-item operations
   const addConsumableLine = () => setFormConsumables((prev) => [...prev, { productId: '', quantity: 1 }]);
@@ -535,6 +568,11 @@ const Maghsal = () => {
   const handleSave = async () => {
     if (!canSave) return;
 
+    // Editing an existing entry (modal reused) — update instead of create.
+    if (editingEntryId) {
+      return handleUpdateEntry();
+    }
+
     // Stock-in is a separate flow — push to /transactions, not /maghsalEntries.
     if (isStockMode) {
       return handleSaveStockIn();
@@ -613,10 +651,9 @@ const Maghsal = () => {
         employeeId: user?.uid || '',
         remark: formRemark.trim(),
         createdAt: new Date().toISOString(),
+        stockAdjusted: false,
       };
 
-      // Save the entry first, then update stock. Product stock permissions can
-      // vary by Firebase rules; they should not block the receipt entry itself.
       const entryRef = push(ref(database, 'maghsalEntries'));
       try {
         await update(entryRef, newEntry);
@@ -624,31 +661,6 @@ const Maghsal = () => {
         console.error('Maghsal entry save failed:', entryErr, 'payload:', newEntry);
         flash(`Failed to save entry: ${entryErr?.message || entryErr}`, 'error');
         return;
-      }
-
-      // Aggregate decrements
-      const decrements = new Map();
-      for (const l of [...consumablesSnapshot, ...goodsSnapshot]) {
-        decrements.set(l.productId, (decrements.get(l.productId) || 0) + toNumber(l.quantity));
-      }
-
-      if (decrements.size > 0) {
-        try {
-          await Promise.all([...decrements.entries()].map(async ([pid, qty]) => {
-            const p = getProduct(pid);
-            if (!p) return;
-            const newQty = Math.max(0, toNumber(p.quantity) - qty);
-            await update(ref(database, `products/${pid}`), {
-              quantity: newQty,
-              updatedAt: new Date().toISOString(),
-            });
-          }));
-        } catch (stockErr) {
-          console.error('Maghsal stock update failed:', stockErr);
-          closeAddModal();
-          flash('Entry saved, but stock quantity was not updated. Publish the latest database rules.', 'error');
-          return;
-        }
       }
 
       closeAddModal();
@@ -661,52 +673,99 @@ const Maghsal = () => {
     }
   };
 
-  // ── Edit ─────────────────────────────────────────
-  const beginEdit = (entry) => {
-    setEditingId(entry.id);
-    setEditCustomer(entry.customerName || '');
-    setEditDate(new Date(entry.date).toISOString().slice(0, 16));
-    setEditCategory(entry.category || '');
-    setEditServicePrice(entry.servicePrice ?? entry.price ?? '');
-    setEditPaymentStatus(entry.paymentStatus || 'Unpaid');
-    setEditRemark(entry.remark || '');
+  // ── Edit (reuses the Add modal) ──────────────────
+  const openEditModal = (entry) => {
+    setEditingEntryId(entry.id);
+    setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
+    setFormDate(formatDateForInput(entry.date));
+    setFormCategory(entry.category || categories[0] || '');
+    setFormServicePrice(String(toNumber(entry.servicePrice ?? entry.price)));
+    setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
+    setFormRemark(entry.remark || '');
+    setFormConsumables(
+      Array.isArray(entry.consumablesUsed)
+        ? entry.consumablesUsed.map((c) => ({ productId: c.productId, quantity: toNumber(c.quantity) }))
+        : []
+    );
+    setFormGoods(
+      Array.isArray(entry.goodsSold)
+        ? entry.goodsSold.map((g) => ({ productId: g.productId, quantity: toNumber(g.quantity), unitPrice: toNumber(g.unitPrice) }))
+        : []
+    );
+    setShowAddModal(true);
   };
 
-  const cancelEdit = () => setEditingId(null);
+  // Update an existing entry from the modal form. Stock movement is reflected in
+  // the Stock checker as "Used Since Check"; product.quantity is not changed here.
+  const handleUpdateEntry = async () => {
+    const originalEntry = entries.find((e) => e.id === editingEntryId);
 
-  const saveEdit = async () => {
-    if (!editingId) return;
+    const badConsumable = formConsumables.find((l) => !l.productId || toNumber(l.quantity) <= 0);
+    if (badConsumable) {
+      flash('Each Used line needs an item and quantity > 0.', 'error');
+      return;
+    }
+    const badGood = formGoods.find((l) => !l.productId || toNumber(l.quantity) <= 0);
+    if (badGood) {
+      flash('Each Sold line needs an item and quantity > 0.', 'error');
+      return;
+    }
+
+    const issues = validateStock();
+    if (issues.length > 0) {
+      const summary = issues.map((i) => `${i.name}: need ${i.needed}, have ${i.have}`).join('; ');
+      flash(`Insufficient stock — ${summary}`, 'error');
+      return;
+    }
+
+    const selectedCustomer = customers.find((c) => c.id === formCustomerId);
+    if (!selectedCustomer) { flash('Selected customer is no longer available.', 'error'); return; }
+
+    setIsSaving(true);
     try {
-      const entry = entries.find((e) => e.id === editingId);
-      const newServicePrice = toNumber(editServicePrice);
-      const goodsTotal = (() => {
-        if (entry && typeof entry.goodsTotal !== 'undefined') return toNumber(entry.goodsTotal);
-        if (entry && Array.isArray(entry.goodsSold)) {
-          return entry.goodsSold.reduce((acc, g) => acc + toNumber(g.quantity) * toNumber(g.unitPrice), 0);
-        }
-        return 0;
-      })();
-      const newTotal = newServicePrice + goodsTotal;
-
-      await update(ref(database, `maghsalEntries/${editingId}`), {
-        customerName: editCustomer,
-        date: editDate ? new Date(editDate).toISOString() : new Date().toISOString(),
-        category: editCategory,
-        price: newServicePrice,
-        servicePrice: newServicePrice,
-        totalPrice: newTotal,
-        paymentStatus: editPaymentStatus,
-        remark: editRemark.trim(),
+      const consumablesSnapshot = formConsumables.map((l) => {
+        const p = getProduct(l.productId);
+        return { productId: l.productId, name: p?.name || 'Unknown', quantity: toNumber(l.quantity), unitCost: toNumber(p?.itemCost), purchasingPrice: toNumber(p?.purchasingPrice) };
       });
-      setEditingId(null);
+      const goodsSnapshot = formGoods.map((l) => {
+        const p = getProduct(l.productId);
+        return { productId: l.productId, name: p?.name || 'Unknown', quantity: toNumber(l.quantity), unitPrice: toNumber(l.unitPrice), purchasingPrice: toNumber(p?.purchasingPrice) };
+      });
+
+      const servicePrice = toNumber(formServicePrice);
+      const goodsTotal = goodsSnapshot.reduce((acc, g) => acc + g.quantity * toNumber(g.unitPrice), 0);
+      // Preserve the original time-of-day when the calendar day is unchanged.
+      const dateISO = (originalEntry && formatDateForInput(originalEntry.date) === formDate)
+        ? originalEntry.date
+        : convertDateInputToISO(formDate);
+
+      await update(ref(database, `maghsalEntries/${editingEntryId}`), {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name || '',
+        customerNameArabic: selectedCustomer.nameArabic || '',
+        date: dateISO,
+        category: formCategory,
+        price: servicePrice,
+        servicePrice,
+        goodsTotal,
+        totalPrice: servicePrice + goodsTotal,
+        consumablesUsed: consumablesSnapshot,
+        goodsSold: goodsSnapshot,
+        paymentStatus: formPaymentStatus,
+        remark: formRemark.trim(),
+      });
+
+      closeAddModal();
       flash('Entry updated.');
     } catch (err) {
-      console.error(err);
-      flash('Failed to update entry.', 'error');
+      console.error('Maghsal update failed:', err);
+      flash(`Failed to update entry: ${err?.message || err}`, 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // ── Delete (restore stock) ───────────────────────
+  // ── Delete ───────────────────────
   const requestDelete = (id) => {
     setDeleteId(id);
     setShowConfirm(true);
@@ -715,34 +774,10 @@ const Maghsal = () => {
   const confirmDelete = async () => {
     if (!deleteId) return;
     try {
-      const entry = entries.find((e) => e.id === deleteId);
-
-      // Build atomic update: delete entry + restore stock
-      const updates = {};
-      updates[`maghsalEntries/${deleteId}`] = null;
-
-      if (entry) {
-        const additions = new Map();
-        const conList = Array.isArray(entry.consumablesUsed) ? entry.consumablesUsed : [];
-        const goodList = Array.isArray(entry.goodsSold) ? entry.goodsSold : [];
-        for (const l of [...conList, ...goodList]) {
-          if (!l.productId) continue;
-          additions.set(l.productId, (additions.get(l.productId) || 0) + toNumber(l.quantity));
-        }
-        // Fetch fresh product quantities to avoid stale state
-        for (const pid of additions.keys()) {
-          const snap = await get(ref(database, `products/${pid}/quantity`));
-          const current = snap.exists() ? toNumber(snap.val()) : null;
-          if (current === null) continue; // product deleted; skip restore
-          updates[`products/${pid}/quantity`] = current + additions.get(pid);
-          updates[`products/${pid}/updatedAt`] = new Date().toISOString();
-        }
-      }
-
-      await update(ref(database), updates);
+      await update(ref(database), { [`maghsalEntries/${deleteId}`]: null });
       setShowConfirm(false);
       setDeleteId(null);
-      flash('Entry deleted and stock restored.');
+      flash('Entry deleted.');
     } catch (err) {
       console.error(err);
       flash('Failed to delete entry.', 'error');
@@ -954,6 +989,25 @@ const Maghsal = () => {
               <span style={{ marginLeft: 8, color: 'var(--brand)', fontWeight: 500 }}>· See history →</span>
             </div>
           </div>
+          <div
+            className="kpi-card"
+            style={{
+              borderLeft: `4px solid ${yearlyProfit.profit >= 0 ? '#198754' : '#dc3545'}`,
+            }}
+          >
+            <div className="kpi-card-label">
+              Net Profit · {yearlyProfit.year}
+            </div>
+            <div
+              className="kpi-card-value"
+              style={{ color: yearlyProfit.profit >= 0 ? '#198754' : '#dc3545' }}
+            >
+              ${formatCurrency(yearlyProfit.profit)}
+            </div>
+            <div className="kpi-card-hint">
+              Since January · {yearlyProfit.count} entry(s) · Sales ${formatCurrency(yearlyProfit.sales)} − Used ${formatCurrency(yearlyProfit.usedCost)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1002,6 +1056,22 @@ const Maghsal = () => {
               <option value="Unpaid">Unpaid</option>
             </select>
           </div>
+
+          <div className="filter-group">
+            <label>Check Status</label>
+            <select value={checkFilter} onChange={(e) => setCheckFilter(e.target.value)}>
+              <option value="all">All Items</option>
+              <option value="checked">Checked</option>
+              <option value="unchecked">Unchecked</option>
+            </select>
+            <button
+              className="clear-checks-btn"
+              onClick={clearAllChecks}
+              disabled={checkedItems.length === 0}
+            >
+              Clear Checks ({checkedItems.length})
+            </button>
+          </div>
         </div>
 
         <div className="filter-actions">
@@ -1010,7 +1080,7 @@ const Maghsal = () => {
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || categoryFilter !== 'All' || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All') && (
+      {(customerFilter || categoryFilter !== 'All' || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
@@ -1020,6 +1090,7 @@ const Maghsal = () => {
             {dateToFilter && <span className="filter-tag">To: {getDateDisplay(dateToFilter)}<button onClick={() => setDateToFilter('')}><IconX /></button></span>}
             {monthFilter && <span className="filter-tag">Month: {monthNames[parseInt(monthFilter, 10) - 1]}<button onClick={() => setMonthFilter('')}><IconX /></button></span>}
             {paymentStatusFilter !== 'All' && <span className="filter-tag">Status: {paymentStatusFilter}<button onClick={() => setPaymentStatusFilter('All')}><IconX /></button></span>}
+            {checkFilter !== 'all' && <span className="filter-tag">Check: {checkFilter === 'checked' ? 'Checked' : 'Unchecked'}<button onClick={() => setCheckFilter('all')}><IconX /></button></span>}
           </div>
         </div>
       )}
@@ -1038,65 +1109,63 @@ const Maghsal = () => {
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Category</th>
+                <th>Used</th>
+                <th>Sold</th>
                 <th className="text-right">Service</th>
-                <th className="text-right">Sold</th>
+                <th className="text-right">Sold $</th>
                 <th className="text-right">Total</th>
                 <th className="text-right">Profit</th>
                 <th>Status</th>
                 <th>Employee</th>
                 <th>Actions</th>
+                <th>Check</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((e) => {
-                const isEditing = editingId === e.id;
                 const m = entryTotals(e);
                 const goodsCount = Array.isArray(e.goodsSold) ? e.goodsSold.length : 0;
                 const consCount = Array.isArray(e.consumablesUsed) ? e.consumablesUsed.length : 0;
                 return (
-                  <tr key={e.id}>
+                  <tr key={e.id} className={checkedItems.includes(e.id) ? 'checked-row' : ''}>
                     <td className="date-cell">
-                      {isEditing ? (
-                        <input type="datetime-local" value={editDate} onChange={(ev) => setEditDate(ev.target.value)} className="edit-input" />
-                      ) : (
-                        <span className="date-display">{formatDateTime(e.date)}</span>
-                      )}
+                      <span className="date-display">{formatDateTime(e.date)}</span>
                     </td>
+                    <td>{e.customerName || 'N/A'}</td>
+                    <td>{e.category || 'Unspecified'}</td>
                     <td>
-                      {isEditing ? (
-                        <select value={editCustomer} onChange={(ev) => setEditCustomer(ev.target.value)} className="edit-input">
-                          <option value="">Select Customer</option>
-                          {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                        </select>
-                      ) : (
-                        e.customerName || 'N/A'
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <select value={editCategory} onChange={(ev) => setEditCategory(ev.target.value)} className="edit-input">
-                          {[...new Set([...(categories || []), e.category].filter(Boolean))].map((cat) => (
-                            <option key={cat} value={cat}>{cat}</option>
+                      {consCount > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {e.consumablesUsed.map((c, i) => (
+                            <span key={i} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                              {c.name} <span style={{ color: 'var(--text-muted)' }}>×{toNumber(c.quantity)}</span>
+                            </span>
                           ))}
-                        </select>
+                        </div>
                       ) : (
-                        e.category || 'Unspecified'
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      {goodsCount > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {e.goodsSold.map((g, i) => (
+                            <span key={i} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                              {g.name} <span style={{ color: 'var(--text-muted)' }}>×{toNumber(g.quantity)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
                       )}
                     </td>
                     <td className="text-right">
-                      {isEditing ? (
-                        <input type="number" step="0.01" value={editServicePrice} onChange={(ev) => setEditServicePrice(ev.target.value)} className="edit-input" style={{ width: 80 }} />
-                      ) : (
-                        <span className="price-cell">${m.servicePrice.toFixed(2)}</span>
-                      )}
+                      <span className="price-cell">${m.servicePrice.toFixed(2)}</span>
                     </td>
                     <td className="text-right">
                       <span className="price-cell" style={{ color: m.goodsTotal > 0 ? 'var(--text-heading)' : 'var(--text-muted)' }}>
                         ${m.goodsTotal.toFixed(2)}
                       </span>
-                      {goodsCount > 0 && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{goodsCount} item(s)</div>
-                      )}
                     </td>
                     <td className="text-right">
                       <span className="price-cell" style={{ fontWeight: 700 }}>${m.totalPrice.toFixed(2)}</span>
@@ -1111,35 +1180,31 @@ const Maghsal = () => {
                       </span>
                     </td>
                     <td>
-                      {isEditing ? (
-                        <select value={editPaymentStatus} onChange={(ev) => setEditPaymentStatus(ev.target.value)} className="edit-input">
-                          <option value="Paid">Paid</option>
-                          <option value="Unpaid">Unpaid</option>
-                        </select>
-                      ) : (
-                        <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
-                      )}
+                      <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
                     </td>
                     <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{e.employee || '—'}</td>
                     <td>
                       <div className="action-buttons">
-                        {isEditing ? (
-                          <>
-                            <button className="btn-small btn-success" onClick={saveEdit}>Save</button>
-                            <button className="btn-small btn-secondary" onClick={cancelEdit}>Cancel</button>
-                          </>
-                        ) : (
-                          <>
-                            {(consCount + goodsCount > 0) && (
-                              <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used items & good sold">
-                                Details
-                              </button>
-                            )}
-                            <button className="btn-small btn-primary" onClick={() => beginEdit(e)}>Edit</button>
-                            <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)}>Delete</button>
-                          </>
+                        {(consCount + goodsCount > 0) && (
+                          <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used items & good sold">
+                            Details
+                          </button>
                         )}
+                        <button className="btn-small btn-primary" onClick={() => openEditModal(e)}>Edit</button>
+                        <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)}>Delete</button>
                       </div>
+                    </td>
+                    <td className="checkbox-cell">
+                      <input
+                        type="checkbox"
+                        checked={checkedItems.includes(e.id)}
+                        onChange={() => handleCheckboxChange(e.id)}
+                        className="checkbox"
+                        id={`maghsal-checkbox-${e.id}`}
+                      />
+                      <label htmlFor={`maghsal-checkbox-${e.id}`} className="checkbox-label">
+                        {checkedItems.includes(e.id) ? 'Checked' : 'Check'}
+                      </label>
                     </td>
                   </tr>
                 );
@@ -1154,7 +1219,7 @@ const Maghsal = () => {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 720 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{formPaymentStatus === 'Stock' ? 'Add Stock In' : 'Add Sold Item'}</h3>
+              <h3 className="modal-title">{editingEntryId ? 'Edit Sold Item' : (formPaymentStatus === 'Stock' ? 'Add Stock In' : 'Add Sold Item')}</h3>
               <button className="modal-close" onClick={closeAddModal}><IconX /></button>
             </div>
             <div className="modal-content">
@@ -1197,7 +1262,7 @@ const Maghsal = () => {
                   <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
-                    <option value="Stock">Stock</option>
+                    {!editingEntryId && <option value="Stock">Stock</option>}
                   </select>
                 </div>
               </div>
@@ -1289,7 +1354,7 @@ const Maghsal = () => {
                 </div>
                 {consumables.length === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    No items in inventory. Add them from <strong>Inventory → Products</strong> (scope: Maghsal).
+                    No products in inventory. Add them from <strong>Inventory → Products</strong>.
                   </p>
                 ) : formConsumables.length === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to log a used item.</p>
@@ -1345,7 +1410,7 @@ const Maghsal = () => {
                 </div>
                 {goods.length === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    No items in inventory. Add them from <strong>Inventory → Products</strong> (scope: Maghsal).
+                    No products in inventory. Add them from <strong>Inventory → Products</strong>.
                   </p>
                 ) : formGoods.length === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to sell an item.</p>
@@ -1417,7 +1482,7 @@ const Maghsal = () => {
               <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
                 {isSaving
                   ? 'Saving...'
-                  : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Sold Item')}
+                  : (editingEntryId ? 'Update Item' : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Sold Item'))}
               </button>
               <button className="btn-secondary" onClick={closeAddModal} disabled={isSaving}>Close</button>
             </div>
@@ -1564,7 +1629,7 @@ const Maghsal = () => {
               <h3 className="modal-title">Confirm Deletion</h3>
             </div>
             <div className="modal-content">
-              <p>Deleting this entry will restore any consumed stock to the Maghsal product quantities. This action cannot be undone.</p>
+              <p>Deleting this entry removes it from Maghsal records. Product stock quantity will not be changed automatically. This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
               <button className="btn-danger" onClick={confirmDelete}>Yes, Delete</button>

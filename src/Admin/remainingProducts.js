@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ref, get, update, push, set, remove } from 'firebase/database';
+import { ref, get, update, push, set, remove, onValue } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import '../CSS/admin.css';
@@ -31,6 +31,8 @@ const RemainingProducts = () => {
   const [countedQty, setCountedQty] = useState({});
   const [checkDate, setCheckDate]   = useState({});
   const [soldTotals, setSoldTotals] = useState({});
+  const [usedTotals, setUsedTotals] = useState({});
+  const [legacyAdjustedUsedTotals, setLegacyAdjustedUsedTotals] = useState({});
 
   // Scanner
   const [scannerOpen, setScannerOpen]     = useState(false);
@@ -145,13 +147,41 @@ const RemainingProducts = () => {
     return Number.isFinite(timestamp) ? timestamp : null;
   }, []);
 
-  const getExpectedRemaining = useCallback((product, quantityOverride = null) => {
+  const getCurrentStockForDisplay = useCallback((product, quantityOverride = null) => {
     const productId = typeof product === 'string' ? product : product?.id;
     const systemQty = quantityOverride == null
       ? toNumber(typeof product === 'string' ? 0 : product?.quantity)
       : toNumber(quantityOverride);
+    if (typeof product !== 'string' && productScope(product) === 'maghsal') {
+      return systemQty + toNumber(legacyAdjustedUsedTotals[productId]);
+    }
+    return systemQty;
+  }, [legacyAdjustedUsedTotals, productScope]);
+
+  const getExpectedRemaining = useCallback((product, quantityOverride = null) => {
+    const productId = typeof product === 'string' ? product : product?.id;
+    const currentStock = getCurrentStockForDisplay(product, quantityOverride);
+    if (typeof product !== 'string' && productScope(product) === 'maghsal') {
+      return currentStock - toNumber(usedTotals[productId]);
+    }
+    const systemQty = quantityOverride == null
+      ? toNumber(typeof product === 'string' ? 0 : product?.quantity)
+      : toNumber(quantityOverride);
     return systemQty - toNumber(soldTotals[productId]);
-  }, [soldTotals]);
+  }, [soldTotals, usedTotals, productScope, getCurrentStockForDisplay]);
+
+  const getMovementTotal = useCallback((product) => {
+    const productId = typeof product === 'string' ? product : product?.id;
+    if (typeof product !== 'string' && productScope(product) === 'maghsal') {
+      return toNumber(usedTotals[productId]);
+    }
+    return toNumber(soldTotals[productId]);
+  }, [soldTotals, usedTotals, productScope]);
+
+  const getMovementLabel = useCallback((product = null) => {
+    const scope = product ? productScope(product) : stockGroup;
+    return scope === 'maghsal' ? 'Used Since Check' : 'Sold Since Check';
+  }, [productScope, stockGroup]);
 
   const hasPositiveExpectedStock = useCallback(
     (product) => getExpectedRemaining(product) > 0,
@@ -190,15 +220,21 @@ const RemainingProducts = () => {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [prodSnap, checkSnap, soldSnap] = await Promise.all([
+      const [prodSnap, checkSnap, soldSnap, maghsalSnap] = await Promise.all([
         get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'SoldItems')),
+        get(ref(database, 'maghsalEntries')),
       ]);
 
+      let productScopeById = {};
       if (prodSnap.exists()) {
         const list = Object.entries(prodSnap.val()).map(([id, v]) => ({ id, ...v }));
         list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        productScopeById = list.reduce((acc, product) => {
+          acc[product.id] = productScope(product);
+          return acc;
+        }, {});
         setProducts(list);
         setFilteredProducts(list);
       } else {
@@ -225,40 +261,30 @@ const RemainingProducts = () => {
       // "Since last check" uses the sale's actual dateScanned (not push-key write time).
       // If no stock check exists for a product, count ALL its sales.
       // If dateScanned is missing/invalid, count the item rather than silently skip it.
+      const shouldCountSinceLastCheck = (productKey, dateValue, recordKey) => {
+        const cutoff = lastCheckedAt[productKey] || null;
+        if (!cutoff) return true;
+
+        const eventDateMs = new Date(dateValue || '').getTime();
+        if (!isNaN(eventDateMs)) return eventDateMs > cutoff.getTime();
+
+        const pushKeyMs = decodePushKeyTimestampMs(recordKey);
+        if (pushKeyMs != null) return pushKeyMs > cutoff.getTime();
+
+        return true;
+      };
+
       if (soldSnap.exists()) {
         const totals = {};
         Object.entries(soldSnap.val()).forEach(([recordKey, item]) => {
           const productKey = getProductKey(item);
           if (!productKey || isStockLikeStatus(item.paymentStatus)) return;
+          if (productScopeById[productKey] === 'maghsal') return;
 
           const qty = toNumber(item.quantity);
           if (qty <= 0) return;
 
-          const cutoff = lastCheckedAt[productKey] || null;
-
-          if (!cutoff) {
-            // No stock check recorded — count every sale
-            totals[productKey] = (totals[productKey] || 0) + qty;
-            return;
-          }
-
-          // Use dateScanned (actual sale date) first; push-key write time as fallback
-          const saleDateMs = new Date(item.dateScanned || '').getTime();
-          if (!isNaN(saleDateMs)) {
-            if (saleDateMs > cutoff.getTime()) {
-              totals[productKey] = (totals[productKey] || 0) + qty;
-            }
-            return;
-          }
-
-          // dateScanned missing — fall back to push-key write time
-          const pushKeyMs = decodePushKeyTimestampMs(recordKey);
-          if (pushKeyMs != null) {
-            if (pushKeyMs > cutoff.getTime()) {
-              totals[productKey] = (totals[productKey] || 0) + qty;
-            }
-          } else {
-            // Can't determine date at all — count the item to avoid silent exclusion
+          if (shouldCountSinceLastCheck(productKey, item.dateScanned, recordKey)) {
             totals[productKey] = (totals[productKey] || 0) + qty;
           }
         });
@@ -267,11 +293,51 @@ const RemainingProducts = () => {
         setSoldTotals({});
       }
 
+      if (maghsalSnap.exists()) {
+        const totals = {};
+        const legacyAdjustedTotals = {};
+        Object.entries(maghsalSnap.val()).forEach(([recordKey, entry]) => {
+          const lines = Array.isArray(entry?.consumablesUsed) ? entry.consumablesUsed : [];
+          lines.forEach((line) => {
+            const productKey = String(line.productId || '').trim();
+            if (!productKey || productScopeById[productKey] !== 'maghsal') return;
+
+            const qty = toNumber(line.quantity);
+            if (qty <= 0) return;
+
+            if (shouldCountSinceLastCheck(productKey, entry.date || entry.createdAt, recordKey)) {
+              totals[productKey] = (totals[productKey] || 0) + qty;
+              if (entry.stockAdjusted !== false) {
+                legacyAdjustedTotals[productKey] = (legacyAdjustedTotals[productKey] || 0) + qty;
+              }
+            }
+          });
+        });
+        setUsedTotals(totals);
+        setLegacyAdjustedUsedTotals(legacyAdjustedTotals);
+      } else {
+        setUsedTotals({});
+        setLegacyAdjustedUsedTotals({});
+      }
+
     } catch (err) { console.error(err); showError('Error loading data.'); }
     finally { setIsLoading(false); }
-  }, [showError, getProductKey, isStockLikeStatus, decodePushKeyTimestampMs]);
+  }, [showError, getProductKey, isStockLikeStatus, decodePushKeyTimestampMs, productScope]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Keep products live so confirmed stock checks and product edits appear here
+  // without a manual refresh.
+  useEffect(() => {
+    const productsRef = ref(database, 'products');
+    const unsub = onValue(productsRef, (snap) => {
+      if (!snap.exists()) { setProducts([]); return; }
+      const list = Object.entries(snap.val()).map(([id, v]) => ({ id, ...v }));
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setProducts(list);
+    });
+    return () => unsub();
+  }, []);
 
   // Whenever the top-level stock group flips, drop any drill-down filter so the
   // user immediately sees everything in the chosen stock.
@@ -309,10 +375,11 @@ const RemainingProducts = () => {
     setProductHistoryEntries([]);
     setMonthlySummary([]);
     try {
-      const [soldSnap, txSnap, historySnap] = await Promise.all([
+      const [soldSnap, txSnap, historySnap, maghsalSnap] = await Promise.all([
         get(ref(database, 'SoldItems')),
         get(ref(database, 'transactions')),
         get(ref(database, 'stockCheckHistory')),
+        get(ref(database, 'maghsalEntries')),
       ]);
 
       const events = [];
@@ -328,6 +395,39 @@ const RemainingProducts = () => {
             qty: -(toNumber(item.quantity)),
             paymentStatus: item.paymentStatus,
             isCheckEvent: false,
+          });
+        });
+      }
+
+      // Maghsal entries store consumed items separately from legacy SoldItems.
+      if (maghsalSnap.exists()) {
+        Object.values(maghsalSnap.val()).forEach(entry => {
+          const date = entry.date || entry.createdAt || null;
+          const conList = Array.isArray(entry.consumablesUsed) ? entry.consumablesUsed : [];
+          const goodList = Array.isArray(entry.goodsSold) ? entry.goodsSold : [];
+
+          conList.forEach(line => {
+            if (line.productId !== product.id) return;
+            events.push({
+              date,
+              type: 'Used',
+              qty: -(toNumber(line.quantity)),
+              paymentStatus: entry.paymentStatus,
+              note: entry.customerName ? `Used for ${entry.customerName}` : 'Used in Maghsal',
+              isCheckEvent: false,
+            });
+          });
+
+          goodList.forEach(line => {
+            if (line.productId !== product.id) return;
+            events.push({
+              date,
+              type: 'Sale',
+              qty: -(toNumber(line.quantity)),
+              paymentStatus: entry.paymentStatus,
+              note: entry.customerName ? `Sold to ${entry.customerName}` : 'Sold in Maghsal',
+              isCheckEvent: false,
+            });
           });
         });
       }
@@ -416,8 +516,9 @@ const RemainingProducts = () => {
       let balanceKnown = false;
       if (!hasChecks) {
         const totalSales    = events.filter(e => e.type === 'Sale').reduce((s, e) => s + Math.abs(e.qty), 0);
+        const totalUsed     = events.filter(e => e.type === 'Used').reduce((s, e) => s + Math.abs(e.qty), 0);
         const totalRestocks = events.filter(e => e.type === 'Restock').reduce((s, e) => s + e.qty, 0);
-        balance = toNumber(product.quantity) + totalSales - totalRestocks;
+        balance = toNumber(product.quantity) + totalSales + totalUsed - totalRestocks;
         balanceKnown = true;
       }
 
@@ -442,12 +543,13 @@ const RemainingProducts = () => {
         const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
         if (!monthMap[key]) {
-          monthMap[key] = { key, label, openingStock: event.balanceBefore, openingKnown: !event.isCheckEvent && event.balanceKnown, sold: 0, restocked: 0, closingStock: event.stockAfter, closingKnown: event.balanceKnown };
+          monthMap[key] = { key, label, openingStock: event.balanceBefore, openingKnown: !event.isCheckEvent && event.balanceKnown, sold: 0, used: 0, restocked: 0, closingStock: event.stockAfter, closingKnown: event.balanceKnown };
         } else {
           monthMap[key].closingStock = event.stockAfter;
           monthMap[key].closingKnown = event.balanceKnown;
         }
         if (event.type === 'Sale')    monthMap[key].sold      += Math.abs(event.qty || 0);
+        if (event.type === 'Used')    monthMap[key].used      += Math.abs(event.qty || 0);
         if (event.type === 'Restock') monthMap[key].restocked += (event.qty || 0);
       });
 
@@ -582,6 +684,8 @@ const RemainingProducts = () => {
       await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate', checkedAt);
       setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
       setSoldTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
+      setUsedTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
+      setLegacyAdjustedUsedTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
       setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
       showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
       setScannedProduct(null); setScanQty(''); setScanDate(''); setScannerPaused(false);
@@ -704,6 +808,8 @@ const RemainingProducts = () => {
       await pushHistory(product.id, product.name, expectedQty, counted, 'accurate', checkedAt);
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: counted } : p));
       setSoldTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      setUsedTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
+      setLegacyAdjustedUsedTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setCheckDate(prev => { const n = { ...prev }; delete n[product.id]; return n; });
       setAllCheckedProductIds(prev => new Set([...prev, product.id]));
@@ -825,7 +931,9 @@ const RemainingProducts = () => {
                   <th>Product Name</th>
                   <th>Type</th>
                   <th className="text-right">Current Stock</th>
-                  <th className="text-right" title="Sold since last stock check">Sold Since Check</th>
+                  <th className="text-right" title={`${stockGroup === 'maghsal' ? 'Used' : 'Sold'} since last stock check`}>
+                    {stockGroup === 'maghsal' ? 'Used Since Check' : 'Sold Since Check'}
+                  </th>
                   <th className="text-right">Expected Remaining</th>
                   <th className="text-right">Counted Qty</th>
                   <th>Status</th>
@@ -836,9 +944,9 @@ const RemainingProducts = () => {
                 {filteredProducts.map(product => {
                   const isPending        = pendingChecks.some(c => c.id === product.id);
                   const inputVal         = countedQty[product.id] ?? '';
-                  const totalSold        = toNumber(soldTotals[product.id]);
-                  const currentStock     = toNumber(product.quantity);
-                  const expectedRemaining = getExpectedRemaining(product, currentStock);
+                  const movementTotal    = getMovementTotal(product);
+                  const currentStock     = getCurrentStockForDisplay(product);
+                  const expectedRemaining = getExpectedRemaining(product);
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                   return (
                     <tr key={product.id} className={isPending ? 'row-warning' : ''}>
@@ -847,7 +955,7 @@ const RemainingProducts = () => {
                       <td><span className="type-cell">{product.productType}</span></td>
                       <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
                       <td className="text-right">
-                        <span className="quantity-cell" style={{ color: totalSold > 0 ? '#dc3545' : '#6c757d' }}>{totalSold}</span>
+                        <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
                       </td>
                       <td className="text-right">
                         <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
@@ -904,11 +1012,19 @@ const RemainingProducts = () => {
 
   const renderPendingTab = () => {
     const pendingProductIds = new Set(pendingChecks.map(c => c.id));
-    const pendingProducts = products.filter(
+    const inActiveStockGroup = (product) => {
+      const scope = productScope(product);
+      return stockGroup === 'maghsal' ? scope === 'maghsal' : scope !== 'maghsal';
+    };
+    const scopedProducts = products.filter(inActiveStockGroup);
+    const pendingProducts = scopedProducts.filter(
       p => pendingProductIds.has(p.id) || !allCheckedProductIds.has(p.id)
     );
-    const inaccurateCount = pendingChecks.length;
-    const uncheckedCount  = products.filter(p => !allCheckedProductIds.has(p.id)).length;
+    const inaccurateCount = pendingChecks.filter(c => {
+      const product = products.find(p => p.id === c.id);
+      return product && inActiveStockGroup(product);
+    }).length;
+    const uncheckedCount  = scopedProducts.filter(p => !allCheckedProductIds.has(p.id)).length;
 
     return (
       <div className="stock-tab-panel">
@@ -938,7 +1054,9 @@ const RemainingProducts = () => {
                     <th>Product Name</th>
                     <th>Type</th>
                     <th className="text-right">Current Stock</th>
-                    <th className="text-right" title="Sold since last stock check">Sold Since Check</th>
+                    <th className="text-right" title={`${stockGroup === 'maghsal' ? 'Used' : 'Sold'} since last stock check`}>
+                      {stockGroup === 'maghsal' ? 'Used Since Check' : 'Sold Since Check'}
+                    </th>
                     <th className="text-right">Expected Remaining</th>
                     <th className="text-right">Counted Qty</th>
                     <th>Status</th>
@@ -949,9 +1067,9 @@ const RemainingProducts = () => {
                   {pendingProducts.map(product => {
                     const isPending         = pendingProductIds.has(product.id);
                     const inputVal          = countedQty[product.id] ?? '';
-                    const totalSold         = toNumber(soldTotals[product.id]);
-                    const currentStock      = toNumber(product.quantity);
-                    const expectedRemaining = getExpectedRemaining(product, currentStock);
+                    const movementTotal     = getMovementTotal(product);
+                    const currentStock      = getCurrentStockForDisplay(product);
+                    const expectedRemaining = getExpectedRemaining(product);
                     const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                     return (
                       <tr key={product.id} className={isPending ? 'row-warning' : 'row-info'}>
@@ -960,7 +1078,7 @@ const RemainingProducts = () => {
                         <td><span className="type-cell">{product.productType}</span></td>
                         <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
                         <td className="text-right">
-                          <span className="quantity-cell" style={{ color: totalSold > 0 ? '#dc3545' : '#6c757d' }}>{totalSold}</span>
+                          <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
                         </td>
                         <td className="text-right">
                           <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
@@ -1034,9 +1152,13 @@ const RemainingProducts = () => {
       return true;
     });
 
+    const historyIsMaghsal     = historySelectedProduct ? productScope(historySelectedProduct) === 'maghsal' : stockGroup === 'maghsal';
     const totalSoldAllTime     = monthlySummary.reduce((s, m) => s + m.sold, 0);
+    const totalUsedAllTime     = monthlySummary.reduce((s, m) => s + (m.used || 0), 0);
     const totalRestockedAllTime = monthlySummary.reduce((s, m) => s + m.restocked, 0);
     const expectedNow          = historySelectedProduct ? getExpectedRemaining(historySelectedProduct) : 0;
+    const movementHistoryLabel = historyIsMaghsal ? 'Used' : 'Sold';
+    const movementHistoryTotal = historyIsMaghsal ? totalUsedAllTime : totalSoldAllTime;
 
     const qtyBadge = (val, color) => (
       <span style={{ fontWeight: 700, fontSize: 18, color }}>{val}</span>
@@ -1101,8 +1223,8 @@ const RemainingProducts = () => {
                 {qtyBadge(expectedNow, expectedNow > 0 ? '#198754' : '#dc3545')}
               </div>
               <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #dee2e6' }}>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Total Sold (all time)</div>
-                {qtyBadge(totalSoldAllTime, '#dc3545')}
+                <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Total {movementHistoryLabel} (all time)</div>
+                {qtyBadge(movementHistoryTotal, '#dc3545')}
               </div>
               <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #dee2e6' }}>
                 <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Total Restocked (all time)</div>
@@ -1122,7 +1244,7 @@ const RemainingProducts = () => {
                           <th>Month</th>
                           <th className="text-right">Opening Stock</th>
                           <th className="text-right">Restocked</th>
-                          <th className="text-right">Sold</th>
+                          <th className="text-right">{movementHistoryLabel}</th>
                           <th className="text-right">Closing Stock</th>
                         </tr>
                       </thead>
@@ -1139,8 +1261,8 @@ const RemainingProducts = () => {
                               </span>
                             </td>
                             <td className="text-right">
-                              <span style={{ color: m.sold > 0 ? '#dc3545' : '#aaa', fontWeight: m.sold > 0 ? 700 : 400 }}>
-                                {m.sold > 0 ? m.sold : '—'}
+                              <span style={{ color: (historyIsMaghsal ? m.used : m.sold) > 0 ? '#dc3545' : '#aaa', fontWeight: (historyIsMaghsal ? m.used : m.sold) > 0 ? 700 : 400 }}>
+                                {(historyIsMaghsal ? m.used : m.sold) > 0 ? (historyIsMaghsal ? m.used : m.sold) : '—'}
                               </span>
                             </td>
                             <td className="text-right">
@@ -1213,6 +1335,8 @@ const RemainingProducts = () => {
                               return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#d4edda', color: '#155724' }}><IconCheck /> Stock Check</span>;
                             if (entry.type === 'Sale')
                               return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fde8e8', color: '#c0392b' }}><IconArrowUp /> Sale</span>;
+                            if (entry.type === 'Used')
+                              return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#fff3cd', color: '#856404' }}><IconArrowUp /> Used</span>;
                             if (entry.type === 'Restock')
                               return <span style={{ padding: '3px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, backgroundColor: '#e8f0fe', color: '#1a56db' }}><IconArrowDown /> Restock</span>;
                             if (entry.type === 'Held')
@@ -1719,9 +1843,10 @@ const RemainingProducts = () => {
   // ── Render: Scanner modal ──────────────────────────────────────────────────
 
   const renderScannerModal = () => {
-    const systemQty = scannedProduct ? toNumber(scannedProduct.quantity) : 0;
-    const soldSinceCheck = scannedProduct ? toNumber(soldTotals[scannedProduct.id]) : 0;
-    const expectedQty = scannedProduct ? getExpectedRemaining(scannedProduct, systemQty) : 0;
+    const systemQty = scannedProduct ? getCurrentStockForDisplay(scannedProduct) : 0;
+    const movementSinceCheck = scannedProduct ? getMovementTotal(scannedProduct) : 0;
+    const movementLabel = scannedProduct ? getMovementLabel(scannedProduct).replace(' Since Check', '') : 'Sold';
+    const expectedQty = scannedProduct ? getExpectedRemaining(scannedProduct) : 0;
     const enteredQty = toNumber(scanQty);
     const hasEnteredQty = scanQty !== '' && !Number.isNaN(parseFloat(scanQty));
     const qtyDiff = enteredQty - expectedQty;
@@ -1761,7 +1886,7 @@ const RemainingProducts = () => {
                     <div style={{ fontSize: 12, color: '#888' }}>Expected Qty</div>
                     <div style={{ fontWeight: 700, fontSize: 22, color: expectedQty < 0 ? '#dc3545' : '#198754' }}>{expectedQty}</div>
                     <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
-                      System {systemQty} • Sold {soldSinceCheck}
+                      System {systemQty} • {movementLabel} {movementSinceCheck}
                     </div>
                   </div>
                 </div>
@@ -1822,7 +1947,7 @@ const RemainingProducts = () => {
 
   const checkedProductsCount = allCheckedProductIds.size;
   const uncheckedProductsCount = Math.max(products.length - checkedProductsCount, 0);
-  const visibleStockQuantity = filteredProducts.reduce((sum, product) => sum + toNumber(product.quantity), 0);
+  const visibleStockQuantity = filteredProducts.reduce((sum, product) => sum + getCurrentStockForDisplay(product), 0);
 
   return (
     <div className="page-shell stock-shell">

@@ -121,7 +121,8 @@ const navGroups = [
     label: 'Overview',
     Icon: IconHome,
     children: [
-      { id: 'dashboard', Icon: IconHome, label: 'Dashboard' },
+      { id: 'dashboard', Icon: IconHome,     label: 'Dashboard' },
+      { id: 'reports',   Icon: IconBarChart, label: 'Reports'   },
     ],
   },
   {

@@ -4,7 +4,8 @@
       "Bash(python3 -c \"import json; json.load\\(open\\('database.rules.json'\\)\\); print\\('Valid JSON'\\)\")",
       "Bash(npx eslint *)",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(npx react-scripts *)"
+      "Bash(npx react-scripts *)",
+      "Bash(echo \"LINT_EXIT:$?\")"
     ]
   }
 }

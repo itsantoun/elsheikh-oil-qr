@@ -200,6 +200,18 @@
   white-space: nowrap;
 }
 
+/* ── Maghsal table: comfortable but compact spacing (slim column set) ──────── */
+.maghsal-container .data-table th {
+  padding: 9px 8px;
+}
+.maghsal-container .data-table td {
+  padding: 8px 8px;
+}
+.maghsal-container .data-table .price-cell,
+.maghsal-container .data-table .date-display {
+  white-space: nowrap;
+}
+
 /* Stack Edit / Delete buttons so Actions column is half as wide */
 .sold-items-container .data-table .action-buttons {
   flex-direction: column;

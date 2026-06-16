@@ -297,7 +297,12 @@ const RemainingProducts = () => {
         const totals = {};
         const legacyAdjustedTotals = {};
         Object.entries(maghsalSnap.val()).forEach(([recordKey, entry]) => {
-          const lines = Array.isArray(entry?.consumablesUsed) ? entry.consumablesUsed : [];
+          // Both consumed (Used) and sold (Sold) lines reduce maghsal stock —
+          // keep this in sync with the History tab, which counts both.
+          const lines = [
+            ...(Array.isArray(entry?.consumablesUsed) ? entry.consumablesUsed : []),
+            ...(Array.isArray(entry?.goodsSold) ? entry.goodsSold : []),
+          ];
           lines.forEach((line) => {
             const productKey = String(line.productId || '').trim();
             if (!productKey || productScopeById[productKey] !== 'maghsal') return;

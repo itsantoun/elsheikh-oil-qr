@@ -335,56 +335,7 @@ const Maghsal = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, products]);
 
-  // ── Per-month profit history (independent of filters) ─────────────
-  // Builds { '2026-06': { year, month, sales, usedCost, profit, count }, ... }
-  // for every month that has at least one entry. Sorted newest first.
-  const profitByMonth = useMemo(() => {
-    const buckets = {};
-    for (const e of entries) {
-      const d = new Date(e.date);
-      if (isNaN(d.getTime())) continue;
-      const year = d.getFullYear();
-      const month = d.getMonth(); // 0-11
-      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
-      if (!buckets[key]) {
-        buckets[key] = { key, year, month, sales: 0, usedCost: 0, profit: 0, count: 0 };
-      }
-      const t = entryTotals(e);
-      buckets[key].sales += t.totalPrice;
-      buckets[key].usedCost += t.consumablesCost;
-      buckets[key].profit += (t.totalPrice - t.consumablesCost);
-      buckets[key].count += 1;
-    }
-    return Object.values(buckets).sort((a, b) => b.key.localeCompare(a.key));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, products]);
 
-  // The KPI card always reflects the CURRENT calendar month.
-  const monthlyProfit = useMemo(() => {
-    const now = new Date();
-    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    return profitByMonth.find((m) => m.key === key) || {
-      sales: 0, usedCost: 0, profit: 0, count: 0,
-    };
-  }, [profitByMonth]);
-
-  // Current calendar year total, starting January 1.
-  const yearlyProfit = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    return profitByMonth
-      .filter((m) => m.year === currentYear)
-      .reduce(
-        (acc, m) => ({
-          sales: acc.sales + m.sales,
-          usedCost: acc.usedCost + m.usedCost,
-          profit: acc.profit + m.profit,
-          count: acc.count + m.count,
-        }),
-        { year: currentYear, sales: 0, usedCost: 0, profit: 0, count: 0 }
-      );
-  }, [profitByMonth]);
-
-  const [showMonthlyHistory, setShowMonthlyHistory] = useState(false);
 
   // ── Clear / Refresh ──────────────────────────────
   const clearAllFilters = () => {
@@ -902,7 +853,7 @@ const Maghsal = () => {
 
   // ── Render ───────────────────────────────────────
   return (
-    <div className="page-shell">
+    <div className="page-shell maghsal-container">
       {/* Header */}
       <div className="page-shell-header">
         <div className="page-shell-header-left">
@@ -950,10 +901,6 @@ const Maghsal = () => {
             <div className="kpi-card-label">Entries</div>
             <div className="kpi-card-value">{totals.count}</div>
           </div>
-          <div className="kpi-card tone-purple">
-            <div className="kpi-card-label">Service Revenue</div>
-            <div className="kpi-card-value">${formatCurrency(totals.service)}</div>
-          </div>
           <div className="kpi-card tone-cyan">
             <div className="kpi-card-label">Sold Revenue</div>
             <div className="kpi-card-value">${formatCurrency(totals.goods)}</div>
@@ -965,47 +912,21 @@ const Maghsal = () => {
           </div>
           <div
             className="kpi-card"
-            role="button"
-            tabIndex={0}
-            onClick={() => setShowMonthlyHistory(true)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowMonthlyHistory(true); }}
             style={{
-              borderLeft: `4px solid ${monthlyProfit.profit >= 0 ? '#198754' : '#dc3545'}`,
-              cursor: 'pointer',
-            }}
-            title="Click to see profit history by month"
-          >
-            <div className="kpi-card-label">
-              Net Profit · {monthNames[new Date().getMonth()]}
-            </div>
-            <div
-              className="kpi-card-value"
-              style={{ color: monthlyProfit.profit >= 0 ? '#198754' : '#dc3545' }}
-            >
-              ${formatCurrency(monthlyProfit.profit)}
-            </div>
-            <div className="kpi-card-hint">
-              {monthlyProfit.count} entry(s) · Sales ${formatCurrency(monthlyProfit.sales)} − Used ${formatCurrency(monthlyProfit.usedCost)}
-              <span style={{ marginLeft: 8, color: 'var(--brand)', fontWeight: 500 }}>· See history →</span>
-            </div>
-          </div>
-          <div
-            className="kpi-card"
-            style={{
-              borderLeft: `4px solid ${yearlyProfit.profit >= 0 ? '#198754' : '#dc3545'}`,
+              borderLeft: `4px solid ${totals.netProfit >= 0 ? '#198754' : '#dc3545'}`,
             }}
           >
             <div className="kpi-card-label">
-              Net Profit · {yearlyProfit.year}
+              Net Profit
             </div>
             <div
               className="kpi-card-value"
-              style={{ color: yearlyProfit.profit >= 0 ? '#198754' : '#dc3545' }}
+              style={{ color: totals.netProfit >= 0 ? '#198754' : '#dc3545' }}
             >
-              ${formatCurrency(yearlyProfit.profit)}
+              ${formatCurrency(totals.netProfit)}
             </div>
             <div className="kpi-card-hint">
-              Since January · {yearlyProfit.count} entry(s) · Sales ${formatCurrency(yearlyProfit.sales)} − Used ${formatCurrency(yearlyProfit.usedCost)}
+              {totals.count} entry(s) · Sales ${formatCurrency(totals.total)} − Used ${formatCurrency(totals.consumablesCost)}
             </div>
           </div>
         </div>
@@ -1112,11 +1033,9 @@ const Maghsal = () => {
                 <th>Used</th>
                 <th>Sold</th>
                 <th className="text-right">Service</th>
-                <th className="text-right">Sold $</th>
                 <th className="text-right">Total</th>
                 <th className="text-right">Profit</th>
                 <th>Status</th>
-                <th>Employee</th>
                 <th>Actions</th>
                 <th>Check</th>
               </tr>
@@ -1163,11 +1082,6 @@ const Maghsal = () => {
                       <span className="price-cell">${m.servicePrice.toFixed(2)}</span>
                     </td>
                     <td className="text-right">
-                      <span className="price-cell" style={{ color: m.goodsTotal > 0 ? 'var(--text-heading)' : 'var(--text-muted)' }}>
-                        ${m.goodsTotal.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="text-right">
                       <span className="price-cell" style={{ fontWeight: 700 }}>${m.totalPrice.toFixed(2)}</span>
                     </td>
                     <td className="text-right">
@@ -1182,14 +1096,11 @@ const Maghsal = () => {
                     <td>
                       <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
                     </td>
-                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{e.employee || '—'}</td>
                     <td>
                       <div className="action-buttons">
-                        {(consCount + goodsCount > 0) && (
-                          <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used items & good sold">
-                            Details
-                          </button>
-                        )}
+                        <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used / sold items, employee & remark">
+                          Details
+                        </button>
                         <button className="btn-small btn-primary" onClick={() => openEditModal(e)}>Edit</button>
                         <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)}>Delete</button>
                       </div>
@@ -1504,6 +1415,7 @@ const Maghsal = () => {
                 <div><strong>Date:</strong> {formatDateTime(detailsEntry.date)}</div>
                 <div><strong>Category:</strong> {detailsEntry.category || '—'}</div>
                 <div><strong>Status:</strong> {detailsEntry.paymentStatus || '—'}</div>
+                <div><strong>Employee:</strong> {detailsEntry.employee || '—'}</div>
               </div>
 
               <div style={{ marginTop: 'var(--s-4)' }}>
@@ -1549,73 +1461,6 @@ const Maghsal = () => {
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setDetailsEntry(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Monthly Profit History */}
-      {showMonthlyHistory && (
-        <div className="modal-overlay" onClick={() => setShowMonthlyHistory(false)}>
-          <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Net Profit · Monthly History</h3>
-              <button className="modal-close" onClick={() => setShowMonthlyHistory(false)}><IconX /></button>
-            </div>
-            <div className="modal-content">
-              {profitByMonth.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '24px 0' }}>
-                  No entries recorded yet.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
-                  {profitByMonth.map((row) => {
-                    const isCurrent = row.key === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-                    return (
-                      <div
-                        key={row.key}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr auto',
-                          gap: 'var(--s-3)',
-                          alignItems: 'center',
-                          padding: '12px 14px',
-                          background: isCurrent ? 'var(--brand-light, #eef2ff)' : 'var(--surface, #fff)',
-                          border: `1px solid ${isCurrent ? 'var(--brand, #4f46e5)' : 'var(--border, #e2e8f0)'}`,
-                          borderRadius: 8,
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14 }}>
-                            {monthNames[row.month]} {row.year}
-                            {isCurrent && (
-                              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--brand, #4f46e5)' }}>
-                                CURRENT
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                            {row.count} entry(s) · Sales ${formatCurrency(row.sales)} − Used ${formatCurrency(row.usedCost)}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 16,
-                            color: row.profit >= 0 ? '#198754' : '#dc3545',
-                            fontVariantNumeric: 'tabular-nums',
-                          }}
-                        >
-                          ${formatCurrency(row.profit)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowMonthlyHistory(false)}>Close</button>
             </div>
           </div>
         </div>

@@ -594,6 +594,11 @@ const FetchProducts = () => {
     0
   );
 
+  const filteredProductsSellTotal = filteredProducts.reduce(
+    (sum, product) => sum + getProfitMetrics(product).revenue,
+    0
+  );
+
   const heldProductsProfitTotal = heldProducts.reduce(
     (sum, product) => sum + getProfitMetrics(product).totalProfit,
     0
@@ -666,13 +671,19 @@ const FetchProducts = () => {
         </div>
         <div className="summary-card">
           <div className="summary-card-content">
-            <span className="summary-card-label">Stock Value</span>
+            <span className="summary-card-label">Total Selling Price</span>
+            <span className="summary-card-value">${filteredProductsSellTotal.toFixed(2)}</span>
+          </div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-card-content">
+            <span className="summary-card-label">Total Purchasing</span>
             <span className="summary-card-value">${filteredProductsValueTotal.toFixed(2)}</span>
           </div>
         </div>
         <div className="summary-card">
           <div className="summary-card-content">
-            <span className="summary-card-label">Potential Profit</span>
+            <span className="summary-card-label">Total Profit</span>
             <span
               className="summary-card-value"
               style={{ color: filteredProductsProfitTotal >= 0 ? '#198754' : '#dc3545' }}

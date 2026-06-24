@@ -5,7 +5,7 @@ import { database } from '../Auth/firebase';
 import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
-import { IconRefresh, IconX, IconPlus, IconTrash } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus } from '../utils/icons';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import {
   addReceiptHeader,
@@ -61,11 +61,10 @@ const Maghsal = () => {
   const [formCustomerId, setFormCustomerId] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formCategory, setFormCategory] = useState('');
+  const [formQuantity, setFormQuantity] = useState('1');
   const [formServicePrice, setFormServicePrice] = useState('');
   const [formPaymentStatus, setFormPaymentStatus] = useState('Unpaid');
   const [formRemark, setFormRemark] = useState('');
-  const [formConsumables, setFormConsumables] = useState([]); // [{productId, quantity}]
-  const [formGoods, setFormGoods] = useState([]);             // [{productId, quantity, unitPrice}]
   // Stock-in form (only shown when paymentStatus === 'Stock'). Single product
   // per submission, matching the Oil/Filter "Add Missing Item" stock flow.
   const [formStockProductId, setFormStockProductId] = useState('');
@@ -215,7 +214,6 @@ const Maghsal = () => {
     [products],
   );
   const consumables = catalogue;
-  const goods       = catalogue;
 
   const getProduct = (id) => products.find((p) => p.id === id);
 
@@ -315,6 +313,7 @@ const Maghsal = () => {
       total: 0,
       paid: 0,
       unpaid: 0,
+      expenses: 0,
       consumablesCost: 0,
       goodsCost: 0,
       netProfit: 0,
@@ -324,13 +323,13 @@ const Maghsal = () => {
       t.count += 1;
       t.service += m.servicePrice;
       t.goods += m.goodsTotal;
-      t.total += m.totalPrice;
       t.consumablesCost += m.consumablesCost;
       t.goodsCost += m.goodsCost;
-      t.netProfit += m.netProfit;
-      if (e.paymentStatus === 'Paid') t.paid += m.totalPrice;
-      else if (e.paymentStatus === 'Unpaid') t.unpaid += m.totalPrice;
+      if (e.paymentStatus === 'Paid') { t.paid += m.totalPrice; t.total += m.totalPrice; }
+      else if (e.paymentStatus === 'Unpaid') { t.unpaid += m.totalPrice; t.total += m.totalPrice; }
+      else if (e.paymentStatus === 'Used') t.expenses += m.totalPrice;
     }
+    t.netProfit = t.total - t.expenses;
     return t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, products]);
@@ -377,12 +376,11 @@ const Maghsal = () => {
   const openAddModal = () => {
     setFormCustomerId('');
     setFormDate(formatDateForInput(new Date().toISOString()));
-    setFormCategory(categories[0] || '');
+    setFormCategory('');
+    setFormQuantity('1');
     setFormServicePrice('');
     setFormPaymentStatus('Unpaid');
     setFormRemark('');
-    setFormConsumables([]);
-    setFormGoods([]);
     setFormStockProductId('');
     setFormStockQuantity('1');
     setFormStockPurchasingPrice('');
@@ -401,56 +399,7 @@ const Maghsal = () => {
 
   const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); };
 
-  // Line-item operations
-  const addConsumableLine = () => setFormConsumables((prev) => [...prev, { productId: '', quantity: 1 }]);
-  const updateConsumableLine = (idx, patch) =>
-    setFormConsumables((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  const removeConsumableLine = (idx) =>
-    setFormConsumables((prev) => prev.filter((_, i) => i !== idx));
 
-  const addGoodLine = () => setFormGoods((prev) => [...prev, { productId: '', quantity: 1, unitPrice: 0 }]);
-  const updateGoodLine = (idx, patch) =>
-    setFormGoods((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
-  const removeGoodLine = (idx) =>
-    setFormGoods((prev) => prev.filter((_, i) => i !== idx));
-
-  // When a goods product is picked, default unit price from product
-  const handleGoodProductChange = (idx, productId) => {
-    const p = getProduct(productId);
-    updateGoodLine(idx, {
-      productId,
-      unitPrice: p ? toNumber(p.itemCost) : 0,
-    });
-  };
-
-  const formGoodsTotal = useMemo(() =>
-    formGoods.reduce((acc, g) => acc + toNumber(g.quantity) * toNumber(g.unitPrice), 0)
-  , [formGoods]);
-
-  const formTotal = useMemo(() =>
-    toNumber(formServicePrice) + formGoodsTotal
-  , [formServicePrice, formGoodsTotal]);
-
-  // Stock validation: aggregate per product across both lists
-  const validateStock = () => {
-    const required = new Map(); // productId → qty needed
-    for (const l of formConsumables) {
-      if (!l.productId) continue;
-      required.set(l.productId, (required.get(l.productId) || 0) + toNumber(l.quantity));
-    }
-    for (const l of formGoods) {
-      if (!l.productId) continue;
-      required.set(l.productId, (required.get(l.productId) || 0) + toNumber(l.quantity));
-    }
-    const insufficient = [];
-    for (const [pid, needed] of required.entries()) {
-      const p = getProduct(pid);
-      if (!p) continue;
-      const have = toNumber(p.quantity);
-      if (needed > have) insufficient.push({ name: p.name, needed, have });
-    }
-    return insufficient;
-  };
 
   const isStockMode = formPaymentStatus === 'Stock';
 
@@ -469,7 +418,7 @@ const Maghsal = () => {
         // Stock-in: product + positive quantity is enough.
         ? (formStockProductId && stockQuantityValue > 0)
         // Sale: same rules as before.
-        : (formCustomerId && formCategory && (toNumber(formServicePrice) > 0 || formGoods.length > 0))
+        : (formCustomerId && formCategory && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
     )
   );
 
@@ -529,74 +478,42 @@ const Maghsal = () => {
       return handleSaveStockIn();
     }
 
-    // Validate line items have valid product selections
-    const badConsumable = formConsumables.find((l) => !l.productId || toNumber(l.quantity) <= 0);
-    if (badConsumable) {
-      flash('Each Used line needs an item and quantity > 0.', 'error');
-      return;
-    }
-    const badGood = formGoods.find((l) => !l.productId || toNumber(l.quantity) <= 0);
-    if (badGood) {
-      flash('Each Sold line needs an item and quantity > 0.', 'error');
-      return;
-    }
-
-    // Stock check
-    const issues = validateStock();
-    if (issues.length > 0) {
-      const summary = issues.map((i) => `${i.name}: need ${i.needed}, have ${i.have}`).join('; ');
-      flash(`Insufficient stock — ${summary}`, 'error');
-      return;
-    }
-
     const selectedCustomer = customers.find((c) => c.id === formCustomerId);
     if (!selectedCustomer) {
       flash('Selected customer is no longer available.', 'error');
       return;
     }
 
+    const selectedProduct = getProduct(formCategory);
+    if (!selectedProduct) {
+      flash('Selected product is no longer available.', 'error');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const servicePrice = toNumber(formServicePrice);
-      const goodsTotal = formGoodsTotal;
-      const totalPrice = servicePrice + goodsTotal;
+      const qty = toNumber(formQuantity);
 
-      // Snapshot consumables/goods with names for historical reporting.
-      // purchasingPrice is captured so net profit stays correct even if the
-      // product's price is edited later.
-      const consumablesSnapshot = formConsumables.map((l) => {
-        const p = getProduct(l.productId);
-        return {
-          productId: l.productId,
-          name: p?.name || 'Unknown',
-          quantity: toNumber(l.quantity),
-          unitCost: toNumber(p?.itemCost),               // legacy field — sell price
-          purchasingPrice: toNumber(p?.purchasingPrice), // used to compute profit
-        };
-      });
-      const goodsSnapshot = formGoods.map((l) => {
-        const p = getProduct(l.productId);
-        return {
-          productId: l.productId,
-          name: p?.name || 'Unknown',
-          quantity: toNumber(l.quantity),
-          unitPrice: toNumber(l.unitPrice),
-          purchasingPrice: toNumber(p?.purchasingPrice),
-        };
-      });
+      const consumablesUsed = [{
+        productId: selectedProduct.id,
+        name: selectedProduct.name || 'Unknown',
+        quantity: qty,
+        unitCost: toNumber(selectedProduct.itemCost),
+        purchasingPrice: toNumber(selectedProduct.purchasingPrice),
+      }];
 
       const newEntry = {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name || '',
         customerNameArabic: selectedCustomer.nameArabic || '',
         date: convertDateInputToISO(formDate),
-        category: formCategory,
-        price: servicePrice,         // legacy/back-compat
+        category: selectedProduct.name,
+        price: servicePrice,
         servicePrice,
-        goodsTotal,
-        totalPrice,
-        ...(consumablesSnapshot.length > 0 ? { consumablesUsed: consumablesSnapshot } : {}),
-        ...(goodsSnapshot.length > 0 ? { goodsSold: goodsSnapshot } : {}),
+        goodsTotal: 0,
+        totalPrice: servicePrice,
+        consumablesUsed,
         paymentStatus: formPaymentStatus,
         employee: user?.name || user?.displayName || user?.email || 'Unknown',
         employeeId: user?.uid || '',
@@ -629,20 +546,12 @@ const Maghsal = () => {
     setEditingEntryId(entry.id);
     setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
     setFormDate(formatDateForInput(entry.date));
-    setFormCategory(entry.category || categories[0] || '');
+    const usedLine = Array.isArray(entry.consumablesUsed) && entry.consumablesUsed[0];
+    setFormCategory(usedLine ? usedLine.productId : '');
+    setFormQuantity(usedLine ? String(toNumber(usedLine.quantity)) : '1');
     setFormServicePrice(String(toNumber(entry.servicePrice ?? entry.price)));
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
     setFormRemark(entry.remark || '');
-    setFormConsumables(
-      Array.isArray(entry.consumablesUsed)
-        ? entry.consumablesUsed.map((c) => ({ productId: c.productId, quantity: toNumber(c.quantity) }))
-        : []
-    );
-    setFormGoods(
-      Array.isArray(entry.goodsSold)
-        ? entry.goodsSold.map((g) => ({ productId: g.productId, quantity: toNumber(g.quantity), unitPrice: toNumber(g.unitPrice) }))
-        : []
-    );
     setShowAddModal(true);
   };
 
@@ -651,57 +560,39 @@ const Maghsal = () => {
   const handleUpdateEntry = async () => {
     const originalEntry = entries.find((e) => e.id === editingEntryId);
 
-    const badConsumable = formConsumables.find((l) => !l.productId || toNumber(l.quantity) <= 0);
-    if (badConsumable) {
-      flash('Each Used line needs an item and quantity > 0.', 'error');
-      return;
-    }
-    const badGood = formGoods.find((l) => !l.productId || toNumber(l.quantity) <= 0);
-    if (badGood) {
-      flash('Each Sold line needs an item and quantity > 0.', 'error');
-      return;
-    }
-
-    const issues = validateStock();
-    if (issues.length > 0) {
-      const summary = issues.map((i) => `${i.name}: need ${i.needed}, have ${i.have}`).join('; ');
-      flash(`Insufficient stock — ${summary}`, 'error');
-      return;
-    }
-
     const selectedCustomer = customers.find((c) => c.id === formCustomerId);
     if (!selectedCustomer) { flash('Selected customer is no longer available.', 'error'); return; }
 
+    const selectedProduct = getProduct(formCategory);
+    if (!selectedProduct) { flash('Selected product is no longer available.', 'error'); return; }
+
     setIsSaving(true);
     try {
-      const consumablesSnapshot = formConsumables.map((l) => {
-        const p = getProduct(l.productId);
-        return { productId: l.productId, name: p?.name || 'Unknown', quantity: toNumber(l.quantity), unitCost: toNumber(p?.itemCost), purchasingPrice: toNumber(p?.purchasingPrice) };
-      });
-      const goodsSnapshot = formGoods.map((l) => {
-        const p = getProduct(l.productId);
-        return { productId: l.productId, name: p?.name || 'Unknown', quantity: toNumber(l.quantity), unitPrice: toNumber(l.unitPrice), purchasingPrice: toNumber(p?.purchasingPrice) };
-      });
-
       const servicePrice = toNumber(formServicePrice);
-      const goodsTotal = goodsSnapshot.reduce((acc, g) => acc + g.quantity * toNumber(g.unitPrice), 0);
-      // Preserve the original time-of-day when the calendar day is unchanged.
+      const qty = toNumber(formQuantity);
       const dateISO = (originalEntry && formatDateForInput(originalEntry.date) === formDate)
         ? originalEntry.date
         : convertDateInputToISO(formDate);
+
+      const consumablesUsed = [{
+        productId: selectedProduct.id,
+        name: selectedProduct.name || 'Unknown',
+        quantity: qty,
+        unitCost: toNumber(selectedProduct.itemCost),
+        purchasingPrice: toNumber(selectedProduct.purchasingPrice),
+      }];
 
       await update(ref(database, `maghsalEntries/${editingEntryId}`), {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name || '',
         customerNameArabic: selectedCustomer.nameArabic || '',
         date: dateISO,
-        category: formCategory,
+        category: selectedProduct.name,
         price: servicePrice,
         servicePrice,
-        goodsTotal,
-        totalPrice: servicePrice + goodsTotal,
-        consumablesUsed: consumablesSnapshot,
-        goodsSold: goodsSnapshot,
+        goodsTotal: 0,
+        totalPrice: servicePrice,
+        consumablesUsed,
         paymentStatus: formPaymentStatus,
         remark: formRemark.trim(),
       });
@@ -857,7 +748,7 @@ const Maghsal = () => {
       {/* Header */}
       <div className="page-shell-header">
         <div className="page-shell-header-left">
-          <h1 className="page-shell-header-title">Items Sold</h1>
+          <h1 className="page-shell-header-title">Items Used</h1>
           <p className="page-shell-header-subtitle">Maghsal.</p>
         </div>
         <div className="page-shell-header-actions">
@@ -886,7 +777,7 @@ const Maghsal = () => {
             )}
           </div>
           <button className="btn-primary" onClick={openAddModal}>
-            <IconPlus /> Add Sold Item
+            <IconPlus /> Add Used Item
           </button>
         </div>
       </div>
@@ -901,14 +792,14 @@ const Maghsal = () => {
             <div className="kpi-card-label">Entries</div>
             <div className="kpi-card-value">{totals.count}</div>
           </div>
-          <div className="kpi-card tone-cyan">
-            <div className="kpi-card-label">Sold Revenue</div>
-            <div className="kpi-card-value">${formatCurrency(totals.goods)}</div>
-          </div>
           <div className="kpi-card tone-green">
             <div className="kpi-card-label">Total Revenue</div>
             <div className="kpi-card-value">${formatCurrency(totals.total)}</div>
             <div className="kpi-card-hint">Paid ${formatCurrency(totals.paid)} · Unpaid ${formatCurrency(totals.unpaid)}</div>
+          </div>
+          <div className="kpi-card tone-cyan">
+            <div className="kpi-card-label">Expenses</div>
+            <div className="kpi-card-value">${formatCurrency(totals.expenses)}</div>
           </div>
           <div
             className="kpi-card"
@@ -926,7 +817,7 @@ const Maghsal = () => {
               ${formatCurrency(totals.netProfit)}
             </div>
             <div className="kpi-card-hint">
-              {totals.count} entry(s) · Sales ${formatCurrency(totals.total)} − Used ${formatCurrency(totals.consumablesCost)}
+              Revenue ${formatCurrency(totals.total)} − Expenses ${formatCurrency(totals.expenses)}
             </div>
           </div>
         </div>
@@ -944,10 +835,10 @@ const Maghsal = () => {
           </div>
 
           <div className="filter-group">
-            <label>Category</label>
+            <label>Product</label>
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-              <option value="All">All Categories</option>
-              {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+              <option value="All">All Products</option>
+              {catalogue.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
           </div>
 
@@ -975,6 +866,7 @@ const Maghsal = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
+              <option value="Used">Used</option>
             </select>
           </div>
 
@@ -1006,7 +898,7 @@ const Maghsal = () => {
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
-            {categoryFilter !== 'All' && <span className="filter-tag">Category: {categoryFilter}<button onClick={() => setCategoryFilter('All')}><IconX /></button></span>}
+            {categoryFilter !== 'All' && <span className="filter-tag">Product: {categoryFilter}<button onClick={() => setCategoryFilter('All')}><IconX /></button></span>}
             {dateFromFilter && <span className="filter-tag">From: {getDateDisplay(dateFromFilter)}<button onClick={() => setDateFromFilter('')}><IconX /></button></span>}
             {dateToFilter && <span className="filter-tag">To: {getDateDisplay(dateToFilter)}<button onClick={() => setDateToFilter('')}><IconX /></button></span>}
             {monthFilter && <span className="filter-tag">Month: {monthNames[parseInt(monthFilter, 10) - 1]}<button onClick={() => setMonthFilter('')}><IconX /></button></span>}
@@ -1029,12 +921,9 @@ const Maghsal = () => {
               <tr>
                 <th>Date</th>
                 <th>Customer</th>
-                <th>Category</th>
-                <th>Used</th>
-                <th>Sold</th>
-                <th className="text-right">Service</th>
-                <th className="text-right">Total</th>
-                <th className="text-right">Profit</th>
+                <th>Product</th>
+                <th className="text-right">Qty</th>
+                <th className="text-right">Charges</th>
                 <th>Status</th>
                 <th>Actions</th>
                 <th>Check</th>
@@ -1043,8 +932,6 @@ const Maghsal = () => {
             <tbody>
               {filtered.map((e) => {
                 const m = entryTotals(e);
-                const goodsCount = Array.isArray(e.goodsSold) ? e.goodsSold.length : 0;
-                const consCount = Array.isArray(e.consumablesUsed) ? e.consumablesUsed.length : 0;
                 return (
                   <tr key={e.id} className={checkedItems.includes(e.id) ? 'checked-row' : ''}>
                     <td className="date-cell">
@@ -1052,45 +939,14 @@ const Maghsal = () => {
                     </td>
                     <td>{e.customerName || 'N/A'}</td>
                     <td>{e.category || 'Unspecified'}</td>
-                    <td>
-                      {consCount > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {e.consumablesUsed.map((c, i) => (
-                            <span key={i} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                              {c.name} <span style={{ color: 'var(--text-muted)' }}>×{toNumber(c.quantity)}</span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      )}
-                    </td>
-                    <td>
-                      {goodsCount > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {e.goodsSold.map((g, i) => (
-                            <span key={i} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                              {g.name} <span style={{ color: 'var(--text-muted)' }}>×{toNumber(g.quantity)}</span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      )}
+                    <td className="text-right">
+                      {Array.isArray(e.consumablesUsed) && e.consumablesUsed[0]
+                        ? toNumber(e.consumablesUsed[0].quantity)
+                        : '—'}
                     </td>
                     <td className="text-right">
-                      <span className="price-cell">${m.servicePrice.toFixed(2)}</span>
-                    </td>
-                    <td className="text-right">
-                      <span className="price-cell" style={{ fontWeight: 700 }}>${m.totalPrice.toFixed(2)}</span>
-                    </td>
-                    <td className="text-right">
-                      <span
-                        className="price-cell"
-                        style={{ fontWeight: 600, color: m.netProfit >= 0 ? '#198754' : '#dc3545' }}
-                        title={`Sales $${m.totalPrice.toFixed(2)} − Used cost $${m.consumablesCost.toFixed(2)}`}
-                      >
-                        ${m.netProfit.toFixed(2)}
+                      <span className="price-cell" style={{ fontWeight: 600 }}>
+                        ${m.servicePrice.toFixed(2)}
                       </span>
                     </td>
                     <td>
@@ -1130,7 +986,7 @@ const Maghsal = () => {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 720 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{editingEntryId ? 'Edit Sold Item' : (formPaymentStatus === 'Stock' ? 'Add Stock In' : 'Add Sold Item')}</h3>
+              <h3 className="modal-title">{editingEntryId ? 'Edit Used Item' : (formPaymentStatus === 'Stock' ? 'Add Stock In' : 'Add Used Item')}</h3>
               <button className="modal-close" onClick={closeAddModal}><IconX /></button>
             </div>
             <div className="modal-content">
@@ -1153,11 +1009,18 @@ const Maghsal = () => {
 
                 {formPaymentStatus !== 'Stock' && (
                   <div className="form-group">
-                    <label className="form-label">Category</label>
+                    <label className="form-label">Product</label>
                     <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
-                      <option value="">Select Category</option>
-                      {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                      <option value="">Select Product</option>
+                      {catalogue.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
                     </select>
+                  </div>
+                )}
+
+                {formPaymentStatus !== 'Stock' && (
+                  <div className="form-group">
+                    <label className="form-label">Quantity</label>
+                    <input type="number" min="0.01" step="0.01" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} className="form-input" disabled={isSaving} />
                   </div>
                 )}
 
@@ -1173,6 +1036,7 @@ const Maghsal = () => {
                   <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
+                    <option value="Used">Used</option>
                     {!editingEntryId && <option value="Stock">Stock</option>}
                   </select>
                 </div>
@@ -1254,125 +1118,6 @@ const Maghsal = () => {
                 </>
               )}
 
-              {/* Used items — only for sales (Paid / Unpaid) */}
-              {formPaymentStatus !== 'Stock' && (
-              <div style={{ marginTop: 'var(--s-4)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Used</label>
-                  <button className="btn-small btn-secondary" onClick={addConsumableLine} disabled={isSaving || consumables.length === 0} type="button">
-                    <IconPlus /> Add Line
-                  </button>
-                </div>
-                {consumables.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    No products in inventory. Add them from <strong>Inventory → Products</strong>.
-                  </p>
-                ) : formConsumables.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to log a used item.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
-                    {formConsumables.map((line, idx) => {
-                      return (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 32px', gap: 'var(--s-2)', alignItems: 'center' }}>
-                          <select
-                            value={line.productId}
-                            onChange={(e) => updateConsumableLine(idx, { productId: e.target.value })}
-                            className="form-select"
-                            disabled={isSaving}
-                          >
-                            <option value="">Select item…</option>
-                            {consumables.map((c) => (
-                              <option key={c.id} value={c.id}>{c.name} {c.unit ? `(${c.unit})` : ''} · stock {toNumber(c.quantity)}</option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            value={line.quantity}
-                            onChange={(e) => updateConsumableLine(idx, { quantity: e.target.value })}
-                            className="form-input"
-                            placeholder="Qty"
-                            disabled={isSaving}
-                          />
-                          <button
-                            className="btn-small btn-danger"
-                            onClick={() => removeConsumableLine(idx)}
-                            disabled={isSaving}
-                            type="button"
-                            title="Remove"
-                          ><IconTrash /></button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              )}
-
-              {/* Good Sold — hidden when stocking in (use the section above instead) */}
-              {formPaymentStatus !== 'Stock' && (
-              <div style={{ marginTop: 'var(--s-4)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s-2)' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Sold</label>
-                  <button className="btn-small btn-secondary" onClick={addGoodLine} disabled={isSaving || goods.length === 0} type="button">
-                    <IconPlus /> Add Line
-                  </button>
-                </div>
-                {goods.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    No products in inventory. Add them from <strong>Inventory → Products</strong>.
-                  </p>
-                ) : formGoods.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>None — click "Add Line" to sell an item.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s-2)' }}>
-                    {formGoods.map((line, idx) => (
-                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 100px 32px', gap: 'var(--s-2)', alignItems: 'center' }}>
-                        <select
-                          value={line.productId}
-                          onChange={(e) => handleGoodProductChange(idx, e.target.value)}
-                          className="form-select"
-                          disabled={isSaving}
-                        >
-                          <option value="">Select item…</option>
-                          {goods.map((g) => (
-                            <option key={g.id} value={g.id}>{g.name} · stock {toNumber(g.quantity)}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={line.quantity}
-                          onChange={(e) => updateGoodLine(idx, { quantity: e.target.value })}
-                          className="form-input"
-                          placeholder="Qty"
-                          disabled={isSaving}
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.unitPrice}
-                          onChange={(e) => updateGoodLine(idx, { unitPrice: e.target.value })}
-                          className="form-input"
-                          placeholder="Unit price"
-                          disabled={isSaving}
-                        />
-                        <button
-                          className="btn-small btn-danger"
-                          onClick={() => removeGoodLine(idx)}
-                          disabled={isSaving}
-                          type="button"
-                          title="Remove"
-                        ><IconTrash /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              )}
 
               {/* Remark */}
               <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
@@ -1380,12 +1125,9 @@ const Maghsal = () => {
                 <textarea value={formRemark} onChange={(e) => setFormRemark(e.target.value)} className="form-textarea" rows="2" disabled={isSaving} />
               </div>
 
-              {/* Totals — only meaningful for sales, not stock-in */}
               {formPaymentStatus !== 'Stock' && (
                 <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-                  <span>Service: ${toNumber(formServicePrice).toFixed(2)}</span>
-                  <span>Sold: ${formGoodsTotal.toFixed(2)}</span>
-                  <span style={{ color: 'var(--brand)' }}>Total: ${formTotal.toFixed(2)}</span>
+                  <span style={{ color: 'var(--brand)' }}>Service Price: ${toNumber(formServicePrice).toFixed(2)}</span>
                 </div>
               )}
             </div>
@@ -1393,7 +1135,7 @@ const Maghsal = () => {
               <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
                 {isSaving
                   ? 'Saving...'
-                  : (editingEntryId ? 'Update Item' : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Sold Item'))}
+                  : (editingEntryId ? 'Update Item' : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Used Item'))}
               </button>
               <button className="btn-secondary" onClick={closeAddModal} disabled={isSaving}>Close</button>
             </div>
@@ -1406,50 +1148,21 @@ const Maghsal = () => {
         <div className="modal-overlay" onClick={() => setDetailsEntry(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Sold Item Details</h3>
+              <h3 className="modal-title">Used Item Details</h3>
               <button className="modal-close" onClick={() => setDetailsEntry(null)}><IconX /></button>
             </div>
             <div className="modal-content">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s-3)' }}>
                 <div><strong>Customer:</strong> {detailsEntry.customerName || '—'}</div>
                 <div><strong>Date:</strong> {formatDateTime(detailsEntry.date)}</div>
-                <div><strong>Category:</strong> {detailsEntry.category || '—'}</div>
+                <div><strong>Product:</strong> {detailsEntry.category || '—'}</div>
+                <div><strong>Quantity:</strong> {Array.isArray(detailsEntry.consumablesUsed) && detailsEntry.consumablesUsed[0] ? toNumber(detailsEntry.consumablesUsed[0].quantity) : '—'}</div>
                 <div><strong>Status:</strong> {detailsEntry.paymentStatus || '—'}</div>
                 <div><strong>Employee:</strong> {detailsEntry.employee || '—'}</div>
               </div>
 
-              <div style={{ marginTop: 'var(--s-4)' }}>
-                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Used</h4>
-                {Array.isArray(detailsEntry.consumablesUsed) && detailsEntry.consumablesUsed.length > 0 ? (
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                    {detailsEntry.consumablesUsed.map((c, i) => (
-                      <li key={i} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{c.name}</span>
-                        <span style={{ color: 'var(--text-muted)' }}>x{toNumber(c.quantity)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>None</p>}
-              </div>
-
-              <div>
-                <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Sold</h4>
-                {Array.isArray(detailsEntry.goodsSold) && detailsEntry.goodsSold.length > 0 ? (
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                    {detailsEntry.goodsSold.map((g, i) => (
-                      <li key={i} style={{ padding: '4px 0', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{g.name} x{toNumber(g.quantity)}</span>
-                        <span>${(toNumber(g.quantity) * toNumber(g.unitPrice)).toFixed(2)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>None</p>}
-              </div>
-
-              <div className="missing-item-summary">
-                <span>Service: ${entryTotals(detailsEntry).servicePrice.toFixed(2)}</span>
-                <span>Sold: ${entryTotals(detailsEntry).goodsTotal.toFixed(2)}</span>
-                <span style={{ color: 'var(--brand)' }}>Total: ${entryTotals(detailsEntry).totalPrice.toFixed(2)}</span>
+              <div className="missing-item-summary" style={{ marginTop: 'var(--s-4)' }}>
+                <span style={{ color: 'var(--brand)' }}>Charges: ${entryTotals(detailsEntry).servicePrice.toFixed(2)}</span>
               </div>
 
               {detailsEntry.remark && (

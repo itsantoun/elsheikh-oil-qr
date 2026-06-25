@@ -1,214 +1,18 @@
-// import React, { useState, useEffect } from 'react';
-// import { database } from '../Auth/firebase';
-// import { ref, get, set, update, remove, push } from 'firebase/database';
-// import '../CSS/addCustomer.css';
-
-// const AddCustomer = () => {
-//   const [customers, setCustomers] = useState([]);
-//   const [newCustomerName, setNewCustomerName] = useState('');
-//   const [newCustomerNameArabic, setNewCustomerNameArabic] = useState('');
-//   const [editingCustomer, setEditingCustomer] = useState(null);
-//   const [editName, setEditName] = useState('');
-//   const [editNameArabic, setEditNameArabic] = useState('');
-//   const [errorMessage, setErrorMessage] = useState(null);
-//   const [successMessage, setSuccessMessage] = useState(null);
-
-//   useEffect(() => {
-//     const fetchCustomers = async () => {
-//       try {
-//         const customersRef = ref(database, 'customers');
-//         const snapshot = await get(customersRef);
-//         if (snapshot.exists()) {
-//           const data = snapshot.val();
-//           const customerList = Object.keys(data).map((key) => ({
-//             id: key,
-//             name: data[key].name,
-//             nameArabic: data[key].nameArabic || '',
-//           }));
-//           setCustomers(customerList);
-//         } else {
-//           setCustomers([]); 
-//         }
-//       } catch (error) {
-//         console.error('Error fetching customers:', error);
-//         setErrorMessage('Failed to fetch customers.');
-//         setTimeout(() => setErrorMessage(null), 3000);
-//       }
-//     };
-
-//     fetchCustomers();
-//   }, []);
-
-//   const handleAddCustomer = async (e) => {
-//     e.preventDefault();
-//     if (!newCustomerName.trim() || !newCustomerNameArabic.trim()) return;
-
-//     try {
-//       const newCustomerRef = push(ref(database, 'customers'));
-//       await set(newCustomerRef, { 
-//         name: newCustomerName, 
-//         nameArabic: newCustomerNameArabic 
-//       });
-
-//       setCustomers((prev) => [
-//         ...prev,
-//         { id: newCustomerRef.key, name: newCustomerName, nameArabic: newCustomerNameArabic },
-//       ]);
-//       setNewCustomerName('');
-//       setNewCustomerNameArabic('');
-//       setSuccessMessage('Customer added successfully.');
-//       setTimeout(() => setSuccessMessage(null), 3000);
-//     } catch (error) {
-//       console.error('Error adding customer:', error);
-//       setErrorMessage('Failed to add customer.');
-//       setTimeout(() => setErrorMessage(null), 3000);
-//     }
-//   };
-
-//   const handleStartEditing = (customer) => {
-//     setEditingCustomer(customer.id);
-//     setEditName(customer.name);
-//     setEditNameArabic(customer.nameArabic);
-//   };
-
-//   const handleEditCustomer = async (id) => {
-//     try {
-//       await update(ref(database, `customers/${id}`), { name: editName, nameArabic: editNameArabic });
-
-//       setCustomers((prev) =>
-//         prev.map((customer) =>
-//           customer.id === id ? { ...customer, name: editName, nameArabic: editNameArabic } : customer
-//         )
-//       );
-
-//       setEditingCustomer(null);
-//       setSuccessMessage('Customer updated successfully.');
-//       setTimeout(() => setSuccessMessage(null), 3000);
-//     } catch (error) {
-//       console.error('Error editing customer:', error);
-//       setErrorMessage('Failed to update customer.');
-//       setTimeout(() => setErrorMessage(null), 3000);
-//     }
-//   };
-
-//   const handleDeleteCustomer = async (id) => {
-//     const confirmDelete = window.confirm('Are you sure you want to delete this customer?');
-//     if (!confirmDelete) return;
-
-//     try {
-//       await remove(ref(database, `customers/${id}`));
-//       setCustomers((prev) => prev.filter((customer) => customer.id !== id));
-//       setSuccessMessage('Customer deleted successfully.');
-//       setTimeout(() => setSuccessMessage(null), 3000);
-//     } catch (error) {
-//       console.error('Error deleting customer:', error);
-//       setErrorMessage('Failed to delete customer.');
-//       setTimeout(() => setErrorMessage(null), 3000);
-//     }
-//   };
-
-//   return (
-//     <div className="add-customer-container">
-//       <h1 className="add-customer-title">Manage Customers</h1>
-
-//       {successMessage && <div className="add-customer-success">{successMessage}</div>}
-//       {errorMessage && <div className="add-customer-error">{errorMessage}</div>}
-
-//       <form className="add-customer-form" onSubmit={handleAddCustomer}>
-//         <input
-//           type="text"
-//           value={newCustomerName}
-//           onChange={(e) => setNewCustomerName(e.target.value)}
-//           placeholder="Enter customer name in English"
-//           className="add-customer-input"
-//         />
-//         <input
-//           type="text"
-//           value={newCustomerNameArabic}
-//           onChange={(e) => setNewCustomerNameArabic(e.target.value)}
-//           placeholder="أدخل اسم العميل بالعربية"
-//           className="add-customer-input"
-//           dir="rtl"
-//         />
-//         <button type="submit" className="add-customer-button">Add Customer</button>
-//       </form>
-
-//       <div className="customer-list">
-//         {customers.length === 0 ? (
-//           <p>No customers found.</p>
-//         ) : (
-//           <table className="customer-table">
-//             <thead>
-//               <tr>
-//                 <th>Name (English)</th>
-//                 <th>Name (Arabic)</th>
-//                 <th>Actions</th>
-//               </tr>
-//             </thead>
-//             <tbody>
-//               {customers.map((customer) => (
-//                 <tr key={customer.id}>
-//                   <td>
-//                     {editingCustomer === customer.id ? (
-//                       <input
-//                         type="text"
-//                         value={editName}
-//                         onChange={(e) => setEditName(e.target.value)}
-//                         className="edit-customer-input"
-//                       />
-//                     ) : (
-//                       customer.name
-//                     )}
-//                   </td>
-//                   <td dir="rtl">
-//                     {editingCustomer === customer.id ? (
-//                       <input
-//                         type="text"
-//                         value={editNameArabic}
-//                         onChange={(e) => setEditNameArabic(e.target.value)}
-//                         className="edit-customer-input"
-//                       />
-//                     ) : (
-//                       customer.nameArabic
-//                     )}
-//                   </td>
-//                   <td>
-//                     <div className="admin-buttons-container">
-//                       {editingCustomer === customer.id ? (
-//                         <>
-//                           <button onClick={() => handleEditCustomer(customer.id)} className="save-button">Save</button>
-//                           <button onClick={() => setEditingCustomer(null)} className="cancel-button">Cancel</button>
-//                         </>
-//                       ) : (
-//                         <>
-//                           <button className="admin-edit-button" onClick={() => handleStartEditing(customer)}>
-//                             <i className="fas fa-edit"></i>
-//                           </button>
-//                           <button className="admin-delete-button" onClick={() => handleDeleteCustomer(customer.id)}>
-//                             <i className="fas fa-trash"></i>
-//                           </button>
-//                         </>
-//                       )}
-//                     </div>
-//                   </td>
-//                 </tr>
-//               ))}
-//             </tbody>
-//           </table>
-//         )}
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default AddCustomer;
-
 import React, { useState, useEffect } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, set, update, remove, push } from 'firebase/database';
 import '../CSS/addCustomer.css';
-import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash } from '../utils/icons';
+import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash, IconUser } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+
+const CLIENT_TYPES = [
+  { value: 'oil-filter', label: 'Oil & Filter', labelAr: 'زيت وفلتر' },
+  { value: 'maghsal', label: 'Maghsal', labelAr: 'مغسل' },
+  { value: 'water-filling', label: 'Water Filling', labelAr: 'تعبئة مياه' },
+  { value: 'water-distribution', label: 'Water Distribution', labelAr: 'توزيع مياه' },
+  { value: 'pickup-water-distribution', label: 'Pickup Water Distribution', labelAr: 'توزيع مياه بيك أب' },
+  { value: 'diesel-distribution', label: 'Diesel Distribution', labelAr: 'توزيع ديزل' },
+];
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -218,17 +22,25 @@ const sortByName = (a, b) => {
   return 0;
 };
 
+const emptyForm = {
+  name: '',
+  nameArabic: '',
+  phone: '',
+  address: '',
+  clientTypes: [],
+};
+
 const AddCustomer = () => {
   const [customers, setCustomers] = useState([]);
-  const [newCustomerName, setNewCustomerName] = useState('');
-  const [newCustomerNameArabic, setNewCustomerNameArabic] = useState('');
+  const [formData, setFormData] = useState({ ...emptyForm });
   const [editingCustomer, setEditingCustomer] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [editNameArabic, setEditNameArabic] = useState('');
+  const [editData, setEditData] = useState({ ...emptyForm });
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [expandedCustomer, setExpandedCustomer] = useState(null);
+  const [filterType, setFilterType] = useState('');
 
   useExpiryNotifications({ successMessage, errorMessage });
 
@@ -245,10 +57,13 @@ const AddCustomer = () => {
         const data = snapshot.val();
         const customerList = Object.keys(data).map((key) => ({
           id: key,
-          name: data[key].name,
+          name: data[key].name || '',
           nameArabic: data[key].nameArabic || '',
+          phone: data[key].phone || '',
+          address: data[key].address || '',
+          clientTypes: data[key].clientTypes || [],
         }));
-        customerList.sort((a, b) => sortByName(a, b));
+        customerList.sort(sortByName);
         setCustomers(customerList);
       } else {
         setCustomers([]);
@@ -256,40 +71,57 @@ const AddCustomer = () => {
     } catch (error) {
       console.error('Error fetching customers:', error);
       setErrorMessage('Failed to fetch customers.');
-      setTimeout(() => setErrorMessage(null), 3000);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleFormChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleEditChange = (field, value) => {
+    setEditData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const toggleClientType = (value, isEdit = false) => {
+    const setter = isEdit ? setEditData : setFormData;
+    setter(prev => {
+      const types = prev.clientTypes.includes(value)
+        ? prev.clientTypes.filter(t => t !== value)
+        : [...prev.clientTypes, value];
+      return { ...prev, clientTypes: types };
+    });
+  };
+
   const handleAddCustomer = async (e) => {
     e.preventDefault();
-    if (!newCustomerName.trim() || !newCustomerNameArabic.trim()) {
+    if (!formData.name.trim() || !formData.nameArabic.trim()) {
       setErrorMessage('Both English and Arabic names are required.');
-      setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
     try {
       setIsLoading(true);
+      const customerData = {
+        name: formData.name.trim(),
+        nameArabic: formData.nameArabic.trim(),
+        phone: formData.phone.trim(),
+        address: formData.address.trim(),
+        clientTypes: formData.clientTypes,
+      };
       const newCustomerRef = push(ref(database, 'customers'));
-      await set(newCustomerRef, { 
-        name: newCustomerName.trim(), 
-        nameArabic: newCustomerNameArabic.trim() 
-      });
+      await set(newCustomerRef, customerData);
 
-      setCustomers((prev) => {
-        const updated = [...prev, { id: newCustomerRef.key, name: newCustomerName.trim(), nameArabic: newCustomerNameArabic.trim() }];
-        return updated.sort((a, b) => sortByName(a, b));
+      setCustomers(prev => {
+        const updated = [...prev, { id: newCustomerRef.key, ...customerData }];
+        return updated.sort(sortByName);
       });
-      setNewCustomerName('');
-      setNewCustomerNameArabic('');
+      setFormData({ ...emptyForm });
       setSuccessMessage('Customer added successfully!');
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error adding customer:', error);
       setErrorMessage('Failed to add customer.');
-      setTimeout(() => setErrorMessage(null), 3000);
     } finally {
       setIsLoading(false);
     }
@@ -297,38 +129,45 @@ const AddCustomer = () => {
 
   const handleStartEditing = (customer) => {
     setEditingCustomer(customer.id);
-    setEditName(customer.name);
-    setEditNameArabic(customer.nameArabic);
+    setEditData({
+      name: customer.name,
+      nameArabic: customer.nameArabic,
+      phone: customer.phone,
+      address: customer.address,
+      clientTypes: customer.clientTypes || [],
+    });
+    setExpandedCustomer(customer.id);
   };
 
   const handleEditCustomer = async (id) => {
-    if (!editName.trim() || !editNameArabic.trim()) {
+    if (!editData.name.trim() || !editData.nameArabic.trim()) {
       setErrorMessage('Both English and Arabic names are required.');
-      setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
 
     try {
       setIsLoading(true);
-      await update(ref(database, `customers/${id}`), { 
-        name: editName.trim(), 
-        nameArabic: editNameArabic.trim() 
-      });
+      const customerData = {
+        name: editData.name.trim(),
+        nameArabic: editData.nameArabic.trim(),
+        phone: editData.phone.trim(),
+        address: editData.address.trim(),
+        clientTypes: editData.clientTypes,
+      };
+      await update(ref(database, `customers/${id}`), customerData);
 
-      setCustomers((prev) => {
-        const updated = prev.map((customer) =>
-          customer.id === id ? { ...customer, name: editName.trim(), nameArabic: editNameArabic.trim() } : customer
+      setCustomers(prev => {
+        const updated = prev.map(c =>
+          c.id === id ? { ...c, ...customerData } : c
         );
-        return updated.sort((a, b) => sortByName(a, b));
+        return updated.sort(sortByName);
       });
 
       setEditingCustomer(null);
       setSuccessMessage('Customer updated successfully!');
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error editing customer:', error);
       setErrorMessage('Failed to update customer.');
-      setTimeout(() => setErrorMessage(null), 3000);
     } finally {
       setIsLoading(false);
     }
@@ -344,13 +183,12 @@ const AddCustomer = () => {
     try {
       setIsLoading(true);
       await remove(ref(database, `customers/${id}`));
-      setCustomers((prev) => prev.filter((customer) => customer.id !== id));
+      setCustomers(prev => prev.filter(c => c.id !== id));
+      if (expandedCustomer === id) setExpandedCustomer(null);
       setSuccessMessage(`Customer "${customer.name}" deleted successfully.`);
-      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('Error deleting customer:', error);
       setErrorMessage('Failed to delete customer.');
-      setTimeout(() => setErrorMessage(null), 3000);
     } finally {
       setIsLoading(false);
     }
@@ -358,39 +196,74 @@ const AddCustomer = () => {
 
   const handleCancelEdit = () => {
     setEditingCustomer(null);
-    setEditName('');
-    setEditNameArabic('');
+    setEditData({ ...emptyForm });
   };
 
   const handleRefresh = () => {
     fetchCustomers();
     setSuccessMessage('Customer list refreshed!');
-    setTimeout(() => setSuccessMessage(null), 3000);
   };
 
   const handleClearForm = () => {
-    setNewCustomerName('');
-    setNewCustomerNameArabic('');
+    setFormData({ ...emptyForm });
   };
 
-  // Filter customers based on search term
+  const getClientTypeLabel = (value) => {
+    const type = CLIENT_TYPES.find(t => t.value === value);
+    return type ? type.label : value;
+  };
+
   const filteredCustomers = customers
     .filter(customer => {
+      if (filterType && !(customer.clientTypes || []).includes(filterType)) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
         customer.name?.toLowerCase().includes(term) ||
-        customer.nameArabic?.toLowerCase().includes(term)
+        customer.nameArabic?.toLowerCase().includes(term) ||
+        customer.phone?.toLowerCase().includes(term) ||
+        customer.address?.toLowerCase().includes(term)
       );
     })
-    .sort((a, b) => sortByName(a, b));
+    .sort(sortByName);
+
+  const renderClientTypeBadges = (types) => {
+    if (!types || types.length === 0) return <span className="no-type">No type assigned</span>;
+    return (
+      <div className="client-type-badges">
+        {types.map(type => (
+          <span key={type} className={`client-type-badge badge-${type}`}>
+            {getClientTypeLabel(type)}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  const renderClientTypeSelector = (selectedTypes, onToggle) => (
+    <div className="client-type-selector">
+      {CLIENT_TYPES.map(type => (
+        <button
+          key={type.value}
+          type="button"
+          className={`type-chip ${selectedTypes.includes(type.value) ? 'selected' : ''}`}
+          onClick={() => onToggle(type.value)}
+          disabled={isLoading}
+        >
+          <span className="type-chip-check">{selectedTypes.includes(type.value) ? '✓' : ''}</span>
+          <span className="type-chip-label">{type.label}</span>
+          <span className="type-chip-label-ar">{type.labelAr}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="page-shell customers-page">
       {/* Page Header */}
       <div className="page-header">
         <h1 className="page-title">Customer Management</h1>
-        <p className="page-subtitle">Add and manage customer information</p>
+        <p className="page-subtitle">Manage customer profiles and information</p>
       </div>
 
       {/* Messages */}
@@ -429,8 +302,8 @@ const AddCustomer = () => {
               <input
                 type="text"
                 placeholder="Enter customer name in English"
-                value={newCustomerName}
-                onChange={(e) => setNewCustomerName(e.target.value)}
+                value={formData.name}
+                onChange={(e) => handleFormChange('name', e.target.value)}
                 className="form-input"
                 disabled={isLoading}
               />
@@ -444,20 +317,56 @@ const AddCustomer = () => {
               <input
                 type="text"
                 placeholder="أدخل اسم العميل بالعربية"
-                value={newCustomerNameArabic}
-                onChange={(e) => setNewCustomerNameArabic(e.target.value)}
+                value={formData.nameArabic}
+                onChange={(e) => handleFormChange('nameArabic', e.target.value)}
                 className="form-input arabic-input"
                 dir="rtl"
                 disabled={isLoading}
               />
             </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                <span className="label-text">Phone Number</span>
+              </label>
+              <input
+                type="tel"
+                placeholder="Enter phone number"
+                value={formData.phone}
+                onChange={(e) => handleFormChange('phone', e.target.value)}
+                className="form-input"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                <span className="label-text">Address</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Enter address"
+                value={formData.address}
+                onChange={(e) => handleFormChange('address', e.target.value)}
+                className="form-input"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <div className="form-group form-group-full">
+            <label className="form-label">
+              <span className="label-text">Client Type</span>
+              <span className="label-hint">(select all that apply)</span>
+            </label>
+            {renderClientTypeSelector(formData.clientTypes, (val) => toggleClientType(val, false))}
           </div>
 
           <div className="form-actions">
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="btn-primary"
-              disabled={isLoading || !newCustomerName.trim() || !newCustomerNameArabic.trim()}
+              disabled={isLoading || !formData.name.trim() || !formData.nameArabic.trim()}
             >
               {isLoading ? (
                 <>
@@ -471,11 +380,13 @@ const AddCustomer = () => {
                 </>
               )}
             </button>
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={handleClearForm}
               className="btn-secondary"
-              disabled={isLoading || (!newCustomerName && !newCustomerNameArabic)}
+              disabled={isLoading || (
+                !formData.name && !formData.nameArabic && !formData.phone && !formData.address && formData.clientTypes.length === 0
+              )}
             >
               Clear Form
             </button>
@@ -496,6 +407,17 @@ const AddCustomer = () => {
             </div>
           </div>
           <div className="table-header-right">
+            <select
+              className="filter-select"
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              disabled={isLoading}
+            >
+              <option value="">All Types</option>
+              {CLIENT_TYPES.map(type => (
+                <option key={type.value} value={type.value}>{type.label}</option>
+              ))}
+            </select>
             <div className="search-input-group">
               <input
                 type="text"
@@ -506,8 +428,8 @@ const AddCustomer = () => {
                 disabled={isLoading}
               />
               {searchTerm && (
-                <button 
-                  onClick={() => setSearchTerm('')} 
+                <button
+                  onClick={() => setSearchTerm('')}
                   className="search-clear"
                   disabled={isLoading}
                 >
@@ -515,7 +437,7 @@ const AddCustomer = () => {
                 </button>
               )}
             </div>
-            <button 
+            <button
               onClick={handleRefresh}
               className={`btn-secondary ${isLoading ? 'refreshing' : ''}`}
               disabled={isLoading}
@@ -525,130 +447,182 @@ const AddCustomer = () => {
           </div>
         </div>
 
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>
-                  <div className="table-header-cell">
-                    English Name
-                  </div>
-                </th>
-                <th>
-                  <div className="table-header-cell">
-                    Arabic Name
-                  </div>
-                </th>
-                <th>
-                  <div className="table-header-cell">
-                    <span className="header-icon"><IconSettings /></span>
-                    Actions
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && customers.length === 0 ? (
-                <tr>
-                  <td colSpan="3" className="loading-cell">
-                    <div className="loading-spinner"></div>
-                    Loading customers...
-                  </td>
-                </tr>
-              ) : filteredCustomers.length === 0 ? (
-                <tr>
-                  <td colSpan="3" className="empty-cell">
-                    <div className="empty-icon"><IconUsers /></div>
-                    {searchTerm ? 'No customers found' : 'No customers added yet'}
-                  </td>
-                </tr>
-              ) : (
-                filteredCustomers.map((customer) => (
-                  <tr key={customer.id} className={editingCustomer === customer.id ? 'editing-row' : ''}>
-                    <td>
-                      {editingCustomer === customer.id ? (
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          className="edit-input"
-                          disabled={isLoading}
-                        />
-                      ) : (
-                        <div className="customer-name-cell english">
-                          <div className="name-text">{customer.name || 'N/A'}</div>
-                          <div className="customer-id">ID: {customer.id.substring(0, 8)}...</div>
-                        </div>
+        <div className="customer-cards-list">
+          {isLoading && customers.length === 0 ? (
+            <div className="loading-cell">
+              <div className="loading-spinner"></div>
+              Loading customers...
+            </div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="empty-cell">
+              <div className="empty-icon"><IconUsers /></div>
+              {searchTerm || filterType ? 'No customers found' : 'No customers added yet'}
+            </div>
+          ) : (
+            filteredCustomers.map((customer) => {
+              const isExpanded = expandedCustomer === customer.id;
+              const isEditing = editingCustomer === customer.id;
+
+              return (
+                <div
+                  key={customer.id}
+                  className={`customer-card ${isExpanded ? 'expanded' : ''} ${isEditing ? 'editing' : ''}`}
+                >
+                  {/* Card Header - always visible */}
+                  <div
+                    className="customer-card-header"
+                    onClick={() => !isEditing && setExpandedCustomer(isExpanded ? null : customer.id)}
+                  >
+                    <div className="customer-card-avatar">
+                      <IconUser />
+                    </div>
+                    <div className="customer-card-summary">
+                      <div className="customer-card-name">
+                        <span className="name-en">{customer.name || 'N/A'}</span>
+                        <span className="name-ar" dir="rtl">{customer.nameArabic || ''}</span>
+                      </div>
+                      <div className="customer-card-meta">
+                        {customer.phone && <span className="meta-item phone-meta">{customer.phone}</span>}
+                        {renderClientTypeBadges(customer.clientTypes)}
+                      </div>
+                    </div>
+                    <div className="customer-card-actions">
+                      {!isEditing && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleStartEditing(customer); }}
+                            className="btn-small btn-primary"
+                            disabled={isLoading}
+                            title="Edit customer"
+                          >
+                            <IconEdit />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteCustomer(customer.id); }}
+                            className="btn-small btn-danger"
+                            disabled={isLoading}
+                            title="Delete customer"
+                          >
+                            <IconTrash />
+                          </button>
+                        </>
                       )}
-                    </td>
-                    <td>
-                      {editingCustomer === customer.id ? (
-                        <input
-                          type="text"
-                          value={editNameArabic}
-                          onChange={(e) => setEditNameArabic(e.target.value)}
-                          className="edit-input arabic-edit-input"
-                          dir="rtl"
-                          disabled={isLoading}
-                        />
-                      ) : (
-                        <div className="customer-name-cell arabic" dir="rtl">
-                          <div className="name-text">{customer.nameArabic || 'N/A'}</div>
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        {editingCustomer === customer.id ? (
-                          <>
-                            <button 
+                    </div>
+                  </div>
+
+                  {/* Expanded Details or Edit Form */}
+                  {isExpanded && (
+                    <div className="customer-card-body">
+                      {isEditing ? (
+                        <div className="edit-form">
+                          <div className="form-grid">
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">Name (English)</span>
+                                <span className="required-star">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={editData.name}
+                                onChange={(e) => handleEditChange('name', e.target.value)}
+                                className="form-input"
+                                disabled={isLoading}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">Name (Arabic)</span>
+                                <span className="required-star">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={editData.nameArabic}
+                                onChange={(e) => handleEditChange('nameArabic', e.target.value)}
+                                className="form-input arabic-input"
+                                dir="rtl"
+                                disabled={isLoading}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">Phone Number</span>
+                              </label>
+                              <input
+                                type="tel"
+                                value={editData.phone}
+                                onChange={(e) => handleEditChange('phone', e.target.value)}
+                                className="form-input"
+                                disabled={isLoading}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">Address</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={editData.address}
+                                onChange={(e) => handleEditChange('address', e.target.value)}
+                                className="form-input"
+                                disabled={isLoading}
+                              />
+                            </div>
+                          </div>
+                          <div className="form-group form-group-full">
+                            <label className="form-label">
+                              <span className="label-text">Client Type</span>
+                              <span className="label-hint">(select all that apply)</span>
+                            </label>
+                            {renderClientTypeSelector(editData.clientTypes, (val) => toggleClientType(val, true))}
+                          </div>
+                          <div className="edit-actions">
+                            <button
                               onClick={() => handleEditCustomer(customer.id)}
-                              className="btn-small btn-success"
-                              disabled={isLoading || !editName.trim() || !editNameArabic.trim()}
+                              className="btn-primary"
+                              disabled={isLoading || !editData.name.trim() || !editData.nameArabic.trim()}
                             >
-                              <IconSave /> Save
+                              <IconSave /> Save Changes
                             </button>
                             <button
                               onClick={handleCancelEdit}
-                              className="btn-small btn-secondary"
+                              className="btn-secondary"
                               disabled={isLoading}
                             >
                               <IconX /> Cancel
                             </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleStartEditing(customer)}
-                              className="btn-small btn-primary"
-                              disabled={isLoading}
-                              title="Edit customer"
-                            >
-                              <IconEdit /> Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCustomer(customer.id)}
-                              className="btn-small btn-danger"
-                              disabled={isLoading}
-                              title="Delete customer"
-                            >
-                              <IconTrash /> Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="customer-details">
+                          <div className="detail-grid">
+                            <div className="detail-item">
+                              <span className="detail-label">Phone</span>
+                              <span className="detail-value">{customer.phone || '—'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">Address</span>
+                              <span className="detail-value">{customer.address || '—'}</span>
+                            </div>
+                            <div className="detail-item detail-item-full">
+                              <span className="detail-label">Client Types</span>
+                              <div className="detail-value">{renderClientTypeBadges(customer.clientTypes)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
 
-        {searchTerm && filteredCustomers.length > 0 && (
+        {(searchTerm || filterType) && filteredCustomers.length > 0 && (
           <div className="search-info">
             Showing {filteredCustomers.length} of {customers.length} customers
             {searchTerm && ` for "${searchTerm}"`}
+            {filterType && ` (${getClientTypeLabel(filterType)})`}
           </div>
         )}
       </div>

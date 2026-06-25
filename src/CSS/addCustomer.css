@@ -1,9 +1,8 @@
 /* ============================================================
    ELSHEIKH — addCustomer.css
-   Inherits global styles. Only component-specific overrides.
+   Customer profiles — card-based layout with expandable details.
    ============================================================ */
 
-/* Customer-specific form layout */
 .customers-page {
   gap: 18px;
 }
@@ -25,6 +24,7 @@
   align-items: center;
 }
 
+/* Form layout */
 .customer-form .form-grid {
   padding: 20px;
   display: grid;
@@ -32,27 +32,275 @@
   gap: 16px;
 }
 
-/* Customer name display */
-.customer-name-cell.english .name-text {
-  font-weight: 500;
-  color: var(--text-heading);
+.form-group-full {
+  padding: 0 20px 16px;
 }
 
-.customer-name-cell.arabic .name-text {
-  font-family: var(--font);
-  direction: rtl;
-}
-
-/* Search info below table */
-.search-info {
-  padding: 10px 20px;
-  border-top: 1px solid var(--border-light);
-  font-size: 12.5px;
+.label-hint {
+  font-size: 12px;
   color: var(--text-secondary);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+/* Client Type Selector (chips) */
+.client-type-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1.5px solid var(--border-default);
+  border-radius: 20px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.type-chip:hover {
+  border-color: var(--brand-mid);
   background: var(--bg-subtle);
 }
 
-/* Loading indicator */
+.type-chip.selected {
+  border-color: var(--brand-mid);
+  background: var(--brand-mid);
+  color: #fff;
+}
+
+.type-chip-check {
+  width: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.type-chip-label {
+  font-weight: 500;
+}
+
+.type-chip-label-ar {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.type-chip.selected .type-chip-label-ar {
+  opacity: 0.9;
+}
+
+/* Client Type Badges (display) */
+.client-type-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.client-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-oil-filter { background: #fef3c7; color: #92400e; }
+.badge-maghsal { background: #dbeafe; color: #1e40af; }
+.badge-water-filling { background: #d1fae5; color: #065f46; }
+.badge-water-distribution { background: #e0e7ff; color: #3730a3; }
+.badge-pickup-water-distribution { background: #ede9fe; color: #5b21b6; }
+.badge-diesel-distribution { background: #fce7f3; color: #9d174d; }
+
+.no-type {
+  font-size: 12px;
+  color: var(--text-tertiary, #999);
+  font-style: italic;
+}
+
+/* Filter dropdown */
+.filter-select {
+  padding: 7px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 130px;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--brand-mid);
+}
+
+/* Customer Cards List */
+.customer-cards-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-card {
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.15s ease;
+}
+
+.customer-card:last-child {
+  border-bottom: none;
+}
+
+.customer-card:hover {
+  background: var(--bg-subtle);
+}
+
+.customer-card.expanded {
+  background: var(--bg-subtle);
+}
+
+.customer-card.editing {
+  background: var(--bg-subtle);
+}
+
+/* Card Header */
+.customer-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  cursor: pointer;
+  min-height: 56px;
+}
+
+.customer-card-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--brand-mid);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.customer-card-avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
+.customer-card-summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.customer-card-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.customer-card-name .name-en {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-heading);
+}
+
+.customer-card-name .name-ar {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.customer-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.phone-meta {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.customer-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Card Body (expanded) */
+.customer-card-body {
+  padding: 0 20px 16px;
+  padding-left: 72px;
+  animation: slideDown 0.15s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Detail Grid */
+.customer-details {
+  padding: 12px 0;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-item-full {
+  grid-column: 1 / -1;
+}
+
+.detail-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.detail-value {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+/* Edit form inside card */
+.edit-form .form-grid {
+  padding: 0;
+}
+
+.edit-form .form-group-full {
+  padding: 0;
+  margin-top: 4px;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Loading / Empty states */
 .loading-cell {
   text-align: center;
   padding: 40px 24px;
@@ -73,7 +321,6 @@
   display: inline-block;
 }
 
-/* Empty cell */
 .empty-cell {
   text-align: center;
   padding: 48px 24px;
@@ -87,9 +334,20 @@
   opacity: 0.4;
 }
 
+/* Search info */
+.search-info {
+  padding: 10px 20px;
+  border-top: 1px solid var(--border-light);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+
+/* Responsive */
 @media (max-width: 768px) {
   .customers-page .table-header-right {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .customers-page .search-input-group {
@@ -99,5 +357,37 @@
   .customers-page .search-input {
     width: 100%;
     min-width: 0;
+  }
+
+  .filter-select {
+    width: 100%;
+  }
+
+  .customer-card-header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .customer-card-body {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .customer-card-name {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .client-type-selector {
+    gap: 6px;
+  }
+
+  .type-chip {
+    padding: 6px 10px;
+    font-size: 12px;
   }
 }

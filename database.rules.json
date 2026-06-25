@@ -53,9 +53,12 @@
       ".read": "auth != null",
       ".write": "auth.token.admin === true",
       "$cid": {
-        "name":       { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
-        "nameArabic": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
-        "$other":     { ".validate": true }
+        "name":        { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+        "nameArabic":  { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "phone":       { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 30)" },
+        "address":     { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)" },
+        "clientTypes": { ".validate": "!newData.exists() || newData.hasChildren()" },
+        "$other":      { ".validate": true }
       }
     },
 

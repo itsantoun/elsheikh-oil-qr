@@ -41,6 +41,7 @@ const Maghsal = () => {
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('All');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
@@ -61,6 +62,7 @@ const Maghsal = () => {
   const [formCustomerId, setFormCustomerId] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formCategory, setFormCategory] = useState('');
+  const [formServiceCategory, setFormServiceCategory] = useState('');
   const [formQuantity, setFormQuantity] = useState('1');
   const [formServicePrice, setFormServicePrice] = useState('');
   const [formPaymentStatus, setFormPaymentStatus] = useState('Unpaid');
@@ -276,6 +278,10 @@ const Maghsal = () => {
       result = result.filter((e) => (e.category || '') === categoryFilter);
     }
 
+    if (serviceCategoryFilter !== 'All') {
+      result = result.filter((e) => (e.serviceCategory || '') === serviceCategoryFilter);
+    }
+
     if (paymentStatusFilter !== 'All') {
       result = result.filter((e) => (e.paymentStatus || '') === paymentStatusFilter);
     }
@@ -303,7 +309,7 @@ const Maghsal = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, categoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
+  }, [entries, customerFilter, categoryFilter, serviceCategoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
 
   const totals = useMemo(() => {
     const t = {
@@ -340,6 +346,7 @@ const Maghsal = () => {
   const clearAllFilters = () => {
     setCustomerFilter('');
     setCategoryFilter('All');
+    setServiceCategoryFilter('All');
     setDateFromFilter('');
     setDateToFilter('');
     setMonthFilter('');
@@ -377,6 +384,7 @@ const Maghsal = () => {
     setFormCustomerId('');
     setFormDate(formatDateForInput(new Date().toISOString()));
     setFormCategory('');
+    setFormServiceCategory(categories[0] || '');
     setFormQuantity('1');
     setFormServicePrice('');
     setFormPaymentStatus('Unpaid');
@@ -418,7 +426,7 @@ const Maghsal = () => {
         // Stock-in: product + positive quantity is enough.
         ? (formStockProductId && stockQuantityValue > 0)
         // Sale: same rules as before.
-        : (formCustomerId && formCategory && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
+        : (formCustomerId && formCategory && formServiceCategory && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
     )
   );
 
@@ -509,6 +517,7 @@ const Maghsal = () => {
         customerNameArabic: selectedCustomer.nameArabic || '',
         date: convertDateInputToISO(formDate),
         category: selectedProduct.name,
+        serviceCategory: formServiceCategory,
         price: servicePrice,
         servicePrice,
         goodsTotal: 0,
@@ -548,6 +557,7 @@ const Maghsal = () => {
     setFormDate(formatDateForInput(entry.date));
     const usedLine = Array.isArray(entry.consumablesUsed) && entry.consumablesUsed[0];
     setFormCategory(usedLine ? usedLine.productId : '');
+    setFormServiceCategory(entry.serviceCategory || categories[0] || '');
     setFormQuantity(usedLine ? String(toNumber(usedLine.quantity)) : '1');
     setFormServicePrice(String(toNumber(entry.servicePrice ?? entry.price)));
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
@@ -588,6 +598,7 @@ const Maghsal = () => {
         customerNameArabic: selectedCustomer.nameArabic || '',
         date: dateISO,
         category: selectedProduct.name,
+        serviceCategory: formServiceCategory,
         price: servicePrice,
         servicePrice,
         goodsTotal: 0,
@@ -713,7 +724,7 @@ const Maghsal = () => {
 
   const exportCSV = async () => {
     if (filtered.length === 0) { flash('No data to export.', 'error'); return; }
-    const headers = ['Date','Customer','Category','Payment Status','Service Price','Sold Total','Total','Employee','Remark','Used','Sold'];
+    const headers = ['Date','Customer','Service','Category','Payment Status','Service Price','Sold Total','Total','Employee','Remark','Used','Sold'];
     const rows = filtered.map((e) => {
       const m = entryTotals(e);
       const cons = (e.consumablesUsed || []).map((c) => `${c.name} x${c.quantity}`).join('; ');
@@ -721,6 +732,7 @@ const Maghsal = () => {
       return [
         formatDateTime(e.date),
         e.customerName || 'N/A',
+        e.serviceCategory || 'N/A',
         e.category || 'N/A',
         e.paymentStatus || 'N/A',
         m.servicePrice.toFixed(2),
@@ -843,6 +855,14 @@ const Maghsal = () => {
           </div>
 
           <div className="filter-group">
+            <label>Service</label>
+            <select value={serviceCategoryFilter} onChange={(e) => setServiceCategoryFilter(e.target.value)}>
+              <option value="All">All Services</option>
+              {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-group">
             <label>From Date</label>
             <input type="date" value={dateFromFilter} onChange={(e) => setDateFromFilter(e.target.value)} />
           </div>
@@ -893,12 +913,13 @@ const Maghsal = () => {
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || categoryFilter !== 'All' || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
+      {(customerFilter || categoryFilter !== 'All' || serviceCategoryFilter !== 'All' || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
             {categoryFilter !== 'All' && <span className="filter-tag">Product: {categoryFilter}<button onClick={() => setCategoryFilter('All')}><IconX /></button></span>}
+            {serviceCategoryFilter !== 'All' && <span className="filter-tag">Service: {serviceCategoryFilter}<button onClick={() => setServiceCategoryFilter('All')}><IconX /></button></span>}
             {dateFromFilter && <span className="filter-tag">From: {getDateDisplay(dateFromFilter)}<button onClick={() => setDateFromFilter('')}><IconX /></button></span>}
             {dateToFilter && <span className="filter-tag">To: {getDateDisplay(dateToFilter)}<button onClick={() => setDateToFilter('')}><IconX /></button></span>}
             {monthFilter && <span className="filter-tag">Month: {monthNames[parseInt(monthFilter, 10) - 1]}<button onClick={() => setMonthFilter('')}><IconX /></button></span>}
@@ -921,6 +942,7 @@ const Maghsal = () => {
               <tr>
                 <th>Date</th>
                 <th>Customer</th>
+                <th>Service</th>
                 <th>Product</th>
                 <th className="text-right">Qty</th>
                 <th className="text-right">Charges</th>
@@ -938,6 +960,7 @@ const Maghsal = () => {
                       <span className="date-display">{formatDateTime(e.date)}</span>
                     </td>
                     <td>{e.customerName || 'N/A'}</td>
+                    <td>{e.serviceCategory || '—'}</td>
                     <td>{e.category || 'Unspecified'}</td>
                     <td className="text-right">
                       {Array.isArray(e.consumablesUsed) && e.consumablesUsed[0]
@@ -1013,6 +1036,16 @@ const Maghsal = () => {
                     <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
                       <option value="">Select Product</option>
                       {catalogue.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {formPaymentStatus !== 'Stock' && (
+                  <div className="form-group">
+                    <label className="form-label">Service</label>
+                    <select value={formServiceCategory} onChange={(e) => setFormServiceCategory(e.target.value)} className="form-select" disabled={isSaving}>
+                      <option value="">Select Service</option>
+                      {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
                 )}
@@ -1155,6 +1188,7 @@ const Maghsal = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s-3)' }}>
                 <div><strong>Customer:</strong> {detailsEntry.customerName || '—'}</div>
                 <div><strong>Date:</strong> {formatDateTime(detailsEntry.date)}</div>
+                <div><strong>Service:</strong> {detailsEntry.serviceCategory || '—'}</div>
                 <div><strong>Product:</strong> {detailsEntry.category || '—'}</div>
                 <div><strong>Quantity:</strong> {Array.isArray(detailsEntry.consumablesUsed) && detailsEntry.consumablesUsed[0] ? toNumber(detailsEntry.consumablesUsed[0].quantity) : '—'}</div>
                 <div><strong>Status:</strong> {detailsEntry.paymentStatus || '—'}</div>

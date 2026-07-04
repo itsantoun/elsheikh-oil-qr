@@ -122,6 +122,14 @@
     "maghsalMigrations": {
       ".read": "auth.token.admin === true",
       ".write": "auth.token.admin === true"
+    },
+
+    "reports": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$id": {
+        ".validate": "newData.hasChildren() || !newData.exists()"
+      }
     }
   }
 }

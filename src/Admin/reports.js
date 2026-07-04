@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
-import { ref, onValue, get } from 'firebase/database';
+import { ref, onValue, get, push, remove } from 'firebase/database';
+import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import {
@@ -100,16 +101,25 @@ const GROUP_FILL = [233, 240, 250];
 
 // ── Component ──────────────────────────────────────────────────────────────────
 const Reports = () => {
+  const { user } = useContext(UserContext);
+
   const [maghsalEntries, setMaghsalEntries] = useState([]);
   const [soldItems, setSoldItems] = useState([]);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [reportHistory, setReportHistory] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [message, setMessage] = useState(null);
+
+  const [pendingSnapshot, setPendingSnapshot] = useState(null);
+  const [isSavingReport, setIsSavingReport] = useState(false);
+  const [viewingHistoryId, setViewingHistoryId] = useState(null);
+  const [deleteHistoryId, setDeleteHistoryId] = useState(null);
 
   // ── Data load ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -158,6 +168,39 @@ const Reports = () => {
     });
 
     return () => { unsubC(); unsubM(); unsubP(); unsubS(); };
+  }, []);
+
+  const applyHistorySnapshot = (snap) => {
+    const data = snap.exists() ? snap.val() : {};
+    const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
+    list.sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+    setReportHistory(list);
+  };
+
+  // Manual refetch — used right after saving a new report and by the Refresh
+  // button, so history is current even if the live listener ever drops
+  // (e.g. after a permission error, Firebase does not auto-resubscribe it).
+  const fetchReportHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const snap = await get(ref(database, 'reports'));
+      applyHistorySnapshot(snap);
+    } catch (err) {
+      console.error('Failed to refresh report history:', err);
+      flash(`Failed to refresh report history: ${err?.message || err}`);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // Saved report history — frozen snapshots created via the Generate flow.
+  useEffect(() => {
+    const historyRef = ref(database, 'reports');
+    const unsub = onValue(historyRef, applyHistorySnapshot, (err) => {
+      console.error('Failed to load report history:', err);
+      flash(`Failed to load report history: ${err?.message || err}`);
+    });
+    return () => unsub();
   }, []);
 
   const flash = (msg) => { setMessage(msg); setTimeout(() => setMessage(null), 3000); };
@@ -286,24 +329,91 @@ const Reports = () => {
     return parts.join('_');
   };
 
-  // ── PDF export (A5 landscape — shared receipt theme), grouped into sections ────
-  const exportPDF = async () => {
+  // ── Report History (frozen snapshots) ─────────────────────────────────────────
+  const viewedEntry = useMemo(
+    () => reportHistory.find((h) => h.id === viewingHistoryId) || null,
+    [reportHistory, viewingHistoryId]
+  );
+
+  const generateReport = () => {
     if (!selectedCustomer) { flash('Select a client first.'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.'); return; }
+    setViewingHistoryId(null);
+    setPendingSnapshot({
+      customerId: selectedCustomer.id,
+      customerName: selectedCustomer.name,
+      customerNameArabic: selectedCustomer.nameArabic || '',
+      typeFilter,
+      dateFrom,
+      dateTo,
+      rangeLabel: rangeLabel(),
+      recordCount,
+      sections: statement.sections,
+      paid: statement.paid,
+      unpaid: statement.unpaid,
+      grandTotal: statement.grandTotal,
+    });
+  };
 
+  const cancelGenerate = () => setPendingSnapshot(null);
+
+  const confirmGenerate = async () => {
+    if (!pendingSnapshot) return;
+    const snapshot = pendingSnapshot;
+    // Close the popup immediately — saving continues in the background.
+    setPendingSnapshot(null);
+    setIsSavingReport(true);
+    try {
+      await push(ref(database, 'reports'), {
+        ...snapshot,
+        generatedAt: new Date().toISOString(),
+        generatedBy: user?.name || user?.displayName || user?.email || 'Unknown',
+      });
+      await fetchReportHistory();
+      flash('Report saved to history.');
+    } catch (err) {
+      console.error('Failed to save report to history:', err);
+      flash(`Failed to save report: ${err?.message || err}`);
+    } finally {
+      setIsSavingReport(false);
+    }
+  };
+
+  const viewHistoryEntry = (id) => setViewingHistoryId(id);
+  const backToLiveView = () => setViewingHistoryId(null);
+
+  const requestDeleteHistory = (id) => setDeleteHistoryId(id);
+  const cancelDeleteHistory = () => setDeleteHistoryId(null);
+  const confirmDeleteHistory = async () => {
+    if (!deleteHistoryId) return;
+    const id = deleteHistoryId;
+    setDeleteHistoryId(null);
+    try {
+      await remove(ref(database, `reports/${id}`));
+      if (viewingHistoryId === id) setViewingHistoryId(null);
+      flash('Report removed from history.');
+    } catch (err) {
+      console.error('Failed to delete report:', err);
+      flash(`Failed to delete report: ${err?.message || err}`);
+    }
+  };
+
+  // ── PDF export (A5 landscape — shared receipt theme), grouped into sections ────
+  // Shared builder — used for both the live statement and a saved history snapshot.
+  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, recordCount: count, customerName, rangeLabel: range, filename }) => {
     const doc = createReceiptDoc(jsPDF);
-    const density = getReceiptDensity(recordCount + statement.sections.length);
+    const density = getReceiptDensity(count + sections.length);
     const startY = await addReceiptHeader(doc, {
       title: 'CLIENT REPORT',
       subtitle: 'Statement by Type',
       receiptNo: `RP-${Date.now().toString().slice(-8)}`,
-      client: selectedCustomer.name,
-      dateRange: rangeLabel(),
+      client: customerName,
+      dateRange: range,
     });
 
     const body = [];
     const groupRowIndexes = new Set();
-    statement.sections.forEach((g) => {
+    sections.forEach((g) => {
       groupRowIndexes.add(body.length);
       body.push([
         { content: g.section, colSpan: 3 },
@@ -336,17 +446,46 @@ const Reports = () => {
     });
 
     drawTotalsBlock(doc, {
-      paid: statement.paid,
-      unpaid: statement.unpaid,
-      grandTotal: statement.grandTotal,
+      paid,
+      unpaid,
+      grandTotal,
       startY: doc.lastAutoTable.finalY + 4,
       compact: density.totalsCompact,
     });
 
-    const filename = `${fileLabel()}.pdf`;
     const blob = doc.output('blob');
     const result = await saveBlobToExportFolder(blob, filename);
     if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
+  };
+
+  const exportPDF = async () => {
+    if (!selectedCustomer) { flash('Select a client first.'); return; }
+    if (recordCount === 0) { flash('No activity for this client in range.'); return; }
+    await buildAndSaveStatementPDF({
+      sections: statement.sections,
+      paid: statement.paid,
+      unpaid: statement.unpaid,
+      grandTotal: statement.grandTotal,
+      recordCount,
+      customerName: selectedCustomer.name,
+      rangeLabel: rangeLabel(),
+      filename: `${fileLabel()}.pdf`,
+    });
+  };
+
+  const exportHistoryPDF = async (entry) => {
+    if (!entry) return;
+    const parts = ['Client_Report', safeName(entry.customerName), entry.dateFrom || entry.dateTo ? `${entry.dateFrom || 'start'}_to_${entry.dateTo || 'now'}` : 'all_time'];
+    await buildAndSaveStatementPDF({
+      sections: entry.sections,
+      paid: entry.paid,
+      unpaid: entry.unpaid,
+      grandTotal: entry.grandTotal,
+      recordCount: entry.recordCount,
+      customerName: entry.customerName,
+      rangeLabel: entry.rangeLabel,
+      filename: `${parts.join('_')}.pdf`,
+    });
   };
 
   // ── CSV export ────────────────────────────────────────────────────────────────
@@ -395,7 +534,8 @@ const Reports = () => {
         </div>
         <div className="page-shell-header-actions">
           <button className="btn-secondary" onClick={exportCSV}>Export CSV</button>
-          <button className="btn-primary" onClick={exportPDF}>Export PDF</button>
+          <button className="btn-secondary" onClick={exportPDF}>Export PDF</button>
+          <button className="btn-primary" onClick={generateReport}>Generate Report</button>
         </div>
       </div>
 
@@ -501,6 +641,155 @@ const Reports = () => {
           </>
         )}
       </div>
+
+      {/* Report History — frozen snapshots saved via Generate Report */}
+      <div className="ui-card">
+        <div className="ui-card-header">
+          <h2 className="ui-card-title">Report History</h2>
+          <span className="ui-card-subtle">{reportHistory.length} saved report(s)</span>
+          <button className="btn-secondary" onClick={fetchReportHistory} disabled={isLoadingHistory}>
+            {isLoadingHistory ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+
+        {reportHistory.length === 0 ? (
+          <div className="empty-state-card">No reports generated yet. Use "Generate Report" above to save one.</div>
+        ) : (
+          <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Generated</th>
+                  <th>Client</th>
+                  <th>Type</th>
+                  <th>Range</th>
+                  <th className="text-right">Total</th>
+                  <th>By</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportHistory.map((h) => (
+                  <tr key={h.id} style={h.id === viewingHistoryId ? { background: 'var(--surface-2, #e9f0fa)' } : undefined}>
+                    <td>{formatDate(h.generatedAt)}</td>
+                    <td>{h.customerName}</td>
+                    <td>{h.typeFilter}</td>
+                    <td>{h.rangeLabel}</td>
+                    <td className="text-right">${formatCurrency(h.grandTotal)}</td>
+                    <td>{h.generatedBy}</td>
+                    <td>
+                      <button className="btn-secondary" onClick={() => viewHistoryEntry(h.id)}>View</button>{' '}
+                      <button className="btn-danger" onClick={() => requestDeleteHistory(h.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* View saved report popup */}
+      {viewedEntry && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '820px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Saved Report — {viewedEntry.customerName}</h3>
+              <button className="modal-close" onClick={backToLiveView}>×</button>
+            </div>
+            <div className="modal-content">
+              <span className="ui-card-subtle">
+                Type: {viewedEntry.typeFilter} · Range: {viewedEntry.rangeLabel} · {viewedEntry.recordCount} record(s)
+                · Generated {formatDate(viewedEntry.generatedAt)} by {viewedEntry.generatedBy}
+              </span>
+
+              <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Item</th>
+                      <th>Status</th>
+                      <th className="text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewedEntry.sections.map((g) => (
+                      <React.Fragment key={g.section}>
+                        <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
+                          <td colSpan={3} style={{ fontWeight: 700 }}>{g.section}</td>
+                          <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
+                        </tr>
+                        {g.rows.map((r) => (
+                          <tr key={r.key}>
+                            <td>{formatDate(r.date)}</td>
+                            <td>{r.item}</td>
+                            <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
+                            <td className="text-right">${formatCurrency(r.total)}</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="missing-item-summary">
+                <span style={{ color: 'var(--green)' }}>Paid: ${formatCurrency(viewedEntry.paid)}</span>
+                <span style={{ color: 'var(--red)' }}>Unpaid: ${formatCurrency(viewedEntry.unpaid)}</span>
+                <span style={{ color: 'var(--brand)', fontWeight: 700 }}>Grand Total: ${formatCurrency(viewedEntry.grandTotal)}</span>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-primary" onClick={() => exportHistoryPDF(viewedEntry)}>Export PDF</button>
+              <button className="btn-secondary" onClick={backToLiveView}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Report confirmation */}
+      {pendingSnapshot && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title">Save this report to history?</h3>
+            </div>
+            <div className="modal-content">
+              <p>
+                Client: <strong>{pendingSnapshot.customerName}</strong><br />
+                Type: {pendingSnapshot.typeFilter} · Range: {pendingSnapshot.rangeLabel}<br />
+                {pendingSnapshot.recordCount} record(s) · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
+              </p>
+              <p>Confirming will save a snapshot to Report History so you can find it again later without regenerating it.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-primary" onClick={confirmGenerate} disabled={isSavingReport}>
+                {isSavingReport ? 'Saving…' : 'OK'}
+              </button>
+              <button className="btn-secondary" onClick={cancelGenerate} disabled={isSavingReport}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete report-history confirmation */}
+      {deleteHistoryId && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title">Delete this saved report?</h3>
+            </div>
+            <div className="modal-content">
+              <p>This removes it from Report History. This action cannot be undone.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-danger" onClick={confirmDeleteHistory}>Yes, Delete</button>
+              <button className="btn-secondary" onClick={cancelDeleteHistory}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

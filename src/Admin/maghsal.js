@@ -426,7 +426,7 @@ const Maghsal = () => {
         // Stock-in: product + positive quantity is enough.
         ? (formStockProductId && stockQuantityValue > 0)
         // Sale: same rules as before.
-        : (formCustomerId && formCategory && formServiceCategory && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
+        : (formCustomerId && formServiceCategory && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
     )
   );
 
@@ -492,8 +492,8 @@ const Maghsal = () => {
       return;
     }
 
-    const selectedProduct = getProduct(formCategory);
-    if (!selectedProduct) {
+    const selectedProduct = formCategory ? getProduct(formCategory) : null;
+    if (formCategory && !selectedProduct) {
       flash('Selected product is no longer available.', 'error');
       return;
     }
@@ -503,20 +503,20 @@ const Maghsal = () => {
       const servicePrice = toNumber(formServicePrice);
       const qty = toNumber(formQuantity);
 
-      const consumablesUsed = [{
+      const consumablesUsed = selectedProduct ? [{
         productId: selectedProduct.id,
         name: selectedProduct.name || 'Unknown',
         quantity: qty,
         unitCost: toNumber(selectedProduct.itemCost),
         purchasingPrice: toNumber(selectedProduct.purchasingPrice),
-      }];
+      }] : [];
 
       const newEntry = {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name || '',
         customerNameArabic: selectedCustomer.nameArabic || '',
         date: convertDateInputToISO(formDate),
-        category: selectedProduct.name,
+        category: selectedProduct ? selectedProduct.name : '',
         serviceCategory: formServiceCategory,
         price: servicePrice,
         servicePrice,
@@ -573,8 +573,8 @@ const Maghsal = () => {
     const selectedCustomer = customers.find((c) => c.id === formCustomerId);
     if (!selectedCustomer) { flash('Selected customer is no longer available.', 'error'); return; }
 
-    const selectedProduct = getProduct(formCategory);
-    if (!selectedProduct) { flash('Selected product is no longer available.', 'error'); return; }
+    const selectedProduct = formCategory ? getProduct(formCategory) : null;
+    if (formCategory && !selectedProduct) { flash('Selected product is no longer available.', 'error'); return; }
 
     setIsSaving(true);
     try {
@@ -584,20 +584,20 @@ const Maghsal = () => {
         ? originalEntry.date
         : convertDateInputToISO(formDate);
 
-      const consumablesUsed = [{
+      const consumablesUsed = selectedProduct ? [{
         productId: selectedProduct.id,
         name: selectedProduct.name || 'Unknown',
         quantity: qty,
         unitCost: toNumber(selectedProduct.itemCost),
         purchasingPrice: toNumber(selectedProduct.purchasingPrice),
-      }];
+      }] : [];
 
       await update(ref(database, `maghsalEntries/${editingEntryId}`), {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name || '',
         customerNameArabic: selectedCustomer.nameArabic || '',
         date: dateISO,
-        category: selectedProduct.name,
+        category: selectedProduct ? selectedProduct.name : '',
         serviceCategory: formServiceCategory,
         price: servicePrice,
         servicePrice,
@@ -1032,9 +1032,9 @@ const Maghsal = () => {
 
                 {formPaymentStatus !== 'Stock' && (
                   <div className="form-group">
-                    <label className="form-label">Product</label>
+                    <label className="form-label">Product (optional)</label>
                     <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
-                      <option value="">Select Product</option>
+                      <option value="">No product</option>
                       {catalogue.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
                     </select>
                   </div>

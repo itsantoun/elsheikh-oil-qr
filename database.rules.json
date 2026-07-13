@@ -4,11 +4,11 @@
     ".write": false,
 
     "users": {
-      ".read": "auth.token.admin === true",
+      ".read": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
       ".indexOn": ["email"],
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true)",
-        ".write": "auth.token.admin === true",
+        ".read": "auth != null && (auth.uid === $uid || auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb')",
+        ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
         ".validate": "newData.hasChildren(['email','name','role','status'])",
         "email":     { ".validate": "newData.isString() && newData.val().length <= 254" },
         "name":      { ".validate": "newData.isString() && newData.val().length <= 120" },
@@ -22,12 +22,12 @@
 
     "products": {
       ".read": "auth != null",
-      ".write": "auth.token.admin === true",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
       "$pid": {
         ".validate": "newData.hasChildren(['name','quantity']) || !newData.exists()",
         "name":     { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
         "quantity": {
-          ".write": "auth.token.admin === true || (auth != null && newData.exists())",
+          ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb' || (auth != null && newData.exists())",
           ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000"
         },
         "price":    { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
@@ -37,7 +37,7 @@
         "itemType": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
         "unit":     { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
         "updatedAt": {
-          ".write": "auth.token.admin === true || (auth != null && newData.exists())",
+          ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb' || (auth != null && newData.exists())",
           ".validate": "newData.isString() && newData.val().length <= 40"
         },
         "$other":   { ".validate": true }
@@ -46,12 +46,12 @@
 
     "heldProducts": {
       ".read": "auth != null",
-      ".write": "auth.token.admin === true"
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'"
     },
 
     "customers": {
       ".read": "auth != null",
-      ".write": "auth.token.admin === true",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
       "$cid": {
         "name":        { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
         "nameArabic":  { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
@@ -63,13 +63,13 @@
     },
 
     "productArchives": {
-      ".read": "auth.token.admin === true",
-      ".write": "auth.token.admin === true"
+      ".read": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'"
     },
 
     "stockArchives": {
-      ".read": "auth.token.admin === true",
-      ".write": "auth.token.admin === true"
+      ".read": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'"
     },
 
     "stockChecks": {
@@ -112,7 +112,7 @@
 
     "settings": {
       ".read": "auth != null",
-      ".write": "auth.token.admin === true",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
       "maghsalCategories": {
         ".validate": "newData.hasChildren() || !newData.exists()",
         "$idx": { ".validate": "newData.isString() && newData.val().length <= 80" }
@@ -120,8 +120,8 @@
     },
 
     "maghsalMigrations": {
-      ".read": "auth.token.admin === true",
-      ".write": "auth.token.admin === true"
+      ".read": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'"
     },
 
     "reports": {

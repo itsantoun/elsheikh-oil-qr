@@ -38,6 +38,11 @@ const Maghsal = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
 
+  // View tab: 'all' keeps Used entries out of the main list entirely; 'used'
+  // shows only Used entries. Keeps Used items from being mixed into the
+  // regular Items Used list.
+  const [viewMode, setViewMode] = useState('all');
+
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -217,6 +222,17 @@ const Maghsal = () => {
   );
   const consumables = catalogue;
 
+  // Product (optional) picker on the Add/Edit Used Item form only offers
+  // Maghsal-typed products, not the whole catalogue.
+  const maghsalProducts = useMemo(
+    () => catalogue.filter((p) => {
+      const scope = String(p.scope || '').toLowerCase();
+      const type = String(p.productType || '').toLowerCase();
+      return scope.includes('maghsal') || type.includes('maghsal');
+    }),
+    [catalogue],
+  );
+
   const getProduct = (id) => products.find((p) => p.id === id);
 
   // ── Entry totals helper ─────────────────────────
@@ -264,7 +280,9 @@ const Maghsal = () => {
 
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
-    let result = entries;
+    let result = viewMode === 'used'
+      ? entries.filter((e) => e.paymentStatus === 'Used')
+      : entries.filter((e) => e.paymentStatus !== 'Used');
 
     if (customerFilter) {
       const cf = customerFilter.toLowerCase();
@@ -309,7 +327,7 @@ const Maghsal = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, categoryFilter, serviceCategoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
+  }, [entries, viewMode, customerFilter, categoryFilter, serviceCategoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
 
   const totals = useMemo(() => {
     const t = {
@@ -384,7 +402,7 @@ const Maghsal = () => {
     setFormCustomerId('');
     setFormDate(formatDateForInput(new Date().toISOString()));
     setFormCategory('');
-    setFormServiceCategory(categories[0] || '');
+    setFormServiceCategory('');
     setFormQuantity('1');
     setFormServicePrice('');
     setFormPaymentStatus('Unpaid');
@@ -426,7 +444,7 @@ const Maghsal = () => {
         // Stock-in: product + positive quantity is enough.
         ? (formStockProductId && stockQuantityValue > 0)
         // Sale: same rules as before.
-        : (formCustomerId && formServiceCategory && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
+        : (formCustomerId && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
     )
   );
 
@@ -557,7 +575,7 @@ const Maghsal = () => {
     setFormDate(formatDateForInput(entry.date));
     const usedLine = Array.isArray(entry.consumablesUsed) && entry.consumablesUsed[0];
     setFormCategory(usedLine ? usedLine.productId : '');
-    setFormServiceCategory(entry.serviceCategory || categories[0] || '');
+    setFormServiceCategory(entry.serviceCategory || '');
     setFormQuantity(usedLine ? String(toNumber(usedLine.quantity)) : '1');
     setFormServicePrice(String(toNumber(entry.servicePrice ?? entry.price)));
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
@@ -886,7 +904,6 @@ const Maghsal = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
-              <option value="Used">Used</option>
             </select>
           </div>
 
@@ -908,6 +925,18 @@ const Maghsal = () => {
         </div>
 
         <div className="filter-actions">
+          <button
+            className={viewMode === 'all' ? 'btn-primary' : 'btn-secondary'}
+            onClick={() => setViewMode('all')}
+          >
+            All Items
+          </button>
+          <button
+            className={viewMode === 'used' ? 'btn-primary' : 'btn-secondary'}
+            onClick={() => setViewMode('used')}
+          >
+            Used
+          </button>
           <button className="btn-secondary" onClick={clearAllFilters}>Clear Filters</button>
         </div>
       </div>
@@ -1035,7 +1064,7 @@ const Maghsal = () => {
                     <label className="form-label">Product (optional)</label>
                     <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
                       <option value="">No product</option>
-                      {catalogue.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
+                      {maghsalProducts.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
                     </select>
                   </div>
                 )}
@@ -1044,7 +1073,7 @@ const Maghsal = () => {
                   <div className="form-group">
                     <label className="form-label">Service</label>
                     <select value={formServiceCategory} onChange={(e) => setFormServiceCategory(e.target.value)} className="form-select" disabled={isSaving}>
-                      <option value="">Select Service</option>
+                      <option value="">Product</option>
                       {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>

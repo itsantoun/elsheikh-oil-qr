@@ -123,7 +123,7 @@ const RemainingProducts = () => {
       const value = String(product?.scope || '').toLowerCase();
       const type = String(product?.productType || '').toLowerCase();
       if (value === 'other') return 'other';
-      if (value.startsWith('maghsal') || type === 'maghsal') return 'maghsal';
+      if (value.includes('maghsal') || type.includes('maghsal')) return 'maghsal';
       if (value === 'filter' || type.includes('filter')) return 'filter';
       if (value === 'oil' || type.includes('oil')) return 'oil';
       return type ? 'other' : 'oil';

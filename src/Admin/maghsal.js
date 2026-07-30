@@ -6,6 +6,8 @@ import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus } from '../utils/icons';
+import PageHeader from '../Components/PageHeader';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import {
   addReceiptHeader,
@@ -89,8 +91,7 @@ const Maghsal = () => {
   const [editingEntryId, setEditingEntryId] = useState(null);
 
   // Delete
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
+  const [confirm, confirmDialog] = useConfirmDialog();
 
   // ── Format helpers ──────────────────────────────
   const formatDate = (d) => {
@@ -637,25 +638,20 @@ const Maghsal = () => {
   };
 
   // ── Delete ───────────────────────
-  const requestDelete = (id) => {
-    setDeleteId(id);
-    setShowConfirm(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteId) return;
+  const requestDelete = async (id) => {
+    const confirmed = await confirm({
+      title: 'Delete Entry?',
+      message: 'Deleting this entry removes it from Maghsal records. Product stock quantity will not be changed automatically. This action cannot be undone.',
+    });
+    if (!confirmed) return;
     try {
-      await update(ref(database), { [`maghsalEntries/${deleteId}`]: null });
-      setShowConfirm(false);
-      setDeleteId(null);
+      await update(ref(database), { [`maghsalEntries/${id}`]: null });
       flash('Entry deleted.');
     } catch (err) {
       console.error(err);
       flash('Failed to delete entry.', 'error');
     }
   };
-
-  const cancelDeleteAction = () => { setShowConfirm(false); setDeleteId(null); };
 
   // ── Export ───────────────────────────────────────
   const getDateDisplay = (v) => {
@@ -775,42 +771,41 @@ const Maghsal = () => {
   // ── Render ───────────────────────────────────────
   return (
     <div className="page-shell maghsal-container">
-      {/* Header */}
-      <div className="page-shell-header">
-        <div className="page-shell-header-left">
-          <h1 className="page-shell-header-title">Items Used</h1>
-          <p className="page-shell-header-subtitle">Maghsal.</p>
-        </div>
-        <div className="page-shell-header-actions">
-          <button className="btn-secondary" onClick={handleRefresh} disabled={isRefreshing}>
-            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-          <div style={{ position: 'relative' }}>
-            <button className="btn-secondary" onClick={() => setShowExportDropdown((v) => !v)}>
-              Export ▾
+      <PageHeader
+        title="Items Used"
+        subtitle="Maghsal."
+        actions={(
+          <>
+            <button className="btn-secondary" onClick={handleRefresh} disabled={isRefreshing}>
+              <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
-            {showExportDropdown && (
-              <div style={{
-                position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                background: '#fff', border: '1px solid var(--border-light)', borderRadius: 'var(--r-md)',
-                boxShadow: 'var(--shadow-md)', minWidth: 180, marginTop: 4,
-              }}>
-                <button
-                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { exportCSV(); setShowExportDropdown(false); }}
-                >Full Export (CSV)</button>
-                <button
-                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { exportPDF(); setShowExportDropdown(false); }}
-                >Client Export (PDF)</button>
-              </div>
-            )}
-          </div>
-          <button className="btn-primary" onClick={openAddModal}>
-            <IconPlus /> Add Used Item
-          </button>
-        </div>
-      </div>
+            <div style={{ position: 'relative' }}>
+              <button className="btn-secondary" onClick={() => setShowExportDropdown((v) => !v)}>
+                Export ▾
+              </button>
+              {showExportDropdown && (
+                <div style={{
+                  position: 'absolute', top: '100%', right: 0, zIndex: 100,
+                  background: '#fff', border: '1px solid var(--border-light)', borderRadius: 'var(--r-md)',
+                  boxShadow: 'var(--shadow-md)', minWidth: 180, marginTop: 4,
+                }}>
+                  <button
+                    style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                    onClick={() => { exportCSV(); setShowExportDropdown(false); }}
+                  >Full Export (CSV)</button>
+                  <button
+                    style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                    onClick={() => { exportPDF(); setShowExportDropdown(false); }}
+                  >Client Export (PDF)</button>
+                </div>
+              )}
+            </div>
+            <button className="btn-primary" onClick={openAddModal}>
+              <IconPlus /> Add Used Item
+            </button>
+          </>
+        )}
+      />
 
       {successMessage && <div className="success-message">{successMessage}</div>}
       {errorMessage && <div className="error-message">{errorMessage}</div>}
@@ -1242,23 +1237,7 @@ const Maghsal = () => {
         </div>
       )}
 
-      {/* Delete Confirm */}
-      {showConfirm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3 className="modal-title">Confirm Deletion</h3>
-            </div>
-            <div className="modal-content">
-              <p>Deleting this entry removes it from Maghsal records. Product stock quantity will not be changed automatically. This action cannot be undone.</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-danger" onClick={confirmDelete}>Yes, Delete</button>
-              <button className="btn-secondary" onClick={cancelDeleteAction}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmDialog}
     </div>
   );
 };

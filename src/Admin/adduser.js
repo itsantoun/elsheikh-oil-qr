@@ -6,6 +6,8 @@ import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth'
 import '../CSS/addUser.css';
 import { IconCheck, IconAlertTriangle, IconUser, IconUsers, IconPlus, IconRefresh, IconMail, IconSettings, IconTrash } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import PageHeader from '../Components/PageHeader';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
 import {
   isValidEmail,
   isValidName,
@@ -24,6 +26,7 @@ const AddUser = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [roleDrafts, setRoleDrafts] = useState({});
+  const [confirm, confirmDialog] = useConfirmDialog();
 
   useExpiryNotifications({ successMessage, errorMessage });
 
@@ -144,7 +147,13 @@ const AddUser = () => {
 
     const nextStatus = normalizeStatus(targetUser.status) === 'active' ? 'inactive' : 'active';
     const actionLabel = nextStatus === 'inactive' ? 'deactivate' : 'reactivate';
-    if (!window.confirm(`Are you sure you want to ${actionLabel} this user profile?`)) {
+    const confirmed = await confirm({
+      title: nextStatus === 'inactive' ? 'Deactivate User?' : 'Reactivate User?',
+      message: `Are you sure you want to ${actionLabel} this user profile?`,
+      confirmLabel: nextStatus === 'inactive' ? 'Yes, Deactivate' : 'Yes, Reactivate',
+      danger: nextStatus === 'inactive',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -203,11 +212,7 @@ const AddUser = () => {
 
   return (
     <div className="admin-container">
-      {/* Page Header */}
-      <div className="page-header">
-        <h1 className="page-title">User Management</h1>
-        <p className="page-subtitle">Add and manage system users</p>
-      </div>
+      <PageHeader title="User Management" subtitle="Add and manage system users" />
 
       {/* Messages */}
       {successMessage && (
@@ -428,6 +433,7 @@ const AddUser = () => {
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 };

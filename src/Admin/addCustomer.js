@@ -4,6 +4,8 @@ import { ref, get, set, update, remove, push } from 'firebase/database';
 import '../CSS/addCustomer.css';
 import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash, IconUser } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import PageHeader from '../Components/PageHeader';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
 
 const CLIENT_TYPES = [
   { value: 'oil-filter', label: 'Oil & Filter', labelAr: 'زيت وفلتر' },
@@ -41,6 +43,7 @@ const AddCustomer = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [expandedCustomer, setExpandedCustomer] = useState(null);
   const [filterType, setFilterType] = useState('');
+  const [confirm, confirmDialog] = useConfirmDialog();
 
   useExpiryNotifications({ successMessage, errorMessage });
 
@@ -177,8 +180,11 @@ const AddCustomer = () => {
     const customer = customers.find(c => c.id === id);
     if (!customer) return;
 
-    const confirmDelete = window.confirm(`Are you sure you want to delete customer "${customer.name}"?`);
-    if (!confirmDelete) return;
+    const confirmed = await confirm({
+      title: 'Delete Customer?',
+      message: `Are you sure you want to delete customer "${customer.name}"?`,
+    });
+    if (!confirmed) return;
 
     try {
       setIsLoading(true);
@@ -260,11 +266,7 @@ const AddCustomer = () => {
 
   return (
     <div className="page-shell customers-page">
-      {/* Page Header */}
-      <div className="page-header">
-        <h1 className="page-title">Customer Management</h1>
-        <p className="page-subtitle">Manage customer profiles and information</p>
-      </div>
+      <PageHeader title="Customer Management" subtitle="Manage customer profiles and information" />
 
       {/* Messages */}
       {successMessage && (
@@ -626,6 +628,7 @@ const AddCustomer = () => {
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 };

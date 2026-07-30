@@ -479,6 +479,8 @@ import { ref, get, update, remove } from 'firebase/database';
 import '../CSS/transactions.css';
 import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, IconTrash, IconBarChart } from '../utils/icons';
 import { useNotifications } from '../Auth/notificationContext';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
+import PageHeader from '../Components/PageHeader';
 
 const Transactions = () => {
   const { notifySuccess, notifyError } = useNotifications();
@@ -495,8 +497,7 @@ const Transactions = () => {
     totalPurchaseCost: 0,
     totalProfit: 0,
   });
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState(null);
+  const [confirm, confirmDialog] = useConfirmDialog();
 
   // Format date and time to DD-MM-YYYY HH:MM AM/PM
   const formatDateTime = (dateString) => {
@@ -875,24 +876,31 @@ const Transactions = () => {
   };
 
   // Handle delete confirmation
-  const handleDeleteClick = (id) => {
-    setItemToDelete(id);
-    setShowDeleteConfirm(true);
-  };
-
-  // Handle deleting a transaction
-  const handleDelete = async () => {
-    if (itemToDelete) {
-      try {
-        await remove(ref(database, `transactions/${itemToDelete}`));
-        setTransactions(prev => prev.filter(t => t.id !== itemToDelete));
-        setShowDeleteConfirm(false);
-        setItemToDelete(null);
-        notifySuccess('Transaction deleted.');
-      } catch (error) {
-        console.error('Error deleting transaction:', error);
-        notifyError('Failed to delete transaction.');
-      }
+  const handleDeleteClick = async (id) => {
+    const item = transactions.find(t => t.id === id);
+    const confirmed = await confirm({
+      title: 'Confirm Deletion',
+      message: (
+        <>
+          <p>Are you sure you want to delete this transaction? This action cannot be undone.</p>
+          {item && (
+            <div className="delete-preview">
+              <p><strong>Product:</strong> {item.productName}</p>
+              <p><strong>Date:</strong> {formatDateTime(item.dateScanned)}</p>
+              <p><strong>Amount:</strong> ${getTransactionMetrics(item).totalSellPrice.toFixed(2)}</p>
+            </div>
+          )}
+        </>
+      ),
+    });
+    if (!confirmed) return;
+    try {
+      await remove(ref(database, `transactions/${id}`));
+      setTransactions(prev => prev.filter(t => t.id !== id));
+      notifySuccess('Transaction deleted.');
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      notifyError('Failed to delete transaction.');
     }
   };
 
@@ -913,19 +921,18 @@ const Transactions = () => {
 
   return (
     <div className="transactions-container">
-      {/* Header */}
-      <div className="header-section">
-        <h1 className="page-title">Transactions</h1>
-        <div className="header-actions">
-          <button 
-            onClick={fetchData} 
-            className={`refresh-button ${isRefreshing ? 'refreshing' : ''}`}
+      <PageHeader
+        title="Transactions"
+        actions={(
+          <button
+            onClick={fetchData}
+            className={`btn-secondary ${isRefreshing ? 'refreshing' : ''}`}
             disabled={isRefreshing}
           >
-            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+            <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </button>
-        </div>
-      </div>
+        )}
+      />
 
       {/* Filters Section */}
       <div className="filters-section">
@@ -1190,37 +1197,7 @@ const Transactions = () => {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3>Confirm Deletion</h3>
-              <button className="modal-close" onClick={() => setShowDeleteConfirm(false)}>
-                <IconX />
-              </button>
-            </div>
-            <div className="modal-content">
-              <p>Are you sure you want to delete this transaction? This action cannot be undone.</p>
-              {itemToDelete && transactions.find(t => t.id === itemToDelete) && (
-                <div className="delete-preview">
-                  <p><strong>Product:</strong> {transactions.find(t => t.id === itemToDelete).productName}</p>
-                  <p><strong>Date:</strong> {formatDateTime(transactions.find(t => t.id === itemToDelete).dateScanned)}</p>
-                  <p><strong>Amount:</strong> ${getTransactionMetrics(transactions.find(t => t.id === itemToDelete)).totalSellPrice.toFixed(2)}</p>
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-danger" onClick={handleDelete}>
-                Yes, Delete
-              </button>
-              <button className="btn-secondary" onClick={() => setShowDeleteConfirm(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmDialog}
     </div>
   );
 };

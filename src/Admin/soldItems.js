@@ -7,6 +7,7 @@ import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
 import { IconRefresh, IconX, IconPlus } from '../utils/icons';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import {
@@ -62,9 +63,8 @@ const SoldItems = () => {
   const [newProductType, setNewProductType] = useState('');
   const [newQuantity, setNewQuantity] = useState('');
 
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [itemIdToDelete, setItemIdToDelete] = useState(null);
-  
+  const [confirm, confirmDialog] = useConfirmDialog();
+
   const [checkedItems, setCheckedItems] = useState(() => {
     const saved = localStorage.getItem('checkedSoldItems');
     return saved ? JSON.parse(saved) : [];
@@ -506,7 +506,6 @@ const SoldItems = () => {
         localStorage.setItem('checkedSoldItems', JSON.stringify(nextCheckedItems));
         return nextCheckedItems;
       });
-      setShowConfirmation(false);
     } catch (error) {
       console.error('Error deleting item:', error);
       setErrorMessage('Failed to delete item.');
@@ -514,20 +513,15 @@ const SoldItems = () => {
     }
   };
 
-  const handleDeleteConfirmation = (itemId) => {
-    setItemIdToDelete(itemId);
-    setShowConfirmation(true);
-  };
-
-  const confirmDelete = () => {
-    if (itemIdToDelete) {
-      handleDelete(itemIdToDelete);
-    }
-  };
-
-  const cancelDelete = () => {
-    setShowConfirmation(false);
-    setItemIdToDelete(null);
+  const handleDeleteConfirmation = async (itemId) => {
+    const item = soldItems.find((i) => i.id === itemId);
+    const dateLabel = item ? formatDateTime(item.dateScanned) : 'N/A';
+    const confirmed = await confirm({
+      title: 'Delete Sold Item?',
+      message: `Are you sure you want to delete this item (date: ${dateLabel})? This action cannot be undone.`,
+    });
+    if (!confirmed) return;
+    handleDelete(itemId);
   };
 
   // Refresh data from database
@@ -1486,32 +1480,7 @@ const SoldItems = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showConfirmation && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3>Confirm Deletion</h3>
-              <div className="confirmation-date">
-                Item date: {itemIdToDelete && soldItems.find(item => item.id === itemIdToDelete) 
-                  ? formatDateTime(soldItems.find(item => item.id === itemIdToDelete).dateScanned) 
-                  : 'N/A'}
-              </div>
-            </div>
-            <div className="modal-content">
-              <p>Are you sure you want to delete this item? This action cannot be undone.</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-danger" onClick={confirmDelete}>
-                Yes, Delete
-              </button>
-              <button className="btn-secondary" onClick={cancelDelete}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmDialog}
     </div>
   );
 };

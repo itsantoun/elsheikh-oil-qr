@@ -4,8 +4,10 @@ import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
 
 const FetchProducts = () => {
+  const [confirm, confirmDialog] = useConfirmDialog();
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -315,9 +317,10 @@ const FetchProducts = () => {
   };
 
   const handleDeleteProduct = async (id) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete the product "${id}"?`
-    );
+    const confirmed = await confirm({
+      title: 'Delete Product?',
+      message: `Are you sure you want to delete the product "${id}"?`,
+    });
     if (!confirmed) return;
 
     const productRef = ref(database, `products/${id}`);
@@ -336,9 +339,12 @@ const FetchProducts = () => {
   };
 
   const handleHoldProduct = async (product) => {
-    const confirmed = window.confirm(
-      `Hold product "${product.name}"?`
-    );
+    const confirmed = await confirm({
+      title: 'Hold Product?',
+      message: `Hold product "${product.name}"?`,
+      confirmLabel: 'Yes, Hold',
+      danger: false,
+    });
     if (!confirmed) return;
 
     try {
@@ -375,9 +381,12 @@ const FetchProducts = () => {
   };
 
   const handleRestoreProduct = async (product) => {
-    const confirmed = window.confirm(
-      `Restore product "${product.name}"?`
-    );
+    const confirmed = await confirm({
+      title: 'Restore Product?',
+      message: `Restore product "${product.name}"?`,
+      confirmLabel: 'Yes, Restore',
+      danger: false,
+    });
     if (!confirmed) return;
 
     try {
@@ -1290,6 +1299,7 @@ const FetchProducts = () => {
       <div className="tab-content">
         {activeTab === 'products' ? renderProductsTab() : renderHoldsTab()}
       </div>
+      {confirmDialog}
     </div>
   );
 };

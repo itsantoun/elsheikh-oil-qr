@@ -29,6 +29,39 @@
   .admin-container { flex-direction: column; }
 }
 
+/* ── Page Shell Header (title/subtitle left, actions right) ── */
+.page-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.page-shell-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.page-shell-header-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-heading);
+  letter-spacing: -0.4px;
+  margin: 0;
+}
+.page-shell-header-subtitle {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-shell-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ── Products / Shared Section ──────────────────── */
 .header-section {
   display: flex;

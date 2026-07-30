@@ -14,6 +14,7 @@ import {
   drawTotalsBlock,
   money,
 } from '../utils/pdfReceipt';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -119,7 +120,7 @@ const Reports = () => {
   const [pendingSnapshot, setPendingSnapshot] = useState(null);
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [viewingHistoryId, setViewingHistoryId] = useState(null);
-  const [deleteHistoryId, setDeleteHistoryId] = useState(null);
+  const [confirm, confirmDialog] = useConfirmDialog();
 
   // ── Data load ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -382,12 +383,12 @@ const Reports = () => {
   const viewHistoryEntry = (id) => setViewingHistoryId(id);
   const backToLiveView = () => setViewingHistoryId(null);
 
-  const requestDeleteHistory = (id) => setDeleteHistoryId(id);
-  const cancelDeleteHistory = () => setDeleteHistoryId(null);
-  const confirmDeleteHistory = async () => {
-    if (!deleteHistoryId) return;
-    const id = deleteHistoryId;
-    setDeleteHistoryId(null);
+  const requestDeleteHistory = async (id) => {
+    const confirmed = await confirm({
+      title: 'Delete this saved report?',
+      message: 'This removes it from Report History. This action cannot be undone.',
+    });
+    if (!confirmed) return;
     try {
       await remove(ref(database, `reports/${id}`));
       if (viewingHistoryId === id) setViewingHistoryId(null);
@@ -773,23 +774,7 @@ const Reports = () => {
         </div>
       )}
 
-      {/* Delete report-history confirmation */}
-      {deleteHistoryId && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3 className="modal-title">Delete this saved report?</h3>
-            </div>
-            <div className="modal-content">
-              <p>This removes it from Report History. This action cannot be undone.</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-danger" onClick={confirmDeleteHistory}>Yes, Delete</button>
-              <button className="btn-secondary" onClick={cancelDeleteHistory}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {confirmDialog}
     </div>
   );
 };

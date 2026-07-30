@@ -9,6 +9,8 @@ import {
   IconClipboard, IconArrowUp, IconArrowDown, IconCheckCircle, IconCornerUpLeft,
 } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { useConfirmDialog } from '../Components/ConfirmDialog';
+import PageHeader from '../Components/PageHeader';
 
 // ─── Firebase nodes used ──────────────────────────────────────────────────────
 // products/{id}                          — live product data
@@ -19,6 +21,7 @@ import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RemainingProducts = () => {
+  const [confirm, confirmDialog] = useConfirmDialog();
   const [products, setProducts]                 = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [pendingChecks, setPendingChecks]       = useState([]);
@@ -725,7 +728,11 @@ const RemainingProducts = () => {
   // ── Actions: delete ───────────────────────────────────────────────────────
 
   const handleDeleteProduct = async (product) => {
-    if (!window.confirm(`Delete "${product.name}" permanently? This will remove the product plus all its transactions, sold records, and stock history.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete Product?',
+      message: `Delete "${product.name}" permanently? This will remove the product plus all its transactions, sold records, and stock history.`,
+    });
+    if (!confirmed) return;
     try {
       // Write deletion event first so the audit trail survives the history cleanup below.
       await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'deleted', new Date().toISOString());
@@ -779,7 +786,13 @@ const RemainingProducts = () => {
   // ── Actions: hold ─────────────────────────────────────────────────────────
 
   const handleHoldProduct = async (product) => {
-    if (!window.confirm(`Hold "${product.name}"? It will move to the Held section in Product Management.`)) return;
+    const confirmed = await confirm({
+      title: 'Hold Product?',
+      message: `Hold "${product.name}"? It will move to the Held section in Product Management.`,
+      confirmLabel: 'Yes, Hold',
+      danger: false,
+    });
+    if (!confirmed) return;
     try {
       const heldAt = new Date().toISOString();
       await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'held', heldAt);
@@ -852,10 +865,11 @@ const RemainingProducts = () => {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Restore archive from ${formatDate(selectedArchive.archivedAt)}?\n\n` +
-      'This will overwrite current live products, SoldItems, stockChecks, and stockCheckHistory.'
-    );
+    const confirmed = await confirm({
+      title: 'Restore Archive?',
+      message: `Restore archive from ${formatDate(selectedArchive.archivedAt)}? This will overwrite current live products, SoldItems, stockChecks, and stockCheckHistory.`,
+      confirmLabel: 'Yes, Restore',
+    });
     if (!confirmed) return;
 
     setIsRestoring(true);
@@ -1161,7 +1175,15 @@ const RemainingProducts = () => {
     const totalSoldAllTime     = monthlySummary.reduce((s, m) => s + m.sold, 0);
     const totalUsedAllTime     = monthlySummary.reduce((s, m) => s + (m.used || 0), 0);
     const totalRestockedAllTime = monthlySummary.reduce((s, m) => s + m.restocked, 0);
-    const expectedNow          = historySelectedProduct ? getExpectedRemaining(historySelectedProduct) : 0;
+    // productHistoryEntries is newest-first (reversed after the walk), so its
+    // first item carries the stockAfter balance the timeline actually ends on.
+    // Falling back to getExpectedRemaining (used by the Stock Checker tab) can
+    // disagree with the timeline below since it derives "since last check" from
+    // a different cutoff — that mismatch is what made this card look wrong.
+    const latestHistoryEntry  = productHistoryEntries[0];
+    const expectedNow         = latestHistoryEntry && latestHistoryEntry.balanceKnown
+      ? latestHistoryEntry.stockAfter
+      : (historySelectedProduct ? getExpectedRemaining(historySelectedProduct) : 0);
     const movementHistoryLabel = historyIsMaghsal ? 'Used' : 'Sold';
     const movementHistoryTotal = historyIsMaghsal ? totalUsedAllTime : totalSoldAllTime;
 
@@ -1956,16 +1978,12 @@ const RemainingProducts = () => {
 
   return (
     <div className="page-shell stock-shell">
-      <div className="page-shell-header">
-        <div className="page-shell-header-left">
-          <h1 className="page-shell-header-title">Stock</h1>
-          <p className="page-shell-header-subtitle">
-            {stockGroup === 'maghsal'
-              ? 'Maghsal stock — items used or sold during services.'
-              : 'Oil & Filter stock — main inventory.'}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Stock"
+        subtitle={stockGroup === 'maghsal'
+          ? 'Maghsal stock — items used or sold during services.'
+          : 'Oil & Filter stock — main inventory.'}
+      />
 
       {/* Stock Group Selector */}
       <div className="stock-group-selector">
@@ -2068,6 +2086,7 @@ const RemainingProducts = () => {
       </div>
 
       {scannerOpen && renderScannerModal()}
+      {confirmDialog}
     </div>
   );
 };

@@ -3,6 +3,8 @@ import { ref, get } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { IconRefresh } from '../utils/icons';
+import PageHeader from '../Components/PageHeader';
 
 const Archives = () => {
   const [archives, setArchives] = useState([]);
@@ -576,10 +578,7 @@ const Archives = () => {
 
   return (
     <div className="admin-container">
-      <div className="page-header">
-        <h1 className="page-title">Archives Center</h1>
-        <p className="page-subtitle">View all archived stock and product snapshots in one place</p>
-      </div>
+      <PageHeader title="Archives Center" subtitle="View all archived stock and product snapshots in one place" />
 
       {errorMessage && (
         <div className="error-message">
@@ -601,7 +600,7 @@ const Archives = () => {
         </div>
         <div className="header-right">
           <button onClick={fetchArchives} className={`btn-secondary ${isLoading ? 'refreshing' : ''}`} disabled={isLoading}>
-            {isLoading ? '🔄 Loading...' : '🔄 Refresh'}
+            <IconRefresh /> {isLoading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>

@@ -280,10 +280,11 @@ const Maghsal = () => {
   };
 
   // ── Filters ──────────────────────────────────────
-  const filtered = useMemo(() => {
-    let result = viewMode === 'used'
-      ? entries.filter((e) => e.paymentStatus === 'Used')
-      : entries.filter((e) => e.paymentStatus !== 'Used');
+  // Same filters as `filtered` below, minus the All/Used tab split — used for
+  // the KPI totals so Net Profit (Revenue − Used expenses) stays correct no
+  // matter which tab is active, instead of zeroing out one side.
+  const sharedFiltered = useMemo(() => {
+    let result = entries;
 
     if (customerFilter) {
       const cf = customerFilter.toLowerCase();
@@ -328,7 +329,14 @@ const Maghsal = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, viewMode, customerFilter, categoryFilter, serviceCategoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
+  }, [entries, customerFilter, categoryFilter, serviceCategoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
+
+  // Table view — sharedFiltered further split by the All/Used tab.
+  const filtered = useMemo(() => (
+    viewMode === 'used'
+      ? sharedFiltered.filter((e) => e.paymentStatus === 'Used')
+      : sharedFiltered.filter((e) => e.paymentStatus !== 'Used')
+  ), [sharedFiltered, viewMode]);
 
   const totals = useMemo(() => {
     const t = {
@@ -343,7 +351,10 @@ const Maghsal = () => {
       goodsCost: 0,
       netProfit: 0,
     };
-    for (const e of filtered) {
+    // Always computed from sharedFiltered (not the tab-split `filtered`) so
+    // Net Profit = Total Revenue − Used expenses stays correct regardless of
+    // which tab (All/Used) is currently active.
+    for (const e of sharedFiltered) {
       const m = entryTotals(e);
       t.count += 1;
       t.service += m.servicePrice;
@@ -357,7 +368,7 @@ const Maghsal = () => {
     t.netProfit = t.total - t.expenses;
     return t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, products]);
+  }, [sharedFiltered, products]);
 
 
 
@@ -863,7 +874,7 @@ const Maghsal = () => {
             <label>Product</label>
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
               <option value="All">All Products</option>
-              {catalogue.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              {maghsalProducts.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
           </div>
 

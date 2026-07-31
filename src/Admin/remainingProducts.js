@@ -67,6 +67,9 @@ const RemainingProducts = () => {
   const [showZeroStock, setShowZeroStock] = useState(false);
   const [scopeFilter, setScopeFilter] = useState('all'); // all | oil | filter | maghsal | other
   const [stockGroup, setStockGroup] = useState('oil-filter'); // 'oil-filter' | 'maghsal'
+  // Mirrors the Maghsal page's All/Used tab: within the Maghsal stock group,
+  // narrow the Check tab down to only products with Used movement since check.
+  const [usedFilter, setUsedFilter] = useState('all'); // 'all' | 'used'
 
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage]     = useState(null);
@@ -349,7 +352,7 @@ const RemainingProducts = () => {
 
   // Whenever the top-level stock group flips, drop any drill-down filter so the
   // user immediately sees everything in the chosen stock.
-  useEffect(() => { setScopeFilter('all'); }, [stockGroup]);
+  useEffect(() => { setScopeFilter('all'); setUsedFilter('all'); }, [stockGroup]);
 
   useEffect(() => {
     // Top-level: only items from the active stock group are visible at all.
@@ -366,15 +369,24 @@ const RemainingProducts = () => {
       return productScope(p) === scopeFilter;
     };
 
+    // Within Maghsal, products with Used movement since the last check live
+    // only in the Used tab — All Items excludes them entirely, mirroring the
+    // Maghsal page's All/Used split.
+    const inUsedFilter = (p) => {
+      if (stockGroup !== 'maghsal') return true;
+      const isUsed = toNumber(usedTotals[p.id]) > 0;
+      return usedFilter === 'used' ? isUsed : !isUsed;
+    };
+
     const baseProducts = showZeroStock
-      ? products.filter(p => inGroup(p) && inScope(p) && getExpectedRemaining(p) <= 0)
-      : products.filter(p => inGroup(p) && inScope(p) && hasPositiveExpectedStock(p));
+      ? products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && getExpectedRemaining(p) <= 0)
+      : products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && hasPositiveExpectedStock(p));
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
       p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
     ));
-  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, scopeFilter, stockGroup, productScope]);
+  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, scopeFilter, stockGroup, productScope, usedFilter, usedTotals]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -938,6 +950,22 @@ const RemainingProducts = () => {
             className="search-input stock-search-input"
           />
         </div>
+        {stockGroup === 'maghsal' && (
+          <div className="filter-actions" style={{ marginTop: 'var(--s-3)' }}>
+            <button
+              className={usedFilter === 'all' ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => setUsedFilter('all')}
+            >
+              All Items
+            </button>
+            <button
+              className={usedFilter === 'used' ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => setUsedFilter('used')}
+            >
+              Used
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="table-section">

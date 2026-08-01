@@ -1184,10 +1184,15 @@ const RemainingProducts = () => {
   const renderHistoryTab = () => {
     const searchText = historySearch.trim().toLowerCase();
     const suggestions = searchText
-      ? products.filter(p =>
-          p.name?.toLowerCase().includes(searchText) ||
-          p.id?.toLowerCase().includes(searchText)
-        )
+      ? products.filter(p => {
+          const inGroup = stockGroup === 'maghsal'
+            ? productScope(p) === 'maghsal'
+            : productScope(p) !== 'maghsal';
+          return inGroup && (
+            p.name?.toLowerCase().includes(searchText) ||
+            p.id?.toLowerCase().includes(searchText)
+          );
+        })
       : [];
 
     const fromMs = historyDateFrom ? new Date(historyDateFrom).setHours(0, 0, 0, 0) : null;

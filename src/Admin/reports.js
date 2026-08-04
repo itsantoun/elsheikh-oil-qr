@@ -265,6 +265,7 @@ const Reports = () => {
         date: e.date,
         section: 'Maghsal',
         item: e.category || 'Service',
+        quantity: toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity),
         total: entryTotal(e),
         status: e.paymentStatus || 'N/A',
       });
@@ -280,7 +281,8 @@ const Reports = () => {
         key: `o-${it.id}`,
         date: it.dateScanned,
         section,
-        item: `${it.name || 'Item'}${quantity ? ` ×${quantity}` : ''}`,
+        item: it.name || 'Item',
+        quantity,
         total: revenue,
         status: it.paymentStatus || 'N/A',
       });
@@ -417,31 +419,32 @@ const Reports = () => {
     sections.forEach((g) => {
       groupRowIndexes.add(body.length);
       body.push([
-        { content: g.section, colSpan: 3 },
+        { content: g.section, colSpan: 4 },
         { content: money(g.subtotal) },
       ]);
-      g.rows.forEach((r) => body.push([formatDate(r.date), r.item, r.status, money(r.total)]));
+      g.rows.forEach((r) => body.push([formatDate(r.date), r.item, r.quantity || '—', r.status, money(r.total)]));
     });
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Item', 'Status', 'Total'],
+        head: ['Date', 'Item', 'Quantity', 'Status', 'Total'],
         body,
         startY,
-        rightAlignedColumns: [3],
+        rightAlignedColumns: [2, 4],
         density,
       }),
       columnStyles: {
-        0: { cellWidth: 32 },
-        1: { cellWidth: 72 },
-        2: { cellWidth: 40 },
-        3: { halign: 'right', cellWidth: 38 },
+        0: { cellWidth: 30 },
+        1: { cellWidth: 60 },
+        2: { halign: 'right', cellWidth: 18 },
+        3: { cellWidth: 36 },
+        4: { halign: 'right', cellWidth: 38 },
       },
       didParseCell: (data) => {
         if (data.section === 'body' && groupRowIndexes.has(data.row.index)) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
-          if (data.column.index === 3) data.cell.styles.halign = 'right';
+          if (data.column.index === 4) data.cell.styles.halign = 'right';
         }
       },
     });
@@ -494,16 +497,16 @@ const Reports = () => {
     if (!selectedCustomer) { flash('Select a client first.'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.'); return; }
 
-    const headers = ['Date', 'Type', 'Item', 'Status', 'Total'];
+    const headers = ['Date', 'Type', 'Item', 'Quantity', 'Status', 'Total'];
     const rows = [];
     statement.sections.forEach((g) => {
-      g.rows.forEach((r) => rows.push([formatDate(r.date), g.section, r.item, r.status, r.total.toFixed(2)]));
-      rows.push(['', `${g.section} Subtotal`, '', '', g.subtotal.toFixed(2)]);
+      g.rows.forEach((r) => rows.push([formatDate(r.date), g.section, r.item, r.quantity || '', r.status, r.total.toFixed(2)]));
+      rows.push(['', `${g.section} Subtotal`, '', '', '', g.subtotal.toFixed(2)]);
       rows.push([]);
     });
-    rows.push(['Total Paid', '', '', '', statement.paid.toFixed(2)]);
-    rows.push(['Total Unpaid', '', '', '', statement.unpaid.toFixed(2)]);
-    rows.push(['Grand Total', '', '', '', statement.grandTotal.toFixed(2)]);
+    rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
+    rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
+    rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
       [headers, ...rows]
@@ -610,6 +613,7 @@ const Reports = () => {
                   <tr>
                     <th>Date</th>
                     <th>Item</th>
+                    <th className="text-right">Quantity</th>
                     <th>Status</th>
                     <th className="text-right">Total</th>
                   </tr>
@@ -618,13 +622,14 @@ const Reports = () => {
                   {statement.sections.map((g) => (
                     <React.Fragment key={g.section}>
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={3} style={{ fontWeight: 700 }}>{g.section}</td>
+                        <td colSpan={4} style={{ fontWeight: 700 }}>{g.section}</td>
                         <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
                       </tr>
                       {g.rows.map((r) => (
                         <tr key={r.key}>
                           <td>{formatDate(r.date)}</td>
                           <td>{r.item}</td>
+                          <td className="text-right">{r.quantity || '—'}</td>
                           <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
                           <td className="text-right">${formatCurrency(r.total)}</td>
                         </tr>
@@ -710,6 +715,7 @@ const Reports = () => {
                     <tr>
                       <th>Date</th>
                       <th>Item</th>
+                      <th className="text-right">Quantity</th>
                       <th>Status</th>
                       <th className="text-right">Total</th>
                     </tr>
@@ -718,13 +724,14 @@ const Reports = () => {
                     {viewedEntry.sections.map((g) => (
                       <React.Fragment key={g.section}>
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={3} style={{ fontWeight: 700 }}>{g.section}</td>
+                          <td colSpan={4} style={{ fontWeight: 700 }}>{g.section}</td>
                           <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
                         </tr>
                         {g.rows.map((r) => (
                           <tr key={r.key}>
                             <td>{formatDate(r.date)}</td>
                             <td>{r.item}</td>
+                            <td className="text-right">{r.quantity || '—'}</td>
                             <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
                             <td className="text-right">${formatCurrency(r.total)}</td>
                           </tr>

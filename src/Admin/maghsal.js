@@ -550,8 +550,9 @@ const Maghsal = () => {
         serviceCategory: formServiceCategory,
         price: servicePrice,
         servicePrice,
+        quantity: qty,
         goodsTotal: 0,
-        totalPrice: servicePrice,
+        totalPrice: servicePrice * qty,
         consumablesUsed,
         paymentStatus: formPaymentStatus,
         employee: user?.name || user?.displayName || user?.email || 'Unknown',
@@ -631,8 +632,9 @@ const Maghsal = () => {
         serviceCategory: formServiceCategory,
         price: servicePrice,
         servicePrice,
+        quantity: qty,
         goodsTotal: 0,
-        totalPrice: servicePrice,
+        totalPrice: servicePrice * qty,
         consumablesUsed,
         paymentStatus: formPaymentStatus,
         remark: formRemark.trim(),
@@ -693,10 +695,12 @@ const Maghsal = () => {
       const m = entryTotals(e);
       if (e.paymentStatus === 'Paid') paid += m.totalPrice;
       else if (e.paymentStatus === 'Unpaid') unpaid += m.totalPrice;
+      const qty = toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity);
       return [
         formatDate(e.date),
         e.category || 'N/A',
         e.paymentStatus || 'N/A',
+        qty || '—',
         money(m.servicePrice),
         money(m.goodsTotal),
         money(m.totalPrice),
@@ -717,19 +721,20 @@ const Maghsal = () => {
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Service', 'Status', 'Service Price', 'Sold', 'Total'],
+        head: ['Date', 'Service', 'Status', 'Qty', 'Service Price', 'Sold', 'Total'],
         body: rows,
         startY,
-        rightAlignedColumns: [3, 4, 5],
+        rightAlignedColumns: [3, 4, 5, 6],
         density,
       }),
       columnStyles: {
         0: { cellWidth: 25 },
-        1: { cellWidth: 62 },
-        2: { cellWidth: 25 },
-        3: { halign: 'right', cellWidth: 28 },
-        4: { halign: 'right', cellWidth: 22 },
-        5: { halign: 'right', cellWidth: 25 },
+        1: { cellWidth: 52 },
+        2: { cellWidth: 22 },
+        3: { halign: 'right', cellWidth: 15 },
+        4: { halign: 'right', cellWidth: 25 },
+        5: { halign: 'right', cellWidth: 20 },
+        6: { halign: 'right', cellWidth: 23 },
       },
     });
 
@@ -749,9 +754,10 @@ const Maghsal = () => {
 
   const exportCSV = async () => {
     if (filtered.length === 0) { flash('No data to export.', 'error'); return; }
-    const headers = ['Date','Customer','Service','Category','Payment Status','Service Price','Sold Total','Total','Employee','Remark','Used','Sold'];
+    const headers = ['Date','Customer','Service','Category','Payment Status','Quantity','Service Price','Sold Total','Total','Employee','Remark','Used','Sold'];
     const rows = filtered.map((e) => {
       const m = entryTotals(e);
+      const qty = toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity);
       const cons = (e.consumablesUsed || []).map((c) => `${c.name} x${c.quantity}`).join('; ');
       const gd = (e.goodsSold || []).map((g) => `${g.name} x${g.quantity}@$${toNumber(g.unitPrice).toFixed(2)}`).join('; ');
       return [
@@ -760,6 +766,7 @@ const Maghsal = () => {
         e.serviceCategory || 'N/A',
         e.category || 'N/A',
         e.paymentStatus || 'N/A',
+        qty,
         m.servicePrice.toFixed(2),
         m.goodsTotal.toFixed(2),
         m.totalPrice.toFixed(2),
@@ -1195,7 +1202,10 @@ const Maghsal = () => {
 
               {formPaymentStatus !== 'Stock' && (
                 <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-                  <span style={{ color: 'var(--brand)' }}>Service Price: ${toNumber(formServicePrice).toFixed(2)}</span>
+                  <span style={{ color: 'var(--brand)' }}>
+                    Total: ${(toNumber(formServicePrice) * toNumber(formQuantity)).toFixed(2)}
+                    {' '}({toNumber(formQuantity)} × ${toNumber(formServicePrice).toFixed(2)})
+                  </span>
                 </div>
               )}
             </div>

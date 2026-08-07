@@ -213,18 +213,13 @@ const Maghsal = () => {
     };
   }, []);
 
-  // Used (consumed) / Sold pickers draw from the WHOLE catalogue so any product
-  // — oil, filter, maghsal, etc. — used or sold during a service is recorded for
-  // the Stock checker. (Previously limited to maghsal-scoped products only,
-  // which left the dropdowns empty and nothing got tracked or deducted.)
   const catalogue = useMemo(
     () => [...products].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [products],
   );
-  const consumables = catalogue;
 
-  // Product (optional) picker on the Add/Edit Used Item form only offers
-  // Maghsal-typed products, not the whole catalogue.
+  // Product pickers on the Add/Edit Used Item form (including the Stock-in
+  // sub-form) only offer Maghsal-typed products, not the whole catalogue.
   const maghsalProducts = useMemo(
     () => catalogue.filter((p) => {
       const scope = String(p.scope || '').toLowerCase();
@@ -1126,16 +1121,16 @@ const Maghsal = () => {
                       value={formStockProductId}
                       onChange={(e) => handleStockProductChange(e.target.value)}
                       className="form-select"
-                      disabled={isSaving || consumables.length === 0}
+                      disabled={isSaving || maghsalProducts.length === 0}
                     >
                       <option value="">Select a Product</option>
-                      {consumables.map((p) => (
+                      {maghsalProducts.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} {p.unit ? `(${p.unit})` : ''} · stock {toNumber(p.quantity)}
                         </option>
                       ))}
                     </select>
-                    {consumables.length === 0 && (
+                    {maghsalProducts.length === 0 && (
                       <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                         No Maghsal items in inventory. Add them from <strong>Add Products → Maghsal Stock</strong>.
                       </p>

@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import Navbar from './navbar';
 import AddUsers from './adduser';
 import FetchProducts from './fetchProducts';
-import ItemsSold from './soldItems';
+import ItemsSold from './oilSoldItems';
 import AddCustomer from './addCustomer';
 import RemainingProducts from './remainingProducts';
 import Transactions from './transactions';

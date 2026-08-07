@@ -134,8 +134,11 @@ const RemainingProducts = () => {
     []
   );
 
+  // Prefer productId — it identifies the exact price batch a sale drew from.
+  // barcode is only the physical scan code, which is shared across every
+  // price-duplicate of the same product, so it can't tell batches apart.
   const getProductKey = useCallback(
-    (item = {}) => String(item.barcode || item.productId || '').trim(),
+    (item = {}) => String(item.productId || item.barcode || '').trim(),
     []
   );
 
@@ -998,7 +1001,19 @@ const RemainingProducts = () => {
                   return (
                     <tr key={product.id} className={isPending ? 'row-warning' : ''}>
                       <td><span className="barcode-cell">{product.id}</span></td>
-                      <td><span className="product-name-cell">{product.name}</span></td>
+                      <td>
+                        <span className="product-name-cell">{product.name}</span>
+                        {' '}
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
+                        {product.baseProductId && (
+                          <span
+                            title="Linked to another price batch of this same product"
+                            style={{ fontSize: 11, marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: 'var(--surface-2, #e9f0fa)', color: 'var(--brand)' }}
+                          >
+                            linked
+                          </span>
+                        )}
+                      </td>
                       <td><span className="type-cell">{product.productType}</span></td>
                       <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
                       <td className="text-right">
@@ -1121,7 +1136,19 @@ const RemainingProducts = () => {
                     return (
                       <tr key={product.id} className={isPending ? 'row-warning' : 'row-info'}>
                         <td><span className="barcode-cell">{product.id}</span></td>
-                        <td><span className="product-name-cell">{product.name}</span></td>
+                        <td>
+                        <span className="product-name-cell">{product.name}</span>
+                        {' '}
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
+                        {product.baseProductId && (
+                          <span
+                            title="Linked to another price batch of this same product"
+                            style={{ fontSize: 11, marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: 'var(--surface-2, #e9f0fa)', color: 'var(--brand)' }}
+                          >
+                            linked
+                          </span>
+                        )}
+                      </td>
                         <td><span className="type-cell">{product.productType}</span></td>
                         <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
                         <td className="text-right">

@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, onValue, query, orderByChild, limitToLast } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
+import { getBatchGroupKey } from '../utils/productBatches';
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -209,10 +210,29 @@ const Dashboard = ({ onNavigate }) => {
       }
     }
 
-    // Low stock (Oil/Filter products only — already legacy-filtered after migration)
-    const lowStock = products
-      .filter((p) => String(p.productType || '').toLowerCase() !== 'maghsal')
-      .map((p) => ({ ...p, qty: toNumber(p.quantity) }))
+    // Collapse price-duplicate batches of the same logical product into one
+    // entry (summed quantity) so they don't inflate the product count or
+    // show up twice — once possibly at 0 qty — in the low-stock list.
+    const groupProducts = (list) => {
+      const groups = new Map();
+      list.forEach((p) => {
+        const key = getBatchGroupKey(p);
+        const existing = groups.get(key);
+        const qty = toNumber(p.quantity);
+        if (existing) {
+          existing.qty += qty;
+        } else {
+          groups.set(key, { ...p, qty });
+        }
+      });
+      return [...groups.values()];
+    };
+
+    const allProductGroups = groupProducts(products);
+    const oilFilterGroups = groupProducts(
+      products.filter((p) => String(p.productType || '').toLowerCase() !== 'maghsal')
+    );
+    const lowStock = oilFilterGroups
       .filter((p) => p.qty <= LOW_STOCK_THRESHOLD)
       .sort((a, b) => a.qty - b.qty);
 
@@ -224,7 +244,7 @@ const Dashboard = ({ onNavigate }) => {
       todayMaghsalRevenue,
       todayMaghsalCount,
       lowStock,
-      totalProducts: products.length,
+      totalProducts: allProductGroups.length,
       totalCustomers: 0, // unused but kept for future expansion
     };
   }, [soldItems, maghsalEntries, products]);

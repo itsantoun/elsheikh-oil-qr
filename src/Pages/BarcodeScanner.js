@@ -773,6 +773,7 @@ import { ref, get, update, child, push, onValue, off, query, orderByChild, start
 import '../CSS/BarcodeScanner.css';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { findSiblingBatches, pickFifoBatch } from '../utils/productBatches';
 import {
   IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
   IconTag, IconBarChart, IconDollarSign, IconUser, IconHash, IconTrendingUp,
@@ -1112,11 +1113,41 @@ const BarcodeScanner = () => {
 
     const dbRef = ref(database);
     try {
-      const snapshot = await get(child(dbRef, `products/${barcode}`));
-      if (snapshot.exists()) {
-        const product = snapshot.val();
-        setScannedProduct({ barcode, ...product });
-        setDialogMessage(`${product.name}`);
+      const [productsSnapshot, soldItemsSnapshot, stockChecksSnapshot] = await Promise.all([
+        get(child(dbRef, 'products')),
+        get(child(dbRef, 'SoldItems')),
+        get(child(dbRef, 'stockChecks')),
+      ]);
+
+      const productsArray = productsSnapshot.exists()
+        ? Object.entries(productsSnapshot.val()).map(([id, p]) => ({ id, ...p }))
+        : [];
+      const soldItems = soldItemsSnapshot.exists() ? Object.values(soldItemsSnapshot.val()) : [];
+
+      // Movement recorded before a product's last Stock Checker "Mark
+      // Accurate" reconciliation is already baked into its quantity baseline,
+      // so it must not be subtracted again when computing remaining stock.
+      const checkedAtByProductId = {};
+      if (stockChecksSnapshot.exists()) {
+        const checksData = stockChecksSnapshot.val();
+        Object.keys(checksData).forEach((id) => {
+          const ts = checksData[id]?.reconfirmedAt || checksData[id]?.checkedAt;
+          if (ts) checkedAtByProductId[id] = ts;
+        });
+      }
+
+      // A price-duplicated product has multiple products/{id} records sharing
+      // the same physical barcode — find all of them and auto-consume the
+      // oldest-priced one that still has stock (FIFO), rather than assuming
+      // the scanned barcode is a single unique record.
+      const siblingBatches = findSiblingBatches(productsArray, barcode);
+      const batch = pickFifoBatch(siblingBatches, { soldItems, checkedAtByProductId });
+
+      if (batch) {
+        // Keep the physically scanned code as `barcode` (for display/audit)
+        // and the resolved batch's own Firebase key as `id` (for stock math).
+        setScannedProduct({ ...batch, barcode });
+        setDialogMessage(`${batch.name}`);
         setIsPopupOpen(true);
         setScanStatus('Product found! Fill in the details.');
         setScannerPaused(true);
@@ -1215,7 +1246,7 @@ const BarcodeScanner = () => {
       if (isStock) {
         const transaction = {
           barcode: scannedProduct.barcode,
-          productId: scannedProduct.barcode,
+          productId: scannedProduct.id || scannedProduct.barcode,
           name: scannedProduct.name,
           quantity: quantity,
           dateScanned: currentDate,
@@ -1236,6 +1267,7 @@ const BarcodeScanner = () => {
         }
         const newItem = {
           barcode: scannedProduct.barcode,
+          productId: scannedProduct.id || scannedProduct.barcode,
           name: scannedProduct.name,
           category: scannedProduct.category || 'Unknown',
           price: scannedProduct.price || 0,

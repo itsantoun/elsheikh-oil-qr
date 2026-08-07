@@ -481,6 +481,7 @@ import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, Ic
 import { useNotifications } from '../Auth/notificationContext';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
+import { isSamePrice, resolveOrCreateBatchForPrice } from '../utils/productBatches';
 
 const Transactions = () => {
   const { notifySuccess, notifyError } = useNotifications();
@@ -762,9 +763,41 @@ const Transactions = () => {
       if (resolvedKey) {
         const productSnapshot = await get(ref(database, `products/${resolvedKey}`));
         if (productSnapshot.exists()) {
-          const currentQuantity = parseFloat(productSnapshot.val().quantity) || 0;
+          const product = productSnapshot.val();
           const confirmedQuantity = parseFloat(transactionQuantity) || 0;
-          updates[`products/${resolvedKey}/quantity`] = currentQuantity + confirmedQuantity;
+
+          // If this restock was logged at a different price than the batch
+          // currently sitting at resolvedKey, don't blend it in — route the
+          // confirmed quantity to the matching-price batch (creating one if
+          // needed) instead of the stale-priced record.
+          const txItemCost = tx?.itemCost;
+          const txPurchasingPrice = tx?.purchasingPrice;
+          const hasCapturedPrice = txItemCost != null && txPurchasingPrice != null;
+          const priceMatches = !hasCapturedPrice
+            || (isSamePrice(txItemCost, product.itemCost) && isSamePrice(txPurchasingPrice, product.purchasingPrice));
+
+          let targetKey = resolvedKey;
+          if (!priceMatches) {
+            const productsArray = Object.entries(products).map(([pid, p]) => ({ id: pid, ...p }));
+            const rootId = product.baseProductId || resolvedKey;
+            const { id: batchId } = await resolveOrCreateBatchForPrice(
+              database,
+              productsArray,
+              rootId,
+              { itemCost: txItemCost, purchasingPrice: txPurchasingPrice },
+            );
+            targetKey = batchId;
+            updates[`transactions/${id}/resolvedProductId`] = targetKey;
+            setTransactions(prev =>
+              prev.map(t => t.id === id ? { ...t, resolvedProductId: targetKey } : t)
+            );
+          }
+
+          const targetSnapshot = targetKey === resolvedKey
+            ? productSnapshot
+            : await get(ref(database, `products/${targetKey}`));
+          const currentQuantity = targetSnapshot.exists() ? (parseFloat(targetSnapshot.val().quantity) || 0) : 0;
+          updates[`products/${targetKey}/quantity`] = currentQuantity + confirmedQuantity;
         }
       }
 
@@ -791,7 +824,9 @@ const Transactions = () => {
 
       const tx = transactions.find(t => t.id === id);
       const rawBarcode = asCleanString(tx?.productId || tx?.barcode);
-      const resolvedKey = productKey || (rawBarcode !== 'N/A' ? rawBarcode : '');
+      // If handleConfirm routed this transaction's quantity to a different
+      // (price-matched) batch, decrement that same batch — not resolvedKey.
+      const resolvedKey = tx?.resolvedProductId || productKey || (rawBarcode !== 'N/A' ? rawBarcode : '');
 
       if (resolvedKey) {
         const productSnapshot = await get(ref(database, `products/${resolvedKey}`));
@@ -804,6 +839,12 @@ const Transactions = () => {
           } else {
             throw new Error('Quantity cannot be negative');
           }
+        }
+        if (tx?.resolvedProductId) {
+          updates[`transactions/${id}/resolvedProductId`] = null;
+          setTransactions(prev =>
+            prev.map(t => t.id === id ? { ...t, resolvedProductId: undefined } : t)
+          );
         }
       }
 

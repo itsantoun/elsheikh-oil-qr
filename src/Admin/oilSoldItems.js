@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
@@ -10,6 +10,7 @@ import { IconRefresh, IconX, IconPlus } from '../utils/icons';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
+import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
 import {
   addReceiptHeader,
   createReceiptDoc,
@@ -35,7 +36,7 @@ const sortByName = (a, b) => {
   return 0;
 };
 
-const SoldItems = () => {
+const OilSoldItems = () => {
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
@@ -51,6 +52,11 @@ const SoldItems = () => {
   
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  // { [productId]: lastReconciledISODate } — from the Stock Checker's "Mark
+  // Accurate" action. Movement before this date is already baked into
+  // products/{id}.quantity, so batch-remaining math must not subtract it
+  // again (same rule remainingProducts.js itself follows).
+  const [stockCheckedAtByProductId, setStockCheckedAtByProductId] = useState({});
   const [errorMessage, setErrorMessage] = useState(null);
 
   const [editingItem, setEditingItem] = useState(null);
@@ -71,11 +77,20 @@ const SoldItems = () => {
   });
   
   const [showMissingItemsModal, setShowMissingItemsModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  // The product dropdown picks a logical product (group); when that product
+  // has more than one price-batch, missingItemBatchId lets the user override
+  // which one to use — '' means "use the default (oldest-priced) batch".
+  const [missingItemGroupId, setMissingItemGroupId] = useState('');
+  const [missingItemBatchId, setMissingItemBatchId] = useState('');
   const [missingItemCustomerId, setMissingItemCustomerId] = useState('');
   const [missingItemDate, setMissingItemDate] = useState('');
   const [missingItemQuantity, setMissingItemQuantity] = useState('1');
   const [missingItemPaymentStatus, setMissingItemPaymentStatus] = useState('Unpaid');
+  // Editable restock prices — only used/shown when Payment Status is 'Stock',
+  // seeded from the selected product but overridable so a restock at a new
+  // price can be logged accurately (mirrors maghsal.js's stock-in form).
+  const [missingItemPurchasingPrice, setMissingItemPurchasingPrice] = useState('');
+  const [missingItemSellPrice, setMissingItemSellPrice] = useState('');
   const [missingItemRemark, setMissingItemRemark] = useState('');
   const [isSavingMissingItem, setIsSavingMissingItem] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -299,9 +314,22 @@ const SoldItems = () => {
       }
     });
 
+    const stockChecksRef = ref(database, 'stockChecks');
+    const unsubscribeStockChecks = onValue(stockChecksRef, (snapshot) => {
+      if (!snapshot.exists()) { setStockCheckedAtByProductId({}); return; }
+      const data = snapshot.val();
+      const map = {};
+      Object.keys(data).forEach((id) => {
+        const ts = data[id]?.reconfirmedAt || data[id]?.checkedAt;
+        if (ts) map[id] = ts;
+      });
+      setStockCheckedAtByProductId(map);
+    });
+
     return () => {
       unsubscribeCustomers();
       unsubscribeProducts();
+      unsubscribeStockChecks();
     };
   }, []);
 
@@ -752,12 +780,61 @@ const SoldItems = () => {
 
   const getTodayDateForInput = () => formatDateForInput(new Date().toISOString());
 
+  // Oil/Filter products only (Maghsal items are sold from the Maghsal page).
+  const missingItemEligibleProducts = products.filter((p) => {
+    const scope = String(p.scope || '').toLowerCase();
+    const type = String(p.productType || '').toLowerCase();
+    return !scope.includes('maghsal') && !type.includes('maghsal');
+  });
+
+  // One entry per logical product (root + its price-duplicate batches
+  // collapsed together) for the Product dropdown, quantity summed across
+  // siblings so duplicates don't show up as separate-looking rows.
+  const missingItemGroups = useMemo(() => {
+    const groups = new Map();
+    missingItemEligibleProducts.forEach((p) => {
+      const key = getBatchGroupKey(p);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    return [...groups.entries()]
+      .map(([groupKey, batches]) => {
+        const representative = batches.find((b) => b.id === groupKey) || batches[0];
+        const quantity = batches.reduce((sum, b) => sum + computeBatchRemaining(b, { soldItems, checkedAtByProductId: stockCheckedAtByProductId }), 0);
+        return { id: groupKey, name: representative.name, barcode: representative.barcode || representative.id, quantity };
+      })
+      .sort(sortByName);
+  }, [missingItemEligibleProducts, soldItems, stockCheckedAtByProductId]);
+
+  // All price-batches of the currently selected product, oldest first.
+  const missingItemBatches = useMemo(
+    () => (missingItemGroupId ? findSiblingBatches(products, missingItemGroupId) : []),
+    [products, missingItemGroupId],
+  );
+
+  // Default batch when the user hasn't explicitly picked one: the oldest
+  // batch that still has stock.
+  const missingItemDefaultBatch = useMemo(
+    () => pickFifoBatch(missingItemBatches, { soldItems, checkedAtByProductId: stockCheckedAtByProductId }),
+    [missingItemBatches, soldItems, stockCheckedAtByProductId],
+  );
+
+  const selectedProduct = (missingItemBatches.find((b) => b.id === missingItemBatchId))
+    || missingItemDefaultBatch
+    || null;
+  const selectedProductRemaining = selectedProduct
+    ? computeBatchRemaining(selectedProduct, { soldItems, checkedAtByProductId: stockCheckedAtByProductId })
+    : null;
+
   const resetMissingItemForm = () => {
-    setSelectedProduct(null);
+    setMissingItemGroupId('');
+    setMissingItemBatchId('');
     setMissingItemCustomerId('');
     setMissingItemDate(getTodayDateForInput());
     setMissingItemQuantity('1');
     setMissingItemPaymentStatus('Unpaid');
+    setMissingItemPurchasingPrice('');
+    setMissingItemSellPrice('');
     setMissingItemRemark('');
   };
 
@@ -779,9 +856,20 @@ const SoldItems = () => {
     return localDateAtNoon.toISOString();
   };
 
-  const handleMissingProductChange = (productId) => {
-    const product = products.find((item) => item.id === productId) || null;
-    setSelectedProduct(product);
+  const handleMissingProductChange = (groupId) => {
+    setMissingItemGroupId(groupId);
+    setMissingItemBatchId('');
+    const batches = findSiblingBatches(products, groupId);
+    const defaultBatch = pickFifoBatch(batches, { soldItems, checkedAtByProductId: stockCheckedAtByProductId });
+    setMissingItemPurchasingPrice(defaultBatch ? String(toNumber(defaultBatch.purchasingPrice)) : '');
+    setMissingItemSellPrice(defaultBatch ? String(toNumber(defaultBatch.itemCost)) : '');
+  };
+
+  const handleMissingBatchChange = (batchId) => {
+    setMissingItemBatchId(batchId);
+    const batch = missingItemBatches.find((b) => b.id === batchId);
+    setMissingItemPurchasingPrice(batch ? String(toNumber(batch.purchasingPrice)) : '');
+    setMissingItemSellPrice(batch ? String(toNumber(batch.itemCost)) : '');
   };
 
   const saveMissingItem = async () => {
@@ -820,8 +908,10 @@ const SoldItems = () => {
 
     setIsSavingMissingItem(true);
 
-    const sellPriceValue = toNumber(selectedProduct.itemCost);
-    const purchasingPriceValue = toNumber(selectedProduct.purchasingPrice);
+    // For a restock (Stock), use whatever the admin edited in the price
+    // fields — it may differ from the product's currently stored price.
+    const sellPriceValue = isStock ? toNumber(missingItemSellPrice) : toNumber(selectedProduct.itemCost);
+    const purchasingPriceValue = isStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice);
     const dateScannedValue = convertDateInputToISO(missingItemDate);
     const scannedByValue = user?.name || user?.displayName || user?.email || 'Unknown';
 
@@ -899,9 +989,14 @@ const SoldItems = () => {
   };
 
   const missingItemQuantityValue = toNumber(missingItemQuantity);
-  const missingItemSellPriceValue = selectedProduct ? toNumber(selectedProduct.itemCost) : 0;
-  const missingItemPurchasingPriceValue = selectedProduct ? toNumber(selectedProduct.purchasingPrice) : 0;
-  const missingItemTotalCost = isStockLikeStatus(missingItemPaymentStatus)
+  const missingItemIsStock = isStockLikeStatus(missingItemPaymentStatus);
+  const missingItemSellPriceValue = !selectedProduct
+    ? 0
+    : (missingItemIsStock ? toNumber(missingItemSellPrice) : toNumber(selectedProduct.itemCost));
+  const missingItemPurchasingPriceValue = !selectedProduct
+    ? 0
+    : (missingItemIsStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice));
+  const missingItemTotalCost = missingItemIsStock
     ? 0
     : missingItemSellPriceValue * missingItemQuantityValue;
   const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
@@ -1351,26 +1446,38 @@ const SoldItems = () => {
                 <div className="form-group">
                   <label className="form-label">Product</label>
                   <select
-                    value={selectedProduct?.id || ''}
+                    value={missingItemGroupId}
                     onChange={(e) => handleMissingProductChange(e.target.value)}
                     className="product-select"
                     disabled={isSavingMissingItem}
                   >
                     <option value="">Select a Product</option>
-                    {products
-                      .filter((p) => {
-                        // Maghsal items must be sold from the Maghsal page only.
-                        const scope = String(p.scope || '').toLowerCase();
-                        const type = String(p.productType || '').toLowerCase();
-                        return !scope.includes('maghsal') && !type.includes('maghsal');
-                      })
-                      .map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} - {product.barcode}
-                        </option>
-                      ))}
+                    {missingItemGroups.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} - {p.barcode} · stock {p.quantity}
+                      </option>
+                    ))}
                   </select>
                 </div>
+
+                {missingItemGroupId && missingItemBatches.length > 1 && (
+                  <div className="form-group">
+                    <label className="form-label">Price</label>
+                    <select
+                      value={selectedProduct?.id || ''}
+                      onChange={(e) => handleMissingBatchChange(e.target.value)}
+                      className="form-select"
+                      disabled={isSavingMissingItem}
+                    >
+                      {missingItemBatches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          ${toNumber(b.itemCost).toFixed(2)} — {computeBatchRemaining(b, { soldItems, checkedAtByProductId: stockCheckedAtByProductId })} left
+                          {b.id === missingItemDefaultBatch?.id ? ' (default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {selectedProduct && (
                   <>
@@ -1386,6 +1493,9 @@ const SoldItems = () => {
                         />
                       </div>
                       <p className="barcode-number">{selectedProduct.barcode}</p>
+                      <p style={{ fontSize: 13, color: selectedProductRemaining <= 0 ? 'var(--red, #dc3545)' : 'var(--text-muted)' }}>
+                        {selectedProductRemaining} left at ${toNumber(selectedProduct.itemCost).toFixed(2)}
+                      </p>
                     </div>
 
                     <div className="missing-item-form-grid">
@@ -1443,6 +1553,36 @@ const SoldItems = () => {
                           <option value="Stock">Stock</option>
                         </select>
                       </div>
+
+                      {missingItemIsStock && (
+                        <div className="form-group">
+                          <label className="form-label">Purchasing Price</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={missingItemPurchasingPrice}
+                            onChange={(e) => setMissingItemPurchasingPrice(e.target.value)}
+                            className="form-input"
+                            disabled={isSavingMissingItem}
+                          />
+                        </div>
+                      )}
+
+                      {missingItemIsStock && (
+                        <div className="form-group">
+                          <label className="form-label">Selling Price</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={missingItemSellPrice}
+                            onChange={(e) => setMissingItemSellPrice(e.target.value)}
+                            className="form-input"
+                            disabled={isSavingMissingItem}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="form-group">
@@ -1485,4 +1625,4 @@ const SoldItems = () => {
   );
 };
 
-export default SoldItems;
+export default OilSoldItems;

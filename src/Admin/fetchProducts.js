@@ -5,6 +5,7 @@ import '../CSS/admin.css';
 import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { isSamePrice, resolveOrCreateBatchForPrice } from '../utils/productBatches';
 
 const FetchProducts = () => {
   const [confirm, confirmDialog] = useConfirmDialog();
@@ -463,6 +464,58 @@ const FetchProducts = () => {
         return;
       }
 
+      // A price change never overwrites the existing batch in place — the
+      // remaining old-priced stock stays where it is, and a new linked batch
+      // is created (or reused) at the new price, starting at quantity 0.
+      const priceChanged = oldId === newId && existingSnap.exists() && (
+        !isSamePrice(existingData.itemCost, parsedItemCost) ||
+        !isSamePrice(existingData.purchasingPrice, parsedPurchasingPrice)
+      );
+
+      if (priceChanged) {
+        const rootId = existingData.baseProductId || oldId;
+        await set(newProductRef, {
+          ...existingData,
+          name: editingProduct.name.trim() || 'Unnamed Product',
+          productType: productTypeValue,
+          scope: scopeValue,
+          unit: (editingProduct.unit || '').trim(),
+          ...(scopeValue !== 'maghsal' ? { barcode: existingData.barcode || oldId } : {}),
+        });
+
+        const { id: newBatchId } = await resolveOrCreateBatchForPrice(
+          database,
+          products,
+          rootId,
+          { itemCost: parsedItemCost, purchasingPrice: parsedPurchasingPrice },
+        );
+
+        const updatedProducts = products.map((product) =>
+          product.id === oldId
+            ? { ...product, name: editingProduct.name.trim() || 'Unnamed Product', productType: productTypeValue, scope: scopeValue, unit: (editingProduct.unit || '').trim() }
+            : product
+        );
+        updatedProducts.push({
+          id: newBatchId,
+          name: editingProduct.name.trim() || 'Unnamed Product',
+          productType: productTypeValue,
+          scope: scopeValue,
+          unit: (editingProduct.unit || '').trim(),
+          baseProductId: rootId,
+          itemCost: parsedItemCost,
+          purchasingPrice: parsedPurchasingPrice,
+          quantity: 0,
+        });
+
+        const sortedProducts = sortProducts(updatedProducts, sortBy.field, sortBy.order);
+        setProducts(sortedProducts);
+        setFilteredProducts(sortedProducts);
+        setEditingProduct(null);
+        setSuccessMessage('Price changed — a new batch was created at the new price; existing stock kept its original price.');
+        setTimeout(() => setSuccessMessage(null), 4000);
+        return;
+      }
+
       await set(newProductRef, {
         name: editingProduct.name.trim() || 'Unnamed Product',
         productType: productTypeValue,
@@ -471,6 +524,8 @@ const FetchProducts = () => {
         quantity: parsedQuantity,
         scope: scopeValue,
         unit: (editingProduct.unit || '').trim(),
+        ...(editingProduct.baseProductId ? { baseProductId: editingProduct.baseProductId } : {}),
+        ...(existingData.barcode ? { barcode: existingData.barcode } : {}),
         ...(editingProduct.createdAt ? { createdAt: editingProduct.createdAt } : existingData.createdAt ? { createdAt: existingData.createdAt } : {}),
       });
 

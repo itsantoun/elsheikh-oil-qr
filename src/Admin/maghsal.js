@@ -9,6 +9,7 @@ import { IconRefresh, IconX, IconPlus } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
+import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
 import {
   addReceiptHeader,
   createReceiptDoc,
@@ -38,6 +39,11 @@ const Maghsal = () => {
   const [entries, setEntries] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  // { [productId]: lastReconciledISODate } — from the Stock Checker's
+  // "Mark Accurate" action. Movement recorded before this date is already
+  // baked into products/{id}.quantity, so batch-remaining math must not
+  // subtract it again (same rule remainingProducts.js itself follows).
+  const [stockCheckedAtByProductId, setStockCheckedAtByProductId] = useState({});
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
 
   // View tab: 'all' keeps Used entries out of the main list entirely; 'used'
@@ -69,6 +75,9 @@ const Maghsal = () => {
   const [formCustomerId, setFormCustomerId] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formCategory, setFormCategory] = useState('');
+  // Explicit price-batch override for the selected product — '' means
+  // "use the default (oldest-priced) batch" until the user picks otherwise.
+  const [formBatchId, setFormBatchId] = useState('');
   const [formServiceCategory, setFormServiceCategory] = useState('');
   const [formQuantity, setFormQuantity] = useState('1');
   const [formServicePrice, setFormServicePrice] = useState('');
@@ -208,8 +217,20 @@ const Maghsal = () => {
       setProducts(list);
     });
 
+    const stockChecksRef = ref(database, 'stockChecks');
+    const unsubStockChecks = onValue(stockChecksRef, (snap) => {
+      if (!snap.exists()) { setStockCheckedAtByProductId({}); return; }
+      const data = snap.val();
+      const map = {};
+      Object.keys(data).forEach((id) => {
+        const ts = data[id]?.reconfirmedAt || data[id]?.checkedAt;
+        if (ts) map[id] = ts;
+      });
+      setStockCheckedAtByProductId(map);
+    });
+
     return () => {
-      unsubCustomers(); unsubEntries(); unsubCategories(); unsubProducts();
+      unsubCustomers(); unsubEntries(); unsubCategories(); unsubProducts(); unsubStockChecks();
     };
   }, []);
 
@@ -230,6 +251,48 @@ const Maghsal = () => {
   );
 
   const getProduct = (id) => products.find((p) => p.id === id);
+
+  // One entry per logical product (root + its price-duplicate batches
+  // collapsed together), with quantity summed across siblings — this feeds
+  // the dropdowns so duplicates don't show up as separate-looking rows.
+  const maghsalProductGroups = useMemo(() => {
+    const groups = new Map();
+    maghsalProducts.forEach((p) => {
+      const key = getBatchGroupKey(p);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    return [...groups.entries()]
+      .map(([groupKey, batches]) => {
+        const representative = batches.find((b) => b.id === groupKey) || batches[0];
+        const quantity = batches.reduce(
+          (sum, b) => sum + computeBatchRemaining(b, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId }),
+          0,
+        );
+        return { id: groupKey, name: representative.name, quantity };
+      })
+      .sort(sortByName);
+  }, [maghsalProducts, entries, stockCheckedAtByProductId]);
+
+  // All price-batches of the currently selected product, oldest first.
+  const formCategoryBatches = useMemo(
+    () => (formCategory ? findSiblingBatches(products, formCategory) : []),
+    [products, formCategory],
+  );
+
+  // Default batch when the user hasn't explicitly picked one: the oldest
+  // batch that still has stock (same rule as automatic FIFO elsewhere).
+  const formCategoryDefaultBatch = useMemo(
+    () => pickFifoBatch(formCategoryBatches, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId }),
+    [formCategoryBatches, entries, stockCheckedAtByProductId],
+  );
+
+  const selectedBatch = (formCategoryBatches.find((b) => b.id === formBatchId))
+    || formCategoryDefaultBatch
+    || null;
+  const selectedBatchRemaining = selectedBatch
+    ? computeBatchRemaining(selectedBatch, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId })
+    : null;
 
   // ── Entry totals helper ─────────────────────────
   const entryTotals = (e) => {
@@ -430,7 +493,7 @@ const Maghsal = () => {
     setFormStockSellPrice(p ? String(toNumber(p.itemCost)) : '');
   };
 
-  const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); };
+  const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); setFormBatchId(''); };
 
 
 
@@ -517,7 +580,7 @@ const Maghsal = () => {
       return;
     }
 
-    const selectedProduct = formCategory ? getProduct(formCategory) : null;
+    const selectedProduct = formCategory ? selectedBatch : null;
     if (formCategory && !selectedProduct) {
       flash('Selected product is no longer available.', 'error');
       return;
@@ -582,7 +645,9 @@ const Maghsal = () => {
     setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
     setFormDate(formatDateForInput(entry.date));
     const usedLine = Array.isArray(entry.consumablesUsed) && entry.consumablesUsed[0];
-    setFormCategory(usedLine ? usedLine.productId : '');
+    const usedProduct = usedLine ? getProduct(usedLine.productId) : null;
+    setFormCategory(usedProduct ? getBatchGroupKey(usedProduct) : (usedLine ? usedLine.productId : ''));
+    setFormBatchId(usedLine ? usedLine.productId : '');
     setFormServiceCategory(entry.serviceCategory || '');
     setFormQuantity(usedLine ? String(toNumber(usedLine.quantity)) : '1');
     setFormServicePrice(String(toNumber(entry.servicePrice ?? entry.price)));
@@ -599,7 +664,7 @@ const Maghsal = () => {
     const selectedCustomer = customers.find((c) => c.id === formCustomerId);
     if (!selectedCustomer) { flash('Selected customer is no longer available.', 'error'); return; }
 
-    const selectedProduct = formCategory ? getProduct(formCategory) : null;
+    const selectedProduct = formCategory ? selectedBatch : null;
     if (formCategory && !selectedProduct) { flash('Selected product is no longer available.', 'error'); return; }
 
     setIsSaving(true);
@@ -876,7 +941,7 @@ const Maghsal = () => {
             <label>Product</label>
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
               <option value="All">All Products</option>
-              {maghsalProducts.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              {maghsalProductGroups.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
           </div>
 
@@ -1070,10 +1135,43 @@ const Maghsal = () => {
                 {formPaymentStatus !== 'Stock' && (
                   <div className="form-group">
                     <label className="form-label">Product (optional)</label>
-                    <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className="form-select" disabled={isSaving}>
+                    <select
+                      value={formCategory}
+                      onChange={(e) => { setFormCategory(e.target.value); setFormBatchId(''); }}
+                      className="form-select"
+                      disabled={isSaving}
+                    >
                       <option value="">No product</option>
-                      {maghsalProducts.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
+                      {maghsalProductGroups.map((p) => <option key={p.id} value={p.id}>{p.name} · stock {toNumber(p.quantity)}</option>)}
                     </select>
+                  </div>
+                )}
+
+                {formPaymentStatus !== 'Stock' && formCategory && formCategoryBatches.length > 1 && (
+                  <div className="form-group">
+                    <label className="form-label">Price</label>
+                    <select
+                      value={selectedBatch?.id || ''}
+                      onChange={(e) => setFormBatchId(e.target.value)}
+                      className="form-select"
+                      disabled={isSaving}
+                    >
+                      {formCategoryBatches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          ${toNumber(b.itemCost).toFixed(2)} — {computeBatchRemaining(b, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId })} left
+                          {b.id === formCategoryDefaultBatch?.id ? ' (default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {formPaymentStatus !== 'Stock' && formCategory && selectedBatch && (
+                  <div className="form-group">
+                    <label className="form-label">In Stock</label>
+                    <div className="form-input" style={{ display: 'flex', alignItems: 'center', color: selectedBatchRemaining <= 0 ? 'var(--red, #dc3545)' : undefined }}>
+                      {selectedBatchRemaining} left at ${toNumber(selectedBatch.itemCost).toFixed(2)}
+                    </div>
                   </div>
                 )}
 
@@ -1121,16 +1219,16 @@ const Maghsal = () => {
                       value={formStockProductId}
                       onChange={(e) => handleStockProductChange(e.target.value)}
                       className="form-select"
-                      disabled={isSaving || maghsalProducts.length === 0}
+                      disabled={isSaving || maghsalProductGroups.length === 0}
                     >
                       <option value="">Select a Product</option>
-                      {maghsalProducts.map((p) => (
+                      {maghsalProductGroups.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} {p.unit ? `(${p.unit})` : ''} · stock {toNumber(p.quantity)}
+                          {p.name} · stock {toNumber(p.quantity)}
                         </option>
                       ))}
                     </select>
-                    {maghsalProducts.length === 0 && (
+                    {maghsalProductGroups.length === 0 && (
                       <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                         No Maghsal items in inventory. Add them from <strong>Add Products → Maghsal Stock</strong>.
                       </p>

@@ -6,6 +6,7 @@ import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { useExchangeRate, convertPrice, formatLBP, formatUSD, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 
 const CLIENT_TYPES = [
   { value: 'oil-filter', label: 'Oil & Filter', labelAr: 'زيت وفلتر' },
@@ -15,6 +16,14 @@ const CLIENT_TYPES = [
   { value: 'pickup-water-distribution', label: 'Pickup Water Distribution', labelAr: 'توزيع مياه بيك أب' },
   { value: 'diesel-distribution', label: 'Diesel Distribution', labelAr: 'توزيع ديزل' },
 ];
+
+const WATER_FILLING_SIZES = [
+  { value: 'normal', label: 'Water Filling', labelAr: 'تعبئة مياه' },
+  { value: 'small', label: 'Water Filling (Small)', labelAr: 'تعبئة مياه (صغير)' },
+];
+
+const CURRENCIES = ['USD', 'LBP'];
+const emptySizePricing = () => ({ currency: 'USD', price: '' });
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -30,6 +39,8 @@ const emptyForm = {
   phone: '',
   address: '',
   clientTypes: [],
+  waterFillingSizes: [],
+  waterFillingPricing: {},
 };
 
 const AddCustomer = () => {
@@ -44,6 +55,7 @@ const AddCustomer = () => {
   const [expandedCustomer, setExpandedCustomer] = useState(null);
   const [filterType, setFilterType] = useState('');
   const [confirm, confirmDialog] = useConfirmDialog();
+  const exchangeRate = useExchangeRate();
 
   useExpiryNotifications({ successMessage, errorMessage });
 
@@ -65,6 +77,8 @@ const AddCustomer = () => {
           phone: data[key].phone || '',
           address: data[key].address || '',
           clientTypes: data[key].clientTypes || [],
+          waterFillingSizes: data[key].waterFillingSizes || [],
+          waterFillingPricing: data[key].waterFillingPricing || {},
         }));
         customerList.sort(sortByName);
         setCustomers(customerList);
@@ -90,11 +104,56 @@ const AddCustomer = () => {
   const toggleClientType = (value, isEdit = false) => {
     const setter = isEdit ? setEditData : setFormData;
     setter(prev => {
-      const types = prev.clientTypes.includes(value)
+      const removing = prev.clientTypes.includes(value);
+      const types = removing
         ? prev.clientTypes.filter(t => t !== value)
         : [...prev.clientTypes, value];
-      return { ...prev, clientTypes: types };
+      const clearingWaterFilling = removing && value === 'water-filling';
+      return {
+        ...prev,
+        clientTypes: types,
+        waterFillingSizes: clearingWaterFilling ? [] : prev.waterFillingSizes,
+        waterFillingPricing: clearingWaterFilling ? {} : prev.waterFillingPricing,
+      };
     });
+  };
+
+  const toggleWaterFillingSize = (value, isEdit = false) => {
+    const setter = isEdit ? setEditData : setFormData;
+    setter(prev => {
+      const adding = !prev.waterFillingSizes.includes(value);
+      const sizes = adding
+        ? [...prev.waterFillingSizes, value]
+        : prev.waterFillingSizes.filter(s => s !== value);
+      const pricing = { ...prev.waterFillingPricing };
+      if (adding) pricing[value] = pricing[value] || emptySizePricing();
+      else delete pricing[value];
+      return { ...prev, waterFillingSizes: sizes, waterFillingPricing: pricing };
+    });
+  };
+
+  const setSizePricingField = (size, field, value, isEdit = false) => {
+    const setter = isEdit ? setEditData : setFormData;
+    setter(prev => ({
+      ...prev,
+      waterFillingPricing: {
+        ...prev.waterFillingPricing,
+        [size]: { ...(prev.waterFillingPricing[size] || emptySizePricing()), [field]: value },
+      },
+    }));
+  };
+
+  // Keeps only pricing for currently-checked sizes, with price coerced to a number.
+  const buildPricingPayload = (data) => {
+    const payload = {};
+    data.waterFillingSizes.forEach((size) => {
+      const entry = data.waterFillingPricing[size] || emptySizePricing();
+      payload[size] = {
+        currency: entry.currency || 'USD',
+        price: parseFloat(entry.price) || 0,
+      };
+    });
+    return payload;
   };
 
   const handleAddCustomer = async (e) => {
@@ -112,6 +171,8 @@ const AddCustomer = () => {
         phone: formData.phone.trim(),
         address: formData.address.trim(),
         clientTypes: formData.clientTypes,
+        waterFillingSizes: formData.clientTypes.includes('water-filling') ? formData.waterFillingSizes : [],
+        waterFillingPricing: formData.clientTypes.includes('water-filling') ? buildPricingPayload(formData) : {},
       };
       const newCustomerRef = push(ref(database, 'customers'));
       await set(newCustomerRef, customerData);
@@ -130,6 +191,14 @@ const AddCustomer = () => {
     }
   };
 
+  const hydratePricingForEdit = (waterFillingPricing) => {
+    const hydrated = {};
+    Object.entries(waterFillingPricing || {}).forEach(([size, entry]) => {
+      hydrated[size] = { currency: entry.currency || 'USD', price: entry.price ?? '' };
+    });
+    return hydrated;
+  };
+
   const handleStartEditing = (customer) => {
     setEditingCustomer(customer.id);
     setEditData({
@@ -138,6 +207,8 @@ const AddCustomer = () => {
       phone: customer.phone,
       address: customer.address,
       clientTypes: customer.clientTypes || [],
+      waterFillingSizes: customer.waterFillingSizes || [],
+      waterFillingPricing: hydratePricingForEdit(customer.waterFillingPricing),
     });
     setExpandedCustomer(customer.id);
   };
@@ -156,6 +227,8 @@ const AddCustomer = () => {
         phone: editData.phone.trim(),
         address: editData.address.trim(),
         clientTypes: editData.clientTypes,
+        waterFillingSizes: editData.clientTypes.includes('water-filling') ? editData.waterFillingSizes : [],
+        waterFillingPricing: editData.clientTypes.includes('water-filling') ? buildPricingPayload(editData) : {},
       };
       await update(ref(database, `customers/${id}`), customerData);
 
@@ -264,6 +337,94 @@ const AddCustomer = () => {
     </div>
   );
 
+  const renderWaterFillingSizeSelector = (selectedSizes, onToggle) => (
+    <div className="client-type-selector">
+      {WATER_FILLING_SIZES.map(size => (
+        <button
+          key={size.value}
+          type="button"
+          className={`type-chip ${selectedSizes.includes(size.value) ? 'selected' : ''}`}
+          onClick={() => onToggle(size.value)}
+          disabled={isLoading}
+        >
+          <span className="type-chip-check">{selectedSizes.includes(size.value) ? '✓' : ''}</span>
+          <span className="type-chip-label">{size.label}</span>
+          <span className="type-chip-label-ar">{size.labelAr}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  // Formats the price in its own currency plus the converted amount in the
+  // other one, e.g. "10 USD ≈ 890,000 LBP".
+  const formatPriceWithConversion = (entry) => {
+    const amount = Number(entry.price) || 0;
+    const converted = convertPrice(amount, entry.currency, exchangeRate);
+    const own = entry.currency === 'USD' ? formatUSD(amount) : formatLBP(amount);
+    const other = entry.currency === 'USD' ? formatLBP(converted) : formatUSD(converted);
+    return `${own} ≈ ${other}`;
+  };
+
+  const renderSizePricingControls = (sizes, pricing, isEdit) => (
+    <div className="water-filling-pricing">
+      {sizes.map((size) => {
+        const entry = pricing[size] || emptySizePricing();
+        return (
+          <div key={size} className="water-filling-pricing-row">
+            <span className="water-filling-pricing-label">{getWaterFillingSizeLabel(size)} Pricing</span>
+            <div className="client-type-selector">
+              {CURRENCIES.map((currency) => (
+                <button
+                  key={currency}
+                  type="button"
+                  className={`type-chip ${entry.currency === currency ? 'selected' : ''}`}
+                  onClick={() => setSizePricingField(size, 'currency', currency, isEdit)}
+                  disabled={isLoading}
+                >
+                  <span className="type-chip-label">{currency}</span>
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="Enter price"
+              value={formatNumberInput(entry.price)}
+              onChange={(e) => setSizePricingField(size, 'price', stripCommas(e.target.value), isEdit)}
+              className="form-input"
+              disabled={isLoading}
+            />
+            {entry.price !== '' && (
+              <span className="water-filling-pricing-conversion">{formatPriceWithConversion(entry)}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const getWaterFillingSizeLabel = (value) => {
+    const size = WATER_FILLING_SIZES.find(s => s.value === value);
+    return size ? size.label : value;
+  };
+
+  const renderWaterFillingSizeBadges = (sizes, pricing = {}) => {
+    if (!sizes || sizes.length === 0) return null;
+    return (
+      <div className="client-type-badges">
+        {sizes.map(size => {
+          const entry = pricing[size];
+          return (
+            <span key={size} className="client-type-badge badge-water-filling">
+              {getWaterFillingSizeLabel(size)}
+              {entry && entry.price ? ` — ${formatPriceWithConversion(entry)}` : ''}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="page-shell customers-page">
       <PageHeader title="Customer Management" subtitle="Manage customer profiles and information" />
@@ -364,34 +525,51 @@ const AddCustomer = () => {
             {renderClientTypeSelector(formData.clientTypes, (val) => toggleClientType(val, false))}
           </div>
 
+          {formData.clientTypes.includes('water-filling') && (
+            <div className="form-group form-group-full">
+              <label className="form-label">
+                <span className="label-text">Water Filling Size</span>
+                <span className="label-hint">(select all that apply)</span>
+              </label>
+              {renderWaterFillingSizeSelector(formData.waterFillingSizes, (val) => toggleWaterFillingSize(val, false))}
+              {renderSizePricingControls(formData.waterFillingSizes, formData.waterFillingPricing, false)}
+            </div>
+          )}
+
           <div className="form-actions">
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={isLoading || !formData.name.trim() || !formData.nameArabic.trim()}
-            >
-              {isLoading ? (
-                <>
-                  <span className="spinner"></span>
-                  Adding...
-                </>
-              ) : (
-                <>
-                  <span className="button-icon"><IconPlus /></span>
-                  Add Customer
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={handleClearForm}
-              className="btn-secondary"
-              disabled={isLoading || (
-                !formData.name && !formData.nameArabic && !formData.phone && !formData.address && formData.clientTypes.length === 0
-              )}
-            >
-              Clear Form
-            </button>
+            <div className="form-actions-buttons">
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={isLoading || !formData.name.trim() || !formData.nameArabic.trim()}
+              >
+                {isLoading ? (
+                  <>
+                    <span className="spinner"></span>
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <span className="button-icon"><IconPlus /></span>
+                    Add Customer
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleClearForm}
+                className="btn-secondary"
+                disabled={isLoading || (
+                  !formData.name && !formData.nameArabic && !formData.phone && !formData.address && formData.clientTypes.length === 0
+                )}
+              >
+                Clear Form
+              </button>
+            </div>
+            <div className="exchange-rate-banner">
+              <span className="exchange-rate-banner-label">Exchange Rate</span>
+              <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} LBP</span>
+            </div>
           </div>
         </form>
       </div>
@@ -486,6 +664,7 @@ const AddCustomer = () => {
                       <div className="customer-card-meta">
                         {customer.phone && <span className="meta-item phone-meta">{customer.phone}</span>}
                         {renderClientTypeBadges(customer.clientTypes)}
+                        {renderWaterFillingSizeBadges(customer.waterFillingSizes, customer.waterFillingPricing)}
                       </div>
                     </div>
                     <div className="customer-card-actions">
@@ -577,6 +756,16 @@ const AddCustomer = () => {
                             </label>
                             {renderClientTypeSelector(editData.clientTypes, (val) => toggleClientType(val, true))}
                           </div>
+                          {editData.clientTypes.includes('water-filling') && (
+                            <div className="form-group form-group-full">
+                              <label className="form-label">
+                                <span className="label-text">Water Filling Size</span>
+                                <span className="label-hint">(select all that apply)</span>
+                              </label>
+                              {renderWaterFillingSizeSelector(editData.waterFillingSizes, (val) => toggleWaterFillingSize(val, true))}
+                              {renderSizePricingControls(editData.waterFillingSizes, editData.waterFillingPricing, true)}
+                            </div>
+                          )}
                           <div className="edit-actions">
                             <button
                               onClick={() => handleEditCustomer(customer.id)}
@@ -609,6 +798,12 @@ const AddCustomer = () => {
                               <span className="detail-label">Client Types</span>
                               <div className="detail-value">{renderClientTypeBadges(customer.clientTypes)}</div>
                             </div>
+                            {(customer.clientTypes || []).includes('water-filling') && customer.waterFillingSizes?.length > 0 && (
+                              <div className="detail-item detail-item-full">
+                                <span className="detail-label">Water Filling Size</span>
+                                <div className="detail-value">{renderWaterFillingSizeBadges(customer.waterFillingSizes, customer.waterFillingPricing)}</div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

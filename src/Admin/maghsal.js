@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
 import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
@@ -8,16 +6,7 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
-import { saveBlobToExportFolder } from '../utils/exportFolder';
 import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
-import {
-  addReceiptHeader,
-  createReceiptDoc,
-  drawTotalsBlock,
-  getReceiptDensity,
-  money,
-  receiptTableOptions,
-} from '../utils/pdfReceipt';
 
 const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
 
@@ -68,7 +57,6 @@ const Maghsal = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   // Add modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -103,16 +91,6 @@ const Maghsal = () => {
   const [confirm, confirmDialog] = useConfirmDialog();
 
   // ── Format helpers ──────────────────────────────
-  const formatDate = (d) => {
-    try {
-      const date = new Date(d);
-      if (isNaN(date.getTime())) return 'Invalid Date';
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      return `${day}-${month}-${date.getFullYear()}`;
-    } catch { return 'Invalid Date'; }
-  };
-
   const formatDateTime = (d) => {
     try {
       const date = new Date(d);
@@ -139,12 +117,6 @@ const Maghsal = () => {
 
   const formatCurrency = (v) =>
     Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const sanitizeCSVCell = (value) => {
-    const raw = value == null ? '' : String(value);
-    const flattened = raw.replace(/\r?\n/g, ' ');
-    return /^[=+\-@]/.test(flattened) ? `'${flattened}` : flattened;
-  };
 
   const sortByDate = (items, order = 'asc') => {
     return [...items].sort((a, b) => {
@@ -726,124 +698,10 @@ const Maghsal = () => {
     }
   };
 
-  // ── Export ───────────────────────────────────────
   const getDateDisplay = (v) => {
     if (!v) return '';
     const [y, m, d] = v.split('-');
     return `${d}-${m}-${y}`;
-  };
-
-  const buildExportFilename = (extension) => {
-    const sanitize = (s) =>
-      String(s || '').trim().replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').slice(0, 80);
-    const clientPart = sanitize(customerFilter) || 'maghsal_all';
-    let datePart;
-    if (dateFromFilter && dateToFilter) {
-      datePart = dateFromFilter === dateToFilter
-        ? getDateDisplay(dateFromFilter)
-        : `${getDateDisplay(dateFromFilter)}_to_${getDateDisplay(dateToFilter)}`;
-    } else if (dateFromFilter) datePart = `from_${getDateDisplay(dateFromFilter)}`;
-    else if (dateToFilter) datePart = `to_${getDateDisplay(dateToFilter)}`;
-    else datePart = formatDate(new Date());
-    return `Maghsal_${clientPart}_${datePart}.${extension}`;
-  };
-
-  const exportPDF = async () => {
-    if (filtered.length === 0) { flash('No data to export.', 'error'); return; }
-    let paid = 0, unpaid = 0;
-    const rows = filtered.map((e) => {
-      const m = entryTotals(e);
-      if (e.paymentStatus === 'Paid') paid += m.totalPrice;
-      else if (e.paymentStatus === 'Unpaid') unpaid += m.totalPrice;
-      const qty = toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity);
-      return [
-        formatDate(e.date),
-        e.category || 'N/A',
-        e.paymentStatus || 'N/A',
-        qty || '—',
-        money(m.servicePrice),
-        money(m.goodsTotal),
-        money(m.totalPrice),
-      ];
-    });
-
-    const doc = createReceiptDoc(jsPDF);
-    const density = getReceiptDensity(rows.length);
-    const fromLabel = dateFromFilter ? getDateDisplay(dateFromFilter) : formatDate(filtered[filtered.length - 1]?.date);
-    const toLabel = dateToFilter ? getDateDisplay(dateToFilter) : formatDate(filtered[0]?.date);
-    const startY = await addReceiptHeader(doc, {
-      title: 'CLIENT RECEIPT',
-      subtitle: 'Maghsal Statement',
-      receiptNo: `MG-${Date.now().toString().slice(-8)}`,
-      client: customerFilter || 'All Clients',
-      dateRange: `From ${fromLabel} to ${toLabel}`,
-    });
-
-    autoTable(doc, {
-      ...receiptTableOptions({
-        head: ['Date', 'Service', 'Status', 'Qty', 'Service Price', 'Sold', 'Total'],
-        body: rows,
-        startY,
-        rightAlignedColumns: [3, 4, 5, 6],
-        density,
-      }),
-      columnStyles: {
-        0: { cellWidth: 25 },
-        1: { cellWidth: 52 },
-        2: { cellWidth: 22 },
-        3: { halign: 'right', cellWidth: 15 },
-        4: { halign: 'right', cellWidth: 25 },
-        5: { halign: 'right', cellWidth: 20 },
-        6: { halign: 'right', cellWidth: 23 },
-      },
-    });
-
-    drawTotalsBlock(doc, {
-      paid,
-      unpaid,
-      grandTotal: paid + unpaid,
-      startY: doc.lastAutoTable.finalY + 4,
-      compact: density.totalsCompact,
-    });
-
-    const filename = buildExportFilename('pdf');
-    const blob = doc.output('blob');
-    const result = await saveBlobToExportFolder(blob, filename);
-    if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
-  };
-
-  const exportCSV = async () => {
-    if (filtered.length === 0) { flash('No data to export.', 'error'); return; }
-    const headers = ['Date','Customer','Service','Category','Payment Status','Quantity','Service Price','Sold Total','Total','Employee','Remark','Used','Sold'];
-    const rows = filtered.map((e) => {
-      const m = entryTotals(e);
-      const qty = toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity);
-      const cons = (e.consumablesUsed || []).map((c) => `${c.name} x${c.quantity}`).join('; ');
-      const gd = (e.goodsSold || []).map((g) => `${g.name} x${g.quantity}@$${toNumber(g.unitPrice).toFixed(2)}`).join('; ');
-      return [
-        formatDateTime(e.date),
-        e.customerName || 'N/A',
-        e.serviceCategory || 'N/A',
-        e.category || 'N/A',
-        e.paymentStatus || 'N/A',
-        qty,
-        m.servicePrice.toFixed(2),
-        m.goodsTotal.toFixed(2),
-        m.totalPrice.toFixed(2),
-        e.employee || 'N/A',
-        e.remark || '',
-        cons,
-        gd,
-      ];
-    });
-    const csv = '﻿' +
-      [headers, ...rows]
-        .map((r) => r.map((c) => `"${sanitizeCSVCell(c).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const filename = buildExportFilename('csv');
-    const result = await saveBlobToExportFolder(blob, filename);
-    if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
   };
 
   // ── Render ───────────────────────────────────────
@@ -857,27 +715,6 @@ const Maghsal = () => {
             <button className="btn-secondary" onClick={handleRefresh} disabled={isRefreshing}>
               <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
-            <div style={{ position: 'relative' }}>
-              <button className="btn-secondary" onClick={() => setShowExportDropdown((v) => !v)}>
-                Export ▾
-              </button>
-              {showExportDropdown && (
-                <div style={{
-                  position: 'absolute', top: '100%', right: 0, zIndex: 100,
-                  background: '#fff', border: '1px solid var(--border-light)', borderRadius: 'var(--r-md)',
-                  boxShadow: 'var(--shadow-md)', minWidth: 180, marginTop: 4,
-                }}>
-                  <button
-                    style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                    onClick={() => { exportCSV(); setShowExportDropdown(false); }}
-                  >Full Export (CSV)</button>
-                  <button
-                    style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                    onClick={() => { exportPDF(); setShowExportDropdown(false); }}
-                  >Client Export (PDF)</button>
-                </div>
-              )}
-            </div>
             <button className="btn-primary" onClick={openAddModal}>
               <IconPlus /> Add Used Item
             </button>

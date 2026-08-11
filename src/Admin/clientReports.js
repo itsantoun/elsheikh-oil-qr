@@ -15,6 +15,7 @@ import {
   money,
 } from '../utils/pdfReceipt';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { useExchangeRate, convertPrice } from '../utils/exchangeRate';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -55,9 +56,12 @@ const normalizeScope = (scope, productType = '') => {
 };
 
 const SCOPE_TITLES = { oil: 'Oil', filter: 'Filter', maghsal: 'Maghsal' };
-// Section display order — Oil first, then Filter, then Maghsal, then anything else.
-const SECTION_RANK = { Oil: 0, Filter: 1, Maghsal: 2 };
+// Section display order — Oil first, then Filter, then Maghsal, then Water Filling, then anything else.
+const SECTION_RANK = { Oil: 0, Filter: 1, Maghsal: 2, 'Water Filling': 3 };
 const sectionRank = (title) => (title in SECTION_RANK ? SECTION_RANK[title] : 99);
+
+const WATER_FILLING_LABELS = { normal: 'Water Filling', small: 'Water Filling (Small)' };
+const waterFillingItemLabel = (type) => WATER_FILLING_LABELS[type] || type || 'Water Filling';
 
 // Oil/Filter per-item revenue (mirrors soldItems.js).
 const getItemRevenue = (item) => {
@@ -101,10 +105,12 @@ const compareNames = (a, b) =>
 const GROUP_FILL = [233, 240, 250];
 
 // ── Component ──────────────────────────────────────────────────────────────────
-const Reports = () => {
+const ClientReports = () => {
   const { user } = useContext(UserContext);
+  const exchangeRate = useExchangeRate();
 
   const [maghsalEntries, setMaghsalEntries] = useState([]);
+  const [waterFillingEntries, setWaterFillingEntries] = useState([]);
   const [soldItems, setSoldItems] = useState([]);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -126,6 +132,7 @@ const Reports = () => {
   useEffect(() => {
     const customersRef = ref(database, 'customers');
     const maghsalRef = ref(database, 'maghsalEntries');
+    const waterFillingRef = ref(database, 'waterFillingEntries');
     const soldRef = ref(database, 'SoldItems');
     const productsRef = ref(database, 'products');
 
@@ -142,6 +149,11 @@ const Reports = () => {
     const unsubM = onValue(maghsalRef, (snap) => {
       const data = snap.exists() ? snap.val() : {};
       setMaghsalEntries(Object.keys(data).map((k) => ({ id: k, ...data[k] })));
+    });
+
+    const unsubW = onValue(waterFillingRef, (snap) => {
+      const data = snap.exists() ? snap.val() : {};
+      setWaterFillingEntries(Object.keys(data).map((k) => ({ id: k, ...data[k] })));
     });
 
     const unsubP = onValue(productsRef, (snap) => {
@@ -168,7 +180,7 @@ const Reports = () => {
       });
     });
 
-    return () => { unsubC(); unsubM(); unsubP(); unsubS(); };
+    return () => { unsubC(); unsubM(); unsubW(); unsubP(); unsubS(); };
   }, []);
 
   const applyHistorySnapshot = (snap) => {
@@ -230,9 +242,9 @@ const Reports = () => {
       || (engName && engName === selectedCustomer.nameArabic);
   };
 
-  // Available type options for the filter (Oil, Filter, Maghsal, then any custom types).
+  // Available type options for the filter (Oil, Filter, Maghsal, Water Filling, then any custom types).
   const availableTypes = useMemo(() => {
-    const set = new Set(['Oil', 'Filter', 'Maghsal']);
+    const set = new Set(['Oil', 'Filter', 'Maghsal', 'Water Filling']);
     products.forEach((p) => {
       const scopeVal = normalizeScope(p.scope, p.productType);
       set.add(scopeVal === 'other' ? (p.productType || 'Other') : SCOPE_TITLES[scopeVal]);
@@ -267,6 +279,26 @@ const Reports = () => {
         item: e.category || 'Service',
         quantity: toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity),
         total: entryTotal(e),
+        status: e.paymentStatus || 'N/A',
+      });
+    });
+
+    waterFillingEntries.forEach((e) => {
+      if (typeFilter !== 'All' && typeFilter !== 'Water Filling') return;
+      if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
+      if (!inRange(e.date)) return;
+      // Statement totals are USD-denominated — convert LBP premiums so they
+      // aggregate correctly alongside Oil/Filter/Maghsal totals.
+      const totalUSD = e.premiumCurrency === 'LBP'
+        ? convertPrice(toNumber(e.totalPremium), 'LBP', exchangeRate)
+        : toNumber(e.totalPremium);
+      records.push({
+        key: `w-${e.id}`,
+        date: e.date,
+        section: 'Water Filling',
+        item: waterFillingItemLabel(e.transactionType),
+        quantity: toNumber(e.quantity),
+        total: totalUSD,
         status: e.paymentStatus || 'N/A',
       });
     });
@@ -310,7 +342,7 @@ const Reports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal };
-  }, [selectedCustomer, maghsalEntries, soldItems, products, typeFilter, bounds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, maghsalEntries, waterFillingEntries, soldItems, products, typeFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -408,7 +440,7 @@ const Reports = () => {
     const density = getReceiptDensity(count + sections.length);
     const startY = await addReceiptHeader(doc, {
       title: 'CLIENT REPORT',
-      subtitle: 'Statement by Type',
+      // subtitle: 'Statement by Type',
       receiptNo: `RP-${Date.now().toString().slice(-8)}`,
       client: customerName,
       dateRange: range,
@@ -533,7 +565,7 @@ const Reports = () => {
         <div className="page-shell-header-left">
           <h1 className="page-shell-header-title">Reports</h1>
           <p className="page-shell-header-subtitle">
-            Per-client statement grouped by type — Oil, Filter, Maghsal and more.
+            Per-client statement grouped by type — Oil, Filter, Maghsal, Water Filling and more.
           </p>
         </div>
         <div className="page-shell-header-actions">
@@ -786,4 +818,4 @@ const Reports = () => {
   );
 };
 
-export default Reports;
+export default ClientReports;

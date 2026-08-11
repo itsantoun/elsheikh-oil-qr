@@ -125,6 +125,36 @@
   font-style: italic;
 }
 
+/* Water Filling per-size pricing controls */
+.water-filling-pricing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--border-default);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+}
+
+.water-filling-pricing-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.water-filling-pricing-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.water-filling-pricing-conversion {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* Filter dropdown */
 .filter-select {
   padding: 7px 12px;

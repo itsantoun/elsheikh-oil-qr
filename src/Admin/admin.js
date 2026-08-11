@@ -9,8 +9,9 @@ import Transactions from './transactions';
 import Archives from './archives';
 import Settings from './settings';
 import Maghsal from './maghsal';
+import WaterFilling from './waterFilling';
 import Dashboard from './dashboard';
-import Reports from './reports';
+import ClientReports from './clientReports';
 import ComingSoon from './comingSoon';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
@@ -71,7 +72,7 @@ const Admin = () => {
   const renderSection = () => {
     switch (activeSection) {
       case 'dashboard':          return <Dashboard onNavigate={setActiveSection} />;
-      case 'reports':            return <Reports />;
+      case 'reports':            return <ClientReports />;
       case 'addUsers':           return <AddUsers />;
       case 'addProducts':        return <FetchProducts />;
       case 'holdProducts':       return <FetchProducts />;
@@ -82,7 +83,7 @@ const Admin = () => {
       case 'archives':           return <Archives />;
       case 'settings':           return <Settings />;
       case 'maghsal':            return <Maghsal />;
-      case 'waterFilling':       return <ComingSoon title="Water Filling" description="Tracking for water-filling services is on the way." />;
+      case 'waterFilling':       return <WaterFilling />;
       case 'waterDistribution':  return <ComingSoon title="Water Distribution" description="Delivery and distribution tracking is on the way." />;
       default:                   return <Dashboard onNavigate={setActiveSection} />;
     }

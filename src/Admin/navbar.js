@@ -122,7 +122,7 @@ const navGroups = [
     Icon: IconHome,
     children: [
       { id: 'dashboard', Icon: IconHome,     label: 'Dashboard' },
-      { id: 'reports',   Icon: IconBarChart, label: 'Reports'   },
+      { id: 'reports',   Icon: IconBarChart, label: 'Client Reports'   },
     ],
   },
   {
@@ -156,7 +156,7 @@ const navGroups = [
     label: 'Water Filling',
     Icon: IconDroplet,
     children: [
-      { id: 'waterFilling', Icon: IconDroplet, label: 'Entries', comingSoon: true },
+      { id: 'waterFilling', Icon: IconDroplet, label: 'Entries' },
     ],
   },
   {

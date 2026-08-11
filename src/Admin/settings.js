@@ -8,6 +8,7 @@ import {
   clearExportFolder,
 } from '../utils/exportFolder';
 import '../CSS/settings.css';
+import { DEFAULT_USD_TO_LBP_RATE, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 
 const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
 
@@ -23,6 +24,13 @@ const IconSpray = () => (
     <path d="M9 6h6" />
     <path d="M15 3v18" />
     <path d="M18 9h3v12h-6V12" />
+  </svg>
+);
+
+const IconDollar = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="1" x2="12" y2="23" />
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
   </svg>
 );
 
@@ -53,6 +61,11 @@ const Settings = () => {
   const [categoriesBusy, setCategoriesBusy] = useState(false);
   const [editingIdx, setEditingIdx] = useState(null);
   const [editingValue, setEditingValue] = useState('');
+
+  // Currency exchange rate (LBP per 1 USD)
+  const [exchangeRate, setExchangeRate] = useState(DEFAULT_USD_TO_LBP_RATE);
+  const [exchangeRateInput, setExchangeRateInput] = useState(String(DEFAULT_USD_TO_LBP_RATE));
+  const [exchangeRateBusy, setExchangeRateBusy] = useState(false);
 
   // Migration
   const [migrationStatus, setMigrationStatus] = useState(null);
@@ -89,6 +102,23 @@ const Settings = () => {
       })
       .catch((err) => {
         console.error('Failed to load Maghsal categories:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
+        }
+      });
+    // Load currency exchange rate
+    get(ref(database, 'settings/usdToLbpRate'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const val = Number(snap.val());
+          if (Number.isFinite(val) && val > 0) {
+            setExchangeRate(val);
+            setExchangeRateInput(String(val));
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load exchange rate:', err);
         if (err?.code === 'PERMISSION_DENIED') {
           setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
         }
@@ -351,6 +381,26 @@ const Settings = () => {
     await saveCategories(DEFAULT_CATEGORIES);
   };
 
+  // ── Exchange rate handler ─────────────────────────────
+  const saveExchangeRate = async () => {
+    const v = parseFloat(exchangeRateInput);
+    if (!Number.isFinite(v) || v <= 0) {
+      flashError('Enter a valid exchange rate greater than 0.');
+      return;
+    }
+    setExchangeRateBusy(true);
+    try {
+      await set(ref(database, 'settings/usdToLbpRate'), v);
+      setExchangeRate(v);
+      flashMessage('Exchange rate saved.');
+    } catch (err) {
+      console.error(err);
+      flashError('Failed to save exchange rate. You may not have permission.');
+    } finally {
+      setExchangeRateBusy(false);
+    }
+  };
+
   // ── Migration ────────────────────────────────────────
   const previewMigrationCounts = async () => {
     try {
@@ -547,6 +597,42 @@ const Settings = () => {
               Clear
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Currency Exchange Rate */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconDollar /></span>
+          <div>
+            <h3>Currency Exchange Rate</h3>
+            <p>1 USD = this many LBP. Used everywhere a price is shown in both currencies (Customers, Water Filling, ...).</p>
+          </div>
+        </div>
+
+        <div className="settings-current">
+          <span className="settings-label">Current rate:</span>
+          <span className="settings-value">1 USD = {exchangeRate.toLocaleString('en-US')} LBP</span>
+        </div>
+
+        <div className="settings-add-row">
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="LBP per 1 USD"
+            value={formatNumberInput(exchangeRateInput)}
+            onChange={(e) => setExchangeRateInput(stripCommas(e.target.value))}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveExchangeRate(); }}
+            className="settings-input"
+            disabled={exchangeRateBusy}
+          />
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={saveExchangeRate}
+            disabled={exchangeRateBusy || !exchangeRateInput.trim()}
+          >
+            Save Rate
+          </button>
         </div>
       </div>
 

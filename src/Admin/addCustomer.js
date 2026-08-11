@@ -8,19 +8,22 @@ import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, convertPrice, formatLBP, formatUSD, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 
+// Water Filling and Water Filling (Small) are peer client types, same as
+// Maghsal or Oil & Filter — no separate "pick a size" sub-step. Each one maps
+// straight to a size code so the underlying waterFillingSizes/waterFillingPricing
+// data shape (and the Water Filling entries page that reads it) doesn't change.
 const CLIENT_TYPES = [
   { value: 'oil-filter', label: 'Oil & Filter', labelAr: 'زيت وفلتر' },
   { value: 'maghsal', label: 'Maghsal', labelAr: 'مغسل' },
   { value: 'water-filling', label: 'Water Filling', labelAr: 'تعبئة مياه' },
+  { value: 'water-filling-small', label: 'Water Filling (Small)', labelAr: 'تعبئة مياه (صغير)' },
   { value: 'water-distribution', label: 'Water Distribution', labelAr: 'توزيع مياه' },
   { value: 'pickup-water-distribution', label: 'Pickup Water Distribution', labelAr: 'توزيع مياه بيك أب' },
   { value: 'diesel-distribution', label: 'Diesel Distribution', labelAr: 'توزيع ديزل' },
 ];
 
-const WATER_FILLING_SIZES = [
-  { value: 'normal', label: 'Water Filling', labelAr: 'تعبئة مياه' },
-  { value: 'small', label: 'Water Filling (Small)', labelAr: 'تعبئة مياه (صغير)' },
-];
+const WATER_FILLING_TYPE_SIZE = { 'water-filling': 'normal', 'water-filling-small': 'small' };
+const WATER_FILLING_SIZE_LABELS = { normal: 'Water Filling', small: 'Water Filling (Small)' };
 
 const CURRENCIES = ['USD', 'LBP'];
 const emptySizePricing = () => ({ currency: 'USD', price: '' });
@@ -101,35 +104,38 @@ const AddCustomer = () => {
     setEditData(prev => ({ ...prev, [field]: value }));
   };
 
+  // Water Filling / Water Filling (Small) chips toggle a size in
+  // waterFillingSizes (+ its pricing entry) instead of the generic
+  // clientTypes array — everything else behaves like a normal chip.
   const toggleClientType = (value, isEdit = false) => {
     const setter = isEdit ? setEditData : setFormData;
+    const size = WATER_FILLING_TYPE_SIZE[value];
+
+    if (size) {
+      setter(prev => {
+        const adding = !prev.waterFillingSizes.includes(size);
+        const sizes = adding
+          ? [...prev.waterFillingSizes, size]
+          : prev.waterFillingSizes.filter(s => s !== size);
+        const pricing = { ...prev.waterFillingPricing };
+        if (adding) pricing[size] = pricing[size] || emptySizePricing();
+        else delete pricing[size];
+        return { ...prev, waterFillingSizes: sizes, waterFillingPricing: pricing };
+      });
+      return;
+    }
+
     setter(prev => {
-      const removing = prev.clientTypes.includes(value);
-      const types = removing
+      const types = prev.clientTypes.includes(value)
         ? prev.clientTypes.filter(t => t !== value)
         : [...prev.clientTypes, value];
-      const clearingWaterFilling = removing && value === 'water-filling';
-      return {
-        ...prev,
-        clientTypes: types,
-        waterFillingSizes: clearingWaterFilling ? [] : prev.waterFillingSizes,
-        waterFillingPricing: clearingWaterFilling ? {} : prev.waterFillingPricing,
-      };
+      return { ...prev, clientTypes: types };
     });
   };
 
-  const toggleWaterFillingSize = (value, isEdit = false) => {
-    const setter = isEdit ? setEditData : setFormData;
-    setter(prev => {
-      const adding = !prev.waterFillingSizes.includes(value);
-      const sizes = adding
-        ? [...prev.waterFillingSizes, value]
-        : prev.waterFillingSizes.filter(s => s !== value);
-      const pricing = { ...prev.waterFillingPricing };
-      if (adding) pricing[value] = pricing[value] || emptySizePricing();
-      else delete pricing[value];
-      return { ...prev, waterFillingSizes: sizes, waterFillingPricing: pricing };
-    });
+  const isClientTypeChecked = (type, data) => {
+    const size = WATER_FILLING_TYPE_SIZE[type];
+    return size ? data.waterFillingSizes.includes(size) : data.clientTypes.includes(type);
   };
 
   const setSizePricingField = (size, field, value, isEdit = false) => {
@@ -171,8 +177,8 @@ const AddCustomer = () => {
         phone: formData.phone.trim(),
         address: formData.address.trim(),
         clientTypes: formData.clientTypes,
-        waterFillingSizes: formData.clientTypes.includes('water-filling') ? formData.waterFillingSizes : [],
-        waterFillingPricing: formData.clientTypes.includes('water-filling') ? buildPricingPayload(formData) : {},
+        waterFillingSizes: formData.waterFillingSizes,
+        waterFillingPricing: buildPricingPayload(formData),
       };
       const newCustomerRef = push(ref(database, 'customers'));
       await set(newCustomerRef, customerData);
@@ -227,8 +233,8 @@ const AddCustomer = () => {
         phone: editData.phone.trim(),
         address: editData.address.trim(),
         clientTypes: editData.clientTypes,
-        waterFillingSizes: editData.clientTypes.includes('water-filling') ? editData.waterFillingSizes : [],
-        waterFillingPricing: editData.clientTypes.includes('water-filling') ? buildPricingPayload(editData) : {},
+        waterFillingSizes: editData.waterFillingSizes,
+        waterFillingPricing: buildPricingPayload(editData),
       };
       await update(ref(database, `customers/${id}`), customerData);
 
@@ -294,7 +300,7 @@ const AddCustomer = () => {
 
   const filteredCustomers = customers
     .filter(customer => {
-      if (filterType && !(customer.clientTypes || []).includes(filterType)) return false;
+      if (filterType && !isClientTypeChecked(filterType, customer)) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -319,39 +325,24 @@ const AddCustomer = () => {
     );
   };
 
-  const renderClientTypeSelector = (selectedTypes, onToggle) => (
+  const renderClientTypeSelector = (data, onToggle) => (
     <div className="client-type-selector">
-      {CLIENT_TYPES.map(type => (
-        <button
-          key={type.value}
-          type="button"
-          className={`type-chip ${selectedTypes.includes(type.value) ? 'selected' : ''}`}
-          onClick={() => onToggle(type.value)}
-          disabled={isLoading}
-        >
-          <span className="type-chip-check">{selectedTypes.includes(type.value) ? '✓' : ''}</span>
-          <span className="type-chip-label">{type.label}</span>
-          <span className="type-chip-label-ar">{type.labelAr}</span>
-        </button>
-      ))}
-    </div>
-  );
-
-  const renderWaterFillingSizeSelector = (selectedSizes, onToggle) => (
-    <div className="client-type-selector">
-      {WATER_FILLING_SIZES.map(size => (
-        <button
-          key={size.value}
-          type="button"
-          className={`type-chip ${selectedSizes.includes(size.value) ? 'selected' : ''}`}
-          onClick={() => onToggle(size.value)}
-          disabled={isLoading}
-        >
-          <span className="type-chip-check">{selectedSizes.includes(size.value) ? '✓' : ''}</span>
-          <span className="type-chip-label">{size.label}</span>
-          <span className="type-chip-label-ar">{size.labelAr}</span>
-        </button>
-      ))}
+      {CLIENT_TYPES.map(type => {
+        const checked = isClientTypeChecked(type.value, data);
+        return (
+          <button
+            key={type.value}
+            type="button"
+            className={`type-chip ${checked ? 'selected' : ''}`}
+            onClick={() => onToggle(type.value)}
+            disabled={isLoading}
+          >
+            <span className="type-chip-check">{checked ? '✓' : ''}</span>
+            <span className="type-chip-label">{type.label}</span>
+            <span className="type-chip-label-ar">{type.labelAr}</span>
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -403,10 +394,7 @@ const AddCustomer = () => {
     </div>
   );
 
-  const getWaterFillingSizeLabel = (value) => {
-    const size = WATER_FILLING_SIZES.find(s => s.value === value);
-    return size ? size.label : value;
-  };
+  const getWaterFillingSizeLabel = (value) => WATER_FILLING_SIZE_LABELS[value] || value;
 
   const renderWaterFillingSizeBadges = (sizes, pricing = {}) => {
     if (!sizes || sizes.length === 0) return null;
@@ -522,16 +510,11 @@ const AddCustomer = () => {
               <span className="label-text">Client Type</span>
               <span className="label-hint">(select all that apply)</span>
             </label>
-            {renderClientTypeSelector(formData.clientTypes, (val) => toggleClientType(val, false))}
+            {renderClientTypeSelector(formData, (val) => toggleClientType(val, false))}
           </div>
 
-          {formData.clientTypes.includes('water-filling') && (
+          {formData.waterFillingSizes.length > 0 && (
             <div className="form-group form-group-full">
-              <label className="form-label">
-                <span className="label-text">Water Filling Size</span>
-                <span className="label-hint">(select all that apply)</span>
-              </label>
-              {renderWaterFillingSizeSelector(formData.waterFillingSizes, (val) => toggleWaterFillingSize(val, false))}
               {renderSizePricingControls(formData.waterFillingSizes, formData.waterFillingPricing, false)}
             </div>
           )}
@@ -754,15 +737,10 @@ const AddCustomer = () => {
                               <span className="label-text">Client Type</span>
                               <span className="label-hint">(select all that apply)</span>
                             </label>
-                            {renderClientTypeSelector(editData.clientTypes, (val) => toggleClientType(val, true))}
+                            {renderClientTypeSelector(editData, (val) => toggleClientType(val, true))}
                           </div>
-                          {editData.clientTypes.includes('water-filling') && (
+                          {editData.waterFillingSizes.length > 0 && (
                             <div className="form-group form-group-full">
-                              <label className="form-label">
-                                <span className="label-text">Water Filling Size</span>
-                                <span className="label-hint">(select all that apply)</span>
-                              </label>
-                              {renderWaterFillingSizeSelector(editData.waterFillingSizes, (val) => toggleWaterFillingSize(val, true))}
                               {renderSizePricingControls(editData.waterFillingSizes, editData.waterFillingPricing, true)}
                             </div>
                           )}
@@ -798,7 +776,7 @@ const AddCustomer = () => {
                               <span className="detail-label">Client Types</span>
                               <div className="detail-value">{renderClientTypeBadges(customer.clientTypes)}</div>
                             </div>
-                            {(customer.clientTypes || []).includes('water-filling') && customer.waterFillingSizes?.length > 0 && (
+                            {customer.waterFillingSizes?.length > 0 && (
                               <div className="detail-item detail-item-full">
                                 <span className="detail-label">Water Filling Size</span>
                                 <div className="detail-value">{renderWaterFillingSizeBadges(customer.waterFillingSizes, customer.waterFillingPricing)}</div>

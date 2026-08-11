@@ -1,22 +1,22 @@
 {
   "files": {
-    "main.css": "/elsheikh-oil-qr/static/css/main.486c190d.css",
-    "main.js": "/elsheikh-oil-qr/static/js/main.bafa78e3.js",
+    "main.css": "/elsheikh-oil-qr/static/css/main.a0f62989.css",
+    "main.js": "/elsheikh-oil-qr/static/js/main.0c5bdd6a.js",
     "static/js/239.71603bbc.chunk.js": "/elsheikh-oil-qr/static/js/239.71603bbc.chunk.js",
     "static/js/977.8281ae36.chunk.js": "/elsheikh-oil-qr/static/js/977.8281ae36.chunk.js",
     "static/js/732.9a08ab52.chunk.js": "/elsheikh-oil-qr/static/js/732.9a08ab52.chunk.js",
     "static/js/453.dd6352b4.chunk.js": "/elsheikh-oil-qr/static/js/453.dd6352b4.chunk.js",
     "static/media/elsheikh-logo.png": "/elsheikh-oil-qr/static/media/elsheikh-logo.675efc4ef1ca003b8433.png",
     "index.html": "/elsheikh-oil-qr/index.html",
-    "main.486c190d.css.map": "/elsheikh-oil-qr/static/css/main.486c190d.css.map",
-    "main.bafa78e3.js.map": "/elsheikh-oil-qr/static/js/main.bafa78e3.js.map",
+    "main.a0f62989.css.map": "/elsheikh-oil-qr/static/css/main.a0f62989.css.map",
+    "main.0c5bdd6a.js.map": "/elsheikh-oil-qr/static/js/main.0c5bdd6a.js.map",
     "239.71603bbc.chunk.js.map": "/elsheikh-oil-qr/static/js/239.71603bbc.chunk.js.map",
     "977.8281ae36.chunk.js.map": "/elsheikh-oil-qr/static/js/977.8281ae36.chunk.js.map",
     "732.9a08ab52.chunk.js.map": "/elsheikh-oil-qr/static/js/732.9a08ab52.chunk.js.map",
     "453.dd6352b4.chunk.js.map": "/elsheikh-oil-qr/static/js/453.dd6352b4.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.486c190d.css",
-    "static/js/main.bafa78e3.js"
+    "static/css/main.a0f62989.css",
+    "static/js/main.0c5bdd6a.js"
   ]
 }

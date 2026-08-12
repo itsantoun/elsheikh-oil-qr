@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ref, get, update, push, set, remove, onValue } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import { BrowserMultiFormatReader } from '@zxing/library';
@@ -195,6 +195,19 @@ const RemainingProducts = () => {
   const hasPositiveExpectedStock = useCallback(
     (product) => getExpectedRemaining(product) > 0,
     [getExpectedRemaining]
+  );
+
+  // Whether a product belongs to the currently-active top-level stock group
+  // (Oil & Filter vs. Maghsal). Shared by the header summary cards and the
+  // Check/Pending tabs so their counts always agree with each other.
+  const inStockGroup = useCallback((product) => {
+    const scope = productScope(product);
+    return stockGroup === 'maghsal' ? scope === 'maghsal' : scope !== 'maghsal';
+  }, [productScope, stockGroup]);
+
+  const scopedProductsForGroup = useMemo(
+    () => products.filter(inStockGroup),
+    [products, inStockGroup]
   );
 
   const objCount = (obj) => (obj && typeof obj === 'object' ? Object.keys(obj).length : 0);
@@ -926,9 +939,9 @@ const RemainingProducts = () => {
         <div className="header-left">
           <h2 className="section-title">Stock Checker</h2>
           <div className="stats-badge">{filteredProducts.length} Products</div>
-          {pendingChecks.length > 0 && (
+          {scopedPendingCount > 0 && (
             <div className="stats-badge badge-amber">
-              {pendingChecks.length} Pending
+              {scopedPendingCount} Pending
             </div>
           )}
         </div>
@@ -1074,17 +1087,13 @@ const RemainingProducts = () => {
 
   const renderPendingTab = () => {
     const pendingProductIds = new Set(pendingChecks.map(c => c.id));
-    const inActiveStockGroup = (product) => {
-      const scope = productScope(product);
-      return stockGroup === 'maghsal' ? scope === 'maghsal' : scope !== 'maghsal';
-    };
-    const scopedProducts = products.filter(inActiveStockGroup);
+    const scopedProducts = scopedProductsForGroup;
     const pendingProducts = scopedProducts.filter(
       p => pendingProductIds.has(p.id) || !allCheckedProductIds.has(p.id)
     );
     const inaccurateCount = pendingChecks.filter(c => {
       const product = products.find(p => p.id === c.id);
-      return product && inActiveStockGroup(product);
+      return product && inStockGroup(product);
     }).length;
     const uncheckedCount  = scopedProducts.filter(p => !allCheckedProductIds.has(p.id)).length;
 
@@ -2032,8 +2041,16 @@ const RemainingProducts = () => {
 
   // ── Main ───────────────────────────────────────────────────────────────────
 
-  const checkedProductsCount = allCheckedProductIds.size;
-  const uncheckedProductsCount = Math.max(products.length - checkedProductsCount, 0);
+  // Scoped to the active stock group so these header counts always match what
+  // the Check / Pending tabs actually list below — previously these summed
+  // across both Oil & Filter and Maghsal, which made the tabs look like they
+  // were missing products whenever the other group also had pending items.
+  const checkedProductsCount = scopedProductsForGroup.filter(p => allCheckedProductIds.has(p.id)).length;
+  const uncheckedProductsCount = Math.max(scopedProductsForGroup.length - checkedProductsCount, 0);
+  const scopedPendingCount = pendingChecks.filter(c => {
+    const product = products.find(p => p.id === c.id);
+    return product && inStockGroup(product);
+  }).length;
   const visibleStockQuantity = filteredProducts.reduce((sum, product) => sum + getCurrentStockForDisplay(product), 0);
 
   return (
@@ -2090,7 +2107,7 @@ const RemainingProducts = () => {
         <div className="summary-card">
           <div className="summary-card-content">
             <span className="summary-card-label">Pending</span>
-            <span className="summary-card-value" style={{ color: '#c2740a' }}>{pendingChecks.length}</span>
+            <span className="summary-card-value" style={{ color: '#c2740a' }}>{scopedPendingCount}</span>
           </div>
         </div>
         <div className="summary-card">

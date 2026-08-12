@@ -6,7 +6,7 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
-import { useExchangeRate, convertPrice, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 
 const TRANSACTION_TYPES = [
   { value: 'normal', label: 'Water Filling' },
@@ -163,12 +163,10 @@ const WaterFilling = () => {
     return premium ? String(toNumber(premium.price) * toNumber(quantity)) : '';
   };
 
-  const formatPremium = (amount, currency) => {
-    const converted = convertPrice(amount, currency, exchangeRate);
-    const own = currency === 'USD' ? formatUSD(amount) : formatLBP(amount);
-    const other = currency === 'USD' ? formatLBP(converted) : formatUSD(converted);
-    return `${own} ≈ ${other}`;
-  };
+  // Shows the amount only in the currency it was actually entered in — no
+  // USD/LBP conversion, since a customer's Water Filling premium is fixed in
+  // whichever currency their pricing was set up in.
+  const formatPremium = (amount, currency) => (currency === 'USD' ? formatUSD(amount) : formatLBP(amount));
 
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
@@ -518,7 +516,14 @@ const WaterFilling = () => {
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td className="text-right">
-                    {e.premiumCurrency ? formatPremium(toNumber(e.totalPremium), e.premiumCurrency) : '—'}
+                    {e.premiumCurrency ? (
+                      <>
+                        <span>{formatPremium(toNumber(e.totalPremium), e.premiumCurrency)}</span>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {toNumber(e.quantity)} × {formatPremium(toNumber(e.unitPremium), e.premiumCurrency)}
+                        </div>
+                      </>
+                    ) : '—'}
                   </td>
                   <td>
                     <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
@@ -617,10 +622,14 @@ const WaterFilling = () => {
                   {formTotalPremium !== '' && (
                     <span style={{ color: 'var(--brand)' }}>
                       Total Premium: {formatPremium(toNumber(formTotalPremium), selectedPremium.currency)}
-                      {!totalPremiumTouched && ` (${toNumber(formQuantity)} × ${selectedPremium.currency === 'USD' ? formatUSD(toNumber(selectedPremium.price)) : formatLBP(toNumber(selectedPremium.price))})`}
                       {totalPremiumTouched && ' (manually overridden)'}
                     </span>
                   )}
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Formula: {toNumber(formQuantity)} × {formatPremium(toNumber(selectedPremium.price), selectedPremium.currency)}
+                    {' = '}
+                    {formatPremium(toNumber(selectedPremium.price) * toNumber(formQuantity), selectedPremium.currency)}
+                  </span>
                 </div>
               )}
               {formTransactionType && !selectedPremium && (

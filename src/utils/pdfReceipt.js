@@ -46,6 +46,10 @@ export const addReceiptHeader = async (doc, {
   client = '',
   dateRange = '',
   issuedAt = new Date(),
+  showLogo = true,
+  // Controls the "El Sheikh" name fallback + phone/address lines. When
+  // false, that whole block is left blank (background box still shows).
+  showCompanyInfo = true,
 } = {}) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 10;
@@ -53,21 +57,31 @@ export const addReceiptHeader = async (doc, {
   doc.setFillColor(...SOFT_BG);
   doc.roundedRect(margin, 6, pageWidth - margin * 2, 35, 3, 3, 'F');
 
-  try {
-    const logoDataUrl = await loadLogoDataUrl();
-    doc.addImage(logoDataUrl, 'PNG', margin + 5, 7, 36, 22.5);
-  } catch (error) {
+  const drawNameFallback = () => {
     doc.setFontSize(15);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...BRAND_BLUE);
     doc.text('El Sheikh', margin + 23, 21, { align: 'center' });
+  };
+
+  if (showLogo) {
+    try {
+      const logoDataUrl = await loadLogoDataUrl();
+      doc.addImage(logoDataUrl, 'PNG', margin + 5, 7, 36, 22.5);
+    } catch (error) {
+      if (showCompanyInfo) drawNameFallback();
+    }
+  } else if (showCompanyInfo) {
+    drawNameFallback();
   }
 
-  doc.setFontSize(7);
-  doc.setFont(undefined, 'normal');
-  doc.setTextColor(...TEXT_MUTED);
-  doc.text('+961 81 708 870', margin + 23, 33.5, { align: 'center' });
-  doc.text('Nabay, Lebanon', margin + 23, 37, { align: 'center' });
+  if (showCompanyInfo) {
+    doc.setFontSize(7);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...TEXT_MUTED);
+    doc.text('+961 81 708 870', margin + 23, 33.5, { align: 'center' });
+    doc.text('Nabay, Lebanon', margin + 23, 37, { align: 'center' });
+  }
 
   doc.setFontSize(17);
   doc.setFont(undefined, 'bold');
@@ -167,13 +181,18 @@ export const drawTotalsBlock = (doc, {
   grandTotal = 0,
   startY,
   compact = false,
+  // When false, the Paid/Unpaid breakdown lines are dropped — only Grand
+  // Total is shown, with the Paid + Unpaid formula printed as a small caption.
+  showBreakdown = true,
 } = {}) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
   const minY = currentPage > 1 ? 16 : 0;
+  // The no-breakdown banner is taller — it needs to fit a large Grand Total
+  // figure plus the formula caption above it.
+  const boxH = showBreakdown ? (compact ? 18 : 20) : (compact ? 22 : 26);
   let y = Math.max(startY, minY);
-  const boxH = compact ? 18 : 20;
   const requiredBottom = boxH + 10;
   if (y > pageHeight - requiredBottom) {
     const pageCount = docPageCount(doc);
@@ -185,23 +204,48 @@ export const drawTotalsBlock = (doc, {
     }
   }
 
-  const boxX = pageWidth - 76;
-  const boxW = 66;
-  doc.setFillColor(...SOFT_BG);
-  doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'F');
-  doc.setDrawColor(...BORDER);
-  doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'S');
+  if (showBreakdown) {
+    const boxX = pageWidth - 76;
+    const boxW = 66;
+    doc.setFillColor(...SOFT_BG);
+    doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'F');
+    doc.setDrawColor(...BORDER);
+    doc.roundedRect(boxX, y, boxW, boxH, 2, 2, 'S');
 
-  drawTotalLine(doc, 'Paid', paid, boxX + 4, y + 5, boxW);
-  drawTotalLine(doc, 'Unpaid', unpaid, boxX + 4, y + 9.8, boxW);
+    drawTotalLine(doc, 'Paid', paid, boxX + 4, y + 5, boxW);
+    drawTotalLine(doc, 'Unpaid', unpaid, boxX + 4, y + 9.8, boxW);
 
-  doc.setDrawColor(...BORDER);
-  doc.line(boxX + 4, y + 12.4, boxX + boxW - 4, y + 12.4);
-  doc.setFontSize(compact ? 9 : 10);
-  doc.setFont(undefined, 'bold');
-  doc.setTextColor(...BRAND_BLUE);
-  doc.text('Grand Total', boxX + 4, y + 17);
-  doc.text(money(grandTotal), boxX + boxW - 4, y + 17, { align: 'right' });
+    doc.setDrawColor(...BORDER);
+    doc.line(boxX + 4, y + 12.4, boxX + boxW - 4, y + 12.4);
+    doc.setFontSize(compact ? 9 : 10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...BRAND_BLUE);
+    doc.text('Grand Total', boxX + 4, y + 17);
+    doc.text(money(grandTotal), boxX + boxW - 4, y + 17, { align: 'right' });
+  } else {
+    // Full-width banner under the item listing — Grand Total is the headline
+    // figure here, deliberately much larger than the per-line item prices.
+    const margin = 10;
+    const boxX = margin;
+    const boxW = pageWidth - margin * 2;
+    doc.setFillColor(...SOFT_BG);
+    doc.roundedRect(boxX, y, boxW, boxH, 2.5, 2.5, 'F');
+    doc.setDrawColor(...BORDER);
+    doc.roundedRect(boxX, y, boxW, boxH, 2.5, 2.5, 'S');
+
+    doc.setFontSize(7);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(...TEXT_MUTED);
+    doc.text(`Formula: Paid ${money(paid)} + Unpaid ${money(unpaid)}`, boxX + 6, y + 7);
+
+    doc.setFontSize(compact ? 12 : 14);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...BRAND_BLUE);
+    doc.text('GRAND TOTAL', boxX + 6, y + boxH - 6);
+
+    doc.setFontSize(compact ? 18 : 22);
+    doc.text(money(grandTotal), boxX + boxW - 6, y + boxH - 6, { align: 'right' });
+  }
 
   drawPageFooter(doc);
 };

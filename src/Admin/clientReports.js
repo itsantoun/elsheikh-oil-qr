@@ -242,13 +242,15 @@ const ClientReports = () => {
       || (engName && engName === selectedCustomer.nameArabic);
   };
 
-  // Available type options for the filter (Oil, Filter, Maghsal, Water Filling, then any custom types).
+  // Available type options for the filter. Miscellaneous ("other" scope)
+  // products are grouped under a single "Other" entry here instead of one
+  // dropdown option per individual product name/type (e.g. "Spartan",
+  // "Spartan 650ml") — the statement below still shows their real names as
+  // section headers, this is only about keeping the filter list clean.
   const availableTypes = useMemo(() => {
     const set = new Set(['Oil', 'Filter', 'Maghsal', 'Water Filling']);
-    products.forEach((p) => {
-      const scopeVal = normalizeScope(p.scope, p.productType);
-      set.add(scopeVal === 'other' ? (p.productType || 'Other') : SCOPE_TITLES[scopeVal]);
-    });
+    const hasOther = products.some((p) => normalizeScope(p.scope, p.productType) === 'other');
+    if (hasOther) set.add('Other');
     return [...set].sort((a, b) => sectionRank(a) - sectionRank(b) || a.localeCompare(b));
   }, [products]);
 
@@ -260,6 +262,15 @@ const ClientReports = () => {
     const scopeVal = normalizeScope(product?.scope, product?.productType);
     if (scopeVal === 'other') return (product?.productType || item.category || 'Other');
     return SCOPE_TITLES[scopeVal] || 'Other';
+  };
+
+  // "Other" in the Type filter should match any of those individually-named
+  // sections, not the literal string "Other".
+  const KNOWN_SECTIONS = ['Oil', 'Filter', 'Maghsal', 'Water Filling'];
+  const matchesTypeFilter = (section) => {
+    if (typeFilter === 'All') return true;
+    if (typeFilter === 'Other') return !KNOWN_SECTIONS.includes(section);
+    return typeFilter === section;
   };
 
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
@@ -307,7 +318,7 @@ const ClientReports = () => {
       if (!matchesSelectedCustomer(it.customerName, it.customerName)) return;
       if (!inRange(it.dateScanned)) return;
       const section = sectionForSoldItem(it);
-      if (typeFilter !== 'All' && typeFilter !== section) return;
+      if (!matchesTypeFilter(section)) return;
       const { quantity, revenue } = getItemRevenue(it);
       records.push({
         key: `o-${it.id}`,
@@ -444,6 +455,8 @@ const ClientReports = () => {
       receiptNo: `RP-${Date.now().toString().slice(-8)}`,
       client: customerName,
       dateRange: range,
+      showLogo: false,
+      showCompanyInfo: false,
     });
 
     const body = [];
@@ -454,7 +467,15 @@ const ClientReports = () => {
         { content: g.section, colSpan: 4 },
         { content: money(g.subtotal) },
       ]);
-      g.rows.forEach((r) => body.push([formatDate(r.date), r.item, r.quantity || '—', r.status, money(r.total)]));
+      g.rows.forEach((r) => {
+        const qty = toNumber(r.quantity);
+        // Multi-line quantity cell: the count, then the "× unit = total"
+        // formula on its own smaller line right under it.
+        const qtyCell = qty > 0
+          ? `${r.quantity}\n× ${money(r.total / qty)} = ${money(r.total)}`
+          : (r.quantity || '—');
+        body.push([formatDate(r.date), r.item, qtyCell, r.status, money(r.total)]);
+      });
     });
 
     autoTable(doc, {
@@ -466,10 +487,10 @@ const ClientReports = () => {
         density,
       }),
       columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 60 },
-        2: { halign: 'right', cellWidth: 18 },
-        3: { cellWidth: 36 },
+        0: { cellWidth: 28 },
+        1: { cellWidth: 52 },
+        2: { halign: 'right', cellWidth: 32 },
+        3: { cellWidth: 32 },
         4: { halign: 'right', cellWidth: 38 },
       },
       didParseCell: (data) => {
@@ -477,6 +498,10 @@ const ClientReports = () => {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
           if (data.column.index === 4) data.cell.styles.halign = 'right';
+        } else if (data.section === 'body' && data.column.index === 4) {
+          // Per-line item prices stay small so the Grand Total banner below
+          // reads as the headline figure on the receipt.
+          data.cell.styles.fontSize = Math.max(density.fontSize - 1.5, 5.5);
         }
       },
     });
@@ -487,6 +512,7 @@ const ClientReports = () => {
       grandTotal,
       startY: doc.lastAutoTable.finalY + 4,
       compact: density.totalsCompact,
+      showBreakdown: false,
     });
 
     const blob = doc.output('blob');
@@ -654,27 +680,38 @@ const ClientReports = () => {
                   {statement.sections.map((g) => (
                     <React.Fragment key={g.section}>
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={4} style={{ fontWeight: 700 }}>{g.section}</td>
-                        <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
+                        <td colSpan={5} style={{ fontWeight: 700 }}>{g.section}</td>
                       </tr>
                       {g.rows.map((r) => (
                         <tr key={r.key}>
                           <td>{formatDate(r.date)}</td>
                           <td>{r.item}</td>
-                          <td className="text-right">{r.quantity || '—'}</td>
+                          <td className="text-right">
+                            <div>{r.quantity || '—'}</div>
+                            {toNumber(r.quantity) > 0 && (
+                              <span className="formula-chip">
+                                × ${formatCurrency(r.total / toNumber(r.quantity))} = ${formatCurrency(r.total)}
+                              </span>
+                            )}
+                          </td>
                           <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
-                          <td className="text-right">${formatCurrency(r.total)}</td>
+                          <td className="text-right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>${formatCurrency(r.total)}</td>
                         </tr>
                       ))}
+                      <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
+                        <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                        <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
+                      </tr>
                     </React.Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-              <span style={{ color: 'var(--green)' }}>Paid: ${formatCurrency(statement.paid)}</span>
-              <span style={{ color: 'var(--red)' }}>Unpaid: ${formatCurrency(statement.unpaid)}</span>
-              <span style={{ color: 'var(--brand)', fontWeight: 700 }}>Grand Total: ${formatCurrency(statement.grandTotal)}</span>
+            <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)', padding: '16px 18px' }}>
+              <span style={{ color: 'var(--brand)', fontWeight: 800, fontSize: 26 }}>Grand Total: ${formatCurrency(statement.grandTotal)}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                Formula: Paid ${formatCurrency(statement.paid)} + Unpaid ${formatCurrency(statement.unpaid)}
+              </span>
             </div>
           </>
         )}
@@ -756,28 +793,39 @@ const ClientReports = () => {
                     {viewedEntry.sections.map((g) => (
                       <React.Fragment key={g.section}>
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={4} style={{ fontWeight: 700 }}>{g.section}</td>
-                          <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
+                          <td colSpan={5} style={{ fontWeight: 700 }}>{g.section}</td>
                         </tr>
                         {g.rows.map((r) => (
                           <tr key={r.key}>
                             <td>{formatDate(r.date)}</td>
                             <td>{r.item}</td>
-                            <td className="text-right">{r.quantity || '—'}</td>
+                            <td className="text-right">
+                              <div>{r.quantity || '—'}</div>
+                              {toNumber(r.quantity) > 0 && (
+                                <span className="formula-chip">
+                                  × ${formatCurrency(r.total / toNumber(r.quantity))} = ${formatCurrency(r.total)}
+                                </span>
+                              )}
+                            </td>
                             <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
-                            <td className="text-right">${formatCurrency(r.total)}</td>
+                            <td className="text-right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>${formatCurrency(r.total)}</td>
                           </tr>
                         ))}
+                        <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
+                          <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                          <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
+                        </tr>
                       </React.Fragment>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              <div className="missing-item-summary">
-                <span style={{ color: 'var(--green)' }}>Paid: ${formatCurrency(viewedEntry.paid)}</span>
-                <span style={{ color: 'var(--red)' }}>Unpaid: ${formatCurrency(viewedEntry.unpaid)}</span>
-                <span style={{ color: 'var(--brand)', fontWeight: 700 }}>Grand Total: ${formatCurrency(viewedEntry.grandTotal)}</span>
+              <div className="missing-item-summary" style={{ padding: '16px 18px' }}>
+                <span style={{ color: 'var(--brand)', fontWeight: 800, fontSize: 26 }}>Grand Total: ${formatCurrency(viewedEntry.grandTotal)}</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Formula: Paid ${formatCurrency(viewedEntry.paid)} + Unpaid ${formatCurrency(viewedEntry.unpaid)}
+                </span>
               </div>
             </div>
             <div className="modal-footer">

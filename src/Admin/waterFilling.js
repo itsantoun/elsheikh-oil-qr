@@ -36,7 +36,14 @@ const WaterFilling = () => {
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
   const [transactionTypeFilter, setTransactionTypeFilter] = useState('All');
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState('All');
+  // Empty array = no filter (show all statuses). Multi-select: any status in
+  // this list is included.
+  const [paymentStatusFilters, setPaymentStatusFilters] = useState([]);
+  const togglePaymentStatusFilter = (status) => {
+    setPaymentStatusFilters((prev) => (
+      prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
+    ));
+  };
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
 
@@ -184,8 +191,8 @@ const WaterFilling = () => {
       result = result.filter((e) => (e.transactionType || '') === transactionTypeFilter);
     }
 
-    if (paymentStatusFilter !== 'All') {
-      result = result.filter((e) => (e.paymentStatus || '') === paymentStatusFilter);
+    if (paymentStatusFilters.length > 0) {
+      result = result.filter((e) => paymentStatusFilters.includes(e.paymentStatus || ''));
     }
 
     if (dateFromFilter || dateToFilter) {
@@ -201,7 +208,7 @@ const WaterFilling = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilter, dateFromFilter, dateToFilter]);
+  }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   const totals = useMemo(() => {
     const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0 };
@@ -218,7 +225,7 @@ const WaterFilling = () => {
   const clearAllFilters = () => {
     setCustomerFilter('');
     setTransactionTypeFilter('All');
-    setPaymentStatusFilter('All');
+    setPaymentStatusFilters([]);
     setDateFromFilter('');
     setDateToFilter('');
   };
@@ -440,13 +447,20 @@ const WaterFilling = () => {
           </div>
 
           <div className="filter-group">
-            <label>Payment Status</label>
-            <select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)}>
-              <option value="All">All Status</option>
-              <option value="Paid">Paid</option>
-              <option value="Unpaid">Unpaid</option>
-              <option value="Hold">Hold</option>
-            </select>
+            <label>Payment Status <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}></span></label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['Paid', 'Unpaid', 'Hold'].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={paymentStatusFilters.includes(s) ? 'btn-primary' : 'btn-secondary'}
+                  onClick={() => togglePaymentStatusFilter(s)}
+                  style={{ padding: '4px 10px', fontSize: 12 }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="filter-group">
@@ -472,13 +486,15 @@ const WaterFilling = () => {
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || transactionTypeFilter !== 'All' || paymentStatusFilter !== 'All' || dateFromFilter || dateToFilter) && (
+      {(customerFilter || transactionTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
             {transactionTypeFilter !== 'All' && <span className="filter-tag">Type: {getTransactionTypeLabel(transactionTypeFilter)}<button onClick={() => setTransactionTypeFilter('All')}><IconX /></button></span>}
-            {paymentStatusFilter !== 'All' && <span className="filter-tag">Status: {paymentStatusFilter}<button onClick={() => setPaymentStatusFilter('All')}><IconX /></button></span>}
+            {paymentStatusFilters.map((s) => (
+              <span key={s} className="filter-tag">Status: {s}<button onClick={() => togglePaymentStatusFilter(s)}><IconX /></button></span>
+            ))}
             {dateFromFilter && <span className="filter-tag">From: {getDateDisplay(dateFromFilter)}<button onClick={() => setDateFromFilter('')}><IconX /></button></span>}
             {dateToFilter && <span className="filter-tag">To: {getDateDisplay(dateToFilter)}<button onClick={() => setDateToFilter('')}><IconX /></button></span>}
           </div>
@@ -500,6 +516,7 @@ const WaterFilling = () => {
                 <th>Customer</th>
                 <th>Transaction Type</th>
                 <th className="text-right">Quantity</th>
+                <th className="text-right">Premium</th>
                 <th className="text-right">Total Premium</th>
                 <th>Status</th>
                 <th>Remark</th>
@@ -516,14 +533,10 @@ const WaterFilling = () => {
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td className="text-right">
-                    {e.premiumCurrency ? (
-                      <>
-                        <span>{formatPremium(toNumber(e.totalPremium), e.premiumCurrency)}</span>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {toNumber(e.quantity)} × {formatPremium(toNumber(e.unitPremium), e.premiumCurrency)}
-                        </div>
-                      </>
-                    ) : '—'}
+                    {e.premiumCurrency ? formatPremium(toNumber(e.unitPremium), e.premiumCurrency) : '—'}
+                  </td>
+                  <td className="text-right">
+                    {e.premiumCurrency ? formatPremium(toNumber(e.totalPremium), e.premiumCurrency) : '—'}
                   </td>
                   <td>
                     <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
@@ -625,11 +638,6 @@ const WaterFilling = () => {
                       {totalPremiumTouched && ' (manually overridden)'}
                     </span>
                   )}
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Formula: {toNumber(formQuantity)} × {formatPremium(toNumber(selectedPremium.price), selectedPremium.currency)}
-                    {' = '}
-                    {formatPremium(toNumber(selectedPremium.price) * toNumber(formQuantity), selectedPremium.currency)}
-                  </span>
                 </div>
               )}
               {formTransactionType && !selectedPremium && (

@@ -121,7 +121,14 @@ const ClientReports = () => {
   const [dateTo, setDateTo] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState('All');
+  // Empty array = no filter (show all statuses). Multi-select: any status in
+  // this list is included.
+  const [paymentStatusFilters, setPaymentStatusFilters] = useState([]);
+  const togglePaymentStatusFilter = (status) => {
+    setPaymentStatusFilters((prev) => (
+      prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
+    ));
+  };
   const [message, setMessage] = useState(null);
 
   const [pendingSnapshot, setPendingSnapshot] = useState(null);
@@ -274,14 +281,15 @@ const ClientReports = () => {
     return typeFilter === section;
   };
 
-  // Payment Status options — the full vocabulary used across Maghsal (Used),
-  // Water Filling (Hold), and Oil/Filter sales, always offered regardless of
+  // Payment Status options — Paid/Unpaid/Hold always offered regardless of
   // whether any record currently uses them, plus anything else found live.
+  // "Used" is intentionally excluded — not a status worth filtering by here.
   const availablePaymentStatuses = useMemo(() => {
-    const set = new Set(['Paid', 'Unpaid', 'Used', 'Hold']);
+    const set = new Set(['Paid', 'Unpaid', 'Hold']);
     maghsalEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
     waterFillingEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
     soldItems.forEach((it) => set.add(it.paymentStatus || 'N/A'));
+    set.delete('Used');
     return [...set].sort();
   }, [maghsalEntries, waterFillingEntries, soldItems]);
 
@@ -291,7 +299,7 @@ const ClientReports = () => {
 
     const records = [];
 
-    const matchesStatusFilter = (status) => paymentStatusFilter === 'All' || (status || 'N/A') === paymentStatusFilter;
+    const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
 
     maghsalEntries.forEach((e) => {
       if (typeFilter !== 'All' && typeFilter !== 'Maghsal') return;
@@ -370,7 +378,7 @@ const ClientReports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal };
-  }, [selectedCustomer, maghsalEntries, waterFillingEntries, soldItems, products, typeFilter, paymentStatusFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, maghsalEntries, waterFillingEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -478,23 +486,28 @@ const ClientReports = () => {
     });
 
     const body = [];
-    const groupRowIndexes = new Set();
+    const groupHeaderIndexes = new Set();
+    const groupTotalIndexes = new Set();
     sections.forEach((g) => {
-      groupRowIndexes.add(body.length);
-      body.push([
-        { content: g.section, colSpan: 5 },
-        { content: money(g.subtotal) },
-      ]);
+      groupHeaderIndexes.add(body.length);
+      body.push([{ content: g.section, colSpan: 6 }]);
+
       g.rows.forEach((r) => {
         const qty = toNumber(r.quantity);
         const priceCell = qty > 0 ? money(r.total / qty) : '—';
         body.push([formatDate(r.date), r.item, r.quantity || '—', priceCell, r.status, money(r.total)]);
       });
+
+      groupTotalIndexes.add(body.length);
+      body.push([
+        { content: `${g.section} Total`, colSpan: 5, styles: { halign: 'right' } },
+        { content: money(g.subtotal) },
+      ]);
     });
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Item', 'Quantity', 'Price', 'Status', 'Total'],
+        head: ['Date', 'Item', 'Quantity', 'Price per unit', 'Status', 'Total'],
         body,
         startY,
         rightAlignedColumns: [2, 3, 5],
@@ -509,7 +522,7 @@ const ClientReports = () => {
         5: { halign: 'right', cellWidth: 34 },
       },
       didParseCell: (data) => {
-        if (data.section === 'body' && groupRowIndexes.has(data.row.index)) {
+        if (data.section === 'body' && (groupHeaderIndexes.has(data.row.index) || groupTotalIndexes.has(data.row.index))) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
           if (data.column.index === 5) data.cell.styles.halign = 'right';
@@ -646,11 +659,30 @@ const ClientReports = () => {
           </div>
 
           <div className="filter-group">
-            <label>Payment Status</label>
-            <select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)}>
-              <option value="All">All</option>
-              {availablePaymentStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <label>Payment Status <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}></span></label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {availablePaymentStatuses.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={paymentStatusFilters.includes(s) ? 'btn-primary' : 'btn-secondary'}
+                  onClick={() => togglePaymentStatusFilter(s)}
+                  style={{ padding: '4px 10px', fontSize: 12 }}
+                >
+                  {s}
+                </button>
+              ))}
+              {paymentStatusFilters.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setPaymentStatusFilters([])}
+                  style={{ padding: '4px 10px', fontSize: 12 }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="filter-group">
@@ -695,7 +727,7 @@ const ClientReports = () => {
                     <th>Date</th>
                     <th>Item</th>
                     <th className="text-right">Quantity</th>
-                    <th className="text-right">Price</th>
+                    <th className="text-right">Price per unit</th>
                     <th>Status</th>
                     <th className="text-right">Total</th>
                   </tr>
@@ -729,9 +761,6 @@ const ClientReports = () => {
             </div>
             <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)', padding: '16px 18px' }}>
               <span style={{ color: 'var(--brand)', fontWeight: 800, fontSize: 26 }}>Grand Total: ${formatCurrency(statement.grandTotal)}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                Formula: Paid ${formatCurrency(statement.paid)} + Unpaid ${formatCurrency(statement.unpaid)}
-              </span>
             </div>
           </>
         )}
@@ -805,7 +834,7 @@ const ClientReports = () => {
                       <th>Date</th>
                       <th>Item</th>
                       <th className="text-right">Quantity</th>
-                      <th className="text-right">Price</th>
+                      <th className="text-right">Price per unit</th>
                       <th>Status</th>
                       <th className="text-right">Total</th>
                     </tr>
@@ -840,9 +869,6 @@ const ClientReports = () => {
 
               <div className="missing-item-summary" style={{ padding: '16px 18px' }}>
                 <span style={{ color: 'var(--brand)', fontWeight: 800, fontSize: 26 }}>Grand Total: ${formatCurrency(viewedEntry.grandTotal)}</span>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Formula: Paid ${formatCurrency(viewedEntry.paid)} + Unpaid ${formatCurrency(viewedEntry.unpaid)}
-                </span>
               </div>
             </div>
             <div className="modal-footer">

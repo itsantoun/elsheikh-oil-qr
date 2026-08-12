@@ -50,6 +50,8 @@ export const addReceiptHeader = async (doc, {
   // Controls the "El Sheikh" name fallback + phone/address lines. When
   // false, that whole block is left blank (background box still shows).
   showCompanyInfo = true,
+  showReceiptNo = true,
+  showDateRangeLabel = true,
 } = {}) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 10;
@@ -101,12 +103,19 @@ export const addReceiptHeader = async (doc, {
 
   doc.setFontSize(8);
   doc.setTextColor(...TEXT_MUTED);
-  doc.text('Receipt No.', pageWidth - 76, 32);
-  doc.text('Issued', pageWidth - 76, 37);
+  const issuedY = showReceiptNo ? 37 : 34.5;
+  if (showReceiptNo) {
+    doc.text('Receipt No.', pageWidth - 76, 32);
+    doc.setTextColor(...TEXT_DARK);
+    doc.setFont(undefined, 'bold');
+    doc.text(receiptNo || '-', pageWidth - margin - 3, 32, { align: 'right' });
+    doc.setTextColor(...TEXT_MUTED);
+    doc.setFont(undefined, 'normal');
+  }
+  doc.text('Issued', pageWidth - 76, issuedY);
   doc.setTextColor(...TEXT_DARK);
   doc.setFont(undefined, 'bold');
-  doc.text(receiptNo || '-', pageWidth - margin - 3, 32, { align: 'right' });
-  doc.text(formatIssuedAt(issuedAt), pageWidth - margin - 3, 37, { align: 'right' });
+  doc.text(formatIssuedAt(issuedAt), pageWidth - margin - 3, issuedY, { align: 'right' });
 
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(margin, 44, pageWidth - margin * 2, 11.5, 2, 2, 'F');
@@ -117,13 +126,14 @@ export const addReceiptHeader = async (doc, {
   doc.setFont(undefined, 'normal');
   doc.setTextColor(...TEXT_MUTED);
   doc.text('Bill To', margin + 4, 48.5);
-  doc.text('Date Range', pageWidth / 2, 48.5);
+  if (showDateRangeLabel) doc.text('Date Range', pageWidth / 2, 48.5);
+  const dateRangeY = showDateRangeLabel ? 53 : 50.5;
 
   doc.setFontSize(9);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(...TEXT_DARK);
   doc.text(client || 'All Clients', margin + 4, 53);
-  doc.text(dateRange || '-', pageWidth / 2, 53);
+  doc.text(dateRange || '-', pageWidth / 2, dateRangeY);
 
   return 59;
 };
@@ -189,9 +199,7 @@ export const drawTotalsBlock = (doc, {
   const pageHeight = doc.internal.pageSize.getHeight();
   const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
   const minY = currentPage > 1 ? 16 : 0;
-  // The no-breakdown banner is taller — it needs to fit a large Grand Total
-  // figure plus the formula caption above it.
-  const boxH = showBreakdown ? (compact ? 18 : 20) : (compact ? 22 : 26);
+  const boxH = showBreakdown ? (compact ? 18 : 20) : (compact ? 16 : 18);
   let y = Math.max(startY, minY);
   const requiredBottom = boxH + 10;
   if (y > pageHeight - requiredBottom) {
@@ -233,18 +241,13 @@ export const drawTotalsBlock = (doc, {
     doc.setDrawColor(...BORDER);
     doc.roundedRect(boxX, y, boxW, boxH, 2.5, 2.5, 'S');
 
-    doc.setFontSize(7);
-    doc.setFont(undefined, 'normal');
-    doc.setTextColor(...TEXT_MUTED);
-    doc.text(`Formula: Paid ${money(paid)} + Unpaid ${money(unpaid)}`, boxX + 6, y + 7);
-
     doc.setFontSize(compact ? 12 : 14);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...BRAND_BLUE);
-    doc.text('GRAND TOTAL', boxX + 6, y + boxH - 6);
+    doc.text('GRAND TOTAL', boxX + 6, y + boxH / 2 + 3, { align: 'left' });
 
     doc.setFontSize(compact ? 18 : 22);
-    doc.text(money(grandTotal), boxX + boxW - 6, y + boxH - 6, { align: 'right' });
+    doc.text(money(grandTotal), boxX + boxW - 6, y + boxH / 2 + 3, { align: 'right' });
   }
 
   drawPageFooter(doc);
@@ -265,7 +268,6 @@ const drawPageFooter = (doc) => {
   doc.setFontSize(7);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(...TEXT_MUTED);
-  doc.text('El Sheikh - Water distribution, car wash and services', 10, pageHeight - 6);
   doc.text(`Page ${doc.internal.getCurrentPageInfo().pageNumber}`, pageWidth - 10, pageHeight - 6, { align: 'right' });
 };
 

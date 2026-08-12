@@ -62,20 +62,6 @@
   flex-wrap: wrap;
 }
 
-/* ── Inline calculation chip (e.g. "× $5.00 = $15.00" under a quantity) ── */
-.formula-chip {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-light);
-  color: var(--text-secondary);
-  font-size: 10.5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: nowrap;
-}
-
 /* ── Exchange rate reminder banner ── */
 .exchange-rate-banner {
   display: flex;

@@ -121,6 +121,7 @@ const ClientReports = () => {
   const [dateTo, setDateTo] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('All');
   const [message, setMessage] = useState(null);
 
   const [pendingSnapshot, setPendingSnapshot] = useState(null);
@@ -273,16 +274,30 @@ const ClientReports = () => {
     return typeFilter === section;
   };
 
+  // Payment Status options — the full vocabulary used across Maghsal (Used),
+  // Water Filling (Hold), and Oil/Filter sales, always offered regardless of
+  // whether any record currently uses them, plus anything else found live.
+  const availablePaymentStatuses = useMemo(() => {
+    const set = new Set(['Paid', 'Unpaid', 'Used', 'Hold']);
+    maghsalEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
+    waterFillingEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
+    soldItems.forEach((it) => set.add(it.paymentStatus || 'N/A'));
+    return [...set].sort();
+  }, [maghsalEntries, waterFillingEntries, soldItems]);
+
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
   const statement = useMemo(() => {
     if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0 };
 
     const records = [];
 
+    const matchesStatusFilter = (status) => paymentStatusFilter === 'All' || (status || 'N/A') === paymentStatusFilter;
+
     maghsalEntries.forEach((e) => {
       if (typeFilter !== 'All' && typeFilter !== 'Maghsal') return;
       if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
       if (!inRange(e.date)) return;
+      if (!matchesStatusFilter(e.paymentStatus)) return;
       records.push({
         key: `m-${e.id}`,
         date: e.date,
@@ -298,6 +313,7 @@ const ClientReports = () => {
       if (typeFilter !== 'All' && typeFilter !== 'Water Filling') return;
       if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
       if (!inRange(e.date)) return;
+      if (!matchesStatusFilter(e.paymentStatus)) return;
       // Statement totals are USD-denominated — convert LBP premiums so they
       // aggregate correctly alongside Oil/Filter/Maghsal totals.
       const totalUSD = e.premiumCurrency === 'LBP'
@@ -319,6 +335,7 @@ const ClientReports = () => {
       if (!inRange(it.dateScanned)) return;
       const section = sectionForSoldItem(it);
       if (!matchesTypeFilter(section)) return;
+      if (!matchesStatusFilter(it.paymentStatus)) return;
       const { quantity, revenue } = getItemRevenue(it);
       records.push({
         key: `o-${it.id}`,
@@ -353,7 +370,7 @@ const ClientReports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal };
-  }, [selectedCustomer, maghsalEntries, waterFillingEntries, soldItems, products, typeFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, maghsalEntries, waterFillingEntries, soldItems, products, typeFilter, paymentStatusFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -452,11 +469,12 @@ const ClientReports = () => {
     const startY = await addReceiptHeader(doc, {
       title: 'CLIENT REPORT',
       // subtitle: 'Statement by Type',
-      receiptNo: `RP-${Date.now().toString().slice(-8)}`,
       client: customerName,
       dateRange: range,
       showLogo: false,
       showCompanyInfo: false,
+      showReceiptNo: false,
+      showDateRangeLabel: false,
     });
 
     const body = [];
@@ -464,42 +482,39 @@ const ClientReports = () => {
     sections.forEach((g) => {
       groupRowIndexes.add(body.length);
       body.push([
-        { content: g.section, colSpan: 4 },
+        { content: g.section, colSpan: 5 },
         { content: money(g.subtotal) },
       ]);
       g.rows.forEach((r) => {
         const qty = toNumber(r.quantity);
-        // Multi-line quantity cell: the count, then the "× unit = total"
-        // formula on its own smaller line right under it.
-        const qtyCell = qty > 0
-          ? `${r.quantity}\n× ${money(r.total / qty)} = ${money(r.total)}`
-          : (r.quantity || '—');
-        body.push([formatDate(r.date), r.item, qtyCell, r.status, money(r.total)]);
+        const priceCell = qty > 0 ? money(r.total / qty) : '—';
+        body.push([formatDate(r.date), r.item, r.quantity || '—', priceCell, r.status, money(r.total)]);
       });
     });
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Item', 'Quantity', 'Status', 'Total'],
+        head: ['Date', 'Item', 'Quantity', 'Price', 'Status', 'Total'],
         body,
         startY,
-        rightAlignedColumns: [2, 4],
+        rightAlignedColumns: [2, 3, 5],
         density,
       }),
       columnStyles: {
-        0: { cellWidth: 28 },
-        1: { cellWidth: 52 },
-        2: { halign: 'right', cellWidth: 32 },
-        3: { cellWidth: 32 },
-        4: { halign: 'right', cellWidth: 38 },
+        0: { cellWidth: 26 },
+        1: { cellWidth: 48 },
+        2: { halign: 'right', cellWidth: 18 },
+        3: { halign: 'right', cellWidth: 24 },
+        4: { cellWidth: 28 },
+        5: { halign: 'right', cellWidth: 34 },
       },
       didParseCell: (data) => {
         if (data.section === 'body' && groupRowIndexes.has(data.row.index)) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
-          if (data.column.index === 4) data.cell.styles.halign = 'right';
-        } else if (data.section === 'body' && data.column.index === 4) {
-          // Per-line item prices stay small so the Grand Total banner below
+          if (data.column.index === 5) data.cell.styles.halign = 'right';
+        } else if (data.section === 'body' && data.column.index === 5) {
+          // Line-item totals stay small so the Grand Total banner below
           // reads as the headline figure on the receipt.
           data.cell.styles.fontSize = Math.max(density.fontSize - 1.5, 5.5);
         }
@@ -631,6 +646,14 @@ const ClientReports = () => {
           </div>
 
           <div className="filter-group">
+            <label>Payment Status</label>
+            <select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)}>
+              <option value="All">All</option>
+              {availablePaymentStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-group">
             <label>From</label>
             <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </div>
@@ -672,6 +695,7 @@ const ClientReports = () => {
                     <th>Date</th>
                     <th>Item</th>
                     <th className="text-right">Quantity</th>
+                    <th className="text-right">Price</th>
                     <th>Status</th>
                     <th className="text-right">Total</th>
                   </tr>
@@ -680,26 +704,22 @@ const ClientReports = () => {
                   {statement.sections.map((g) => (
                     <React.Fragment key={g.section}>
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={5} style={{ fontWeight: 700 }}>{g.section}</td>
+                        <td colSpan={6} style={{ fontWeight: 700 }}>{g.section}</td>
                       </tr>
                       {g.rows.map((r) => (
                         <tr key={r.key}>
                           <td>{formatDate(r.date)}</td>
                           <td>{r.item}</td>
+                          <td className="text-right">{r.quantity || '—'}</td>
                           <td className="text-right">
-                            <div>{r.quantity || '—'}</div>
-                            {toNumber(r.quantity) > 0 && (
-                              <span className="formula-chip">
-                                × ${formatCurrency(r.total / toNumber(r.quantity))} = ${formatCurrency(r.total)}
-                              </span>
-                            )}
+                            {toNumber(r.quantity) > 0 ? `$${formatCurrency(r.total / toNumber(r.quantity))}` : '—'}
                           </td>
                           <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
-                          <td className="text-right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>${formatCurrency(r.total)}</td>
+                          <td className="text-right" style={{ fontWeight: 600 }}>${formatCurrency(r.total)}</td>
                         </tr>
                       ))}
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                        <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
                         <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
                       </tr>
                     </React.Fragment>
@@ -785,6 +805,7 @@ const ClientReports = () => {
                       <th>Date</th>
                       <th>Item</th>
                       <th className="text-right">Quantity</th>
+                      <th className="text-right">Price</th>
                       <th>Status</th>
                       <th className="text-right">Total</th>
                     </tr>
@@ -793,26 +814,22 @@ const ClientReports = () => {
                     {viewedEntry.sections.map((g) => (
                       <React.Fragment key={g.section}>
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={5} style={{ fontWeight: 700 }}>{g.section}</td>
+                          <td colSpan={6} style={{ fontWeight: 700 }}>{g.section}</td>
                         </tr>
                         {g.rows.map((r) => (
                           <tr key={r.key}>
                             <td>{formatDate(r.date)}</td>
                             <td>{r.item}</td>
+                            <td className="text-right">{r.quantity || '—'}</td>
                             <td className="text-right">
-                              <div>{r.quantity || '—'}</div>
-                              {toNumber(r.quantity) > 0 && (
-                                <span className="formula-chip">
-                                  × ${formatCurrency(r.total / toNumber(r.quantity))} = ${formatCurrency(r.total)}
-                                </span>
-                              )}
+                              {toNumber(r.quantity) > 0 ? `$${formatCurrency(r.total / toNumber(r.quantity))}` : '—'}
                             </td>
                             <td><span className={`status-badge status-${(r.status || '').toLowerCase()}`}>{r.status}</span></td>
-                            <td className="text-right" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>${formatCurrency(r.total)}</td>
+                            <td className="text-right" style={{ fontWeight: 600 }}>${formatCurrency(r.total)}</td>
                           </tr>
                         ))}
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                          <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
                           <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
                         </tr>
                       </React.Fragment>

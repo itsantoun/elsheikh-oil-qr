@@ -49,6 +49,7 @@ const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsW
 const normalizeScope = (scope, productType = '') => {
   const value = String(scope || '').toLowerCase();
   const type = String(productType || '').toLowerCase();
+  if (value === 'other') return 'other';
   if (value.startsWith('maghsal') || type === 'maghsal') return 'maghsal';
   if (value === 'filter' || type.includes('filter')) return 'filter';
   if (value === 'oil' || type.includes('oil')) return 'oil';

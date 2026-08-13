@@ -263,12 +263,19 @@ const RemainingProducts = () => {
         setProducts([]); setFilteredProducts([]);
       }
 
-      // Cutoff per product = date of last accurate stock check only.
+      // Cutoff per product = date of last accurate stock check only. Pending
+      // ("Inaccurate") checks must NOT reset this cutoff — the product's
+      // quantity isn't actually updated until a check is confirmed accurate,
+      // so treating a pending check's date as the baseline made any sale
+      // recorded afterward (e.g. logging the item you just found) silently
+      // stop counting toward "sold since last check", leaving Expected
+      // Remaining stuck at the old (wrong) number.
       // No productCreatedAt or lastStockInAt — those caused silent exclusions of real sales.
       const lastCheckedAt = {};
       if (checkSnap.exists()) {
         const allChecks = Object.entries(checkSnap.val()).map(([id, v]) => ({ id, ...v }));
         allChecks.forEach(c => {
+          if (c.status !== 'accurate') return;
           const ts = c.reconfirmedAt || c.checkedAt;
           if (ts) lastCheckedAt[c.id] = new Date(ts);
         });
@@ -394,9 +401,12 @@ const RemainingProducts = () => {
       return usedFilter === 'used' ? isUsed : !isUsed;
     };
 
+    // All products show by default, including zero-stock ones — "Zero Stock"
+    // is now an opt-in narrowing filter (for restock review) rather than the
+    // thing you have to click to stop items from disappearing.
     const baseProducts = showZeroStock
-      ? products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && getExpectedRemaining(p) <= 0)
-      : products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && hasPositiveExpectedStock(p));
+      ? products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && !hasPositiveExpectedStock(p))
+      : products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p));
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
@@ -2131,8 +2141,12 @@ const RemainingProducts = () => {
         <button onClick={() => setActiveTab('archives')} className={`tab-button ${activeTab === 'archives' ? 'active' : ''}`}>
           <span className="tab-icon"><IconArchive /></span><span className="tab-label">Archives</span>
         </button>
-        <button onClick={() => setShowZeroStock(prev => !prev)} className={`tab-button ${showZeroStock ? 'active' : ''}`}>
-          <span className="tab-icon"><IconPackage /></span><span className="tab-label">Zero Stock</span>
+        <button
+          onClick={() => setShowZeroStock(prev => !prev)}
+          className={`tab-button ${showZeroStock ? 'active' : ''}`}
+          title="All products show by default, including zero-stock ones. Enable this to narrow the list down to only zero-stock items."
+        >
+          <span className="tab-icon"><IconPackage /></span><span className="tab-label">Zero Stock Only</span>
         </button>
       </div>
 

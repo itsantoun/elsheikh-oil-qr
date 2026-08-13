@@ -30,7 +30,7 @@ export const convertPrice = (price, currency, rate) => {
 };
 
 export const formatLBP = (amount) =>
-  `LBP ${Math.round(amount).toLocaleString('en-US')}`;
+  `L.L ${Math.round(amount).toLocaleString('en-US')}`;
 
 export const formatUSD = (amount) =>
   `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

@@ -481,7 +481,7 @@ const WaterFilling = () => {
           </div>
           <div className="exchange-rate-banner">
             <span className="exchange-rate-banner-label">Exchange Rate</span>
-            <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} LBP</span>
+            <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} L.L</span>
           </div>
         </div>
       </div>
@@ -517,8 +517,8 @@ const WaterFilling = () => {
                 <th>Customer</th>
                 <th>Transaction Type</th>
                 <th className="text-right">Quantity</th>
-                <th className="text-right">Premium</th>
-                <th className="text-right">Total Premium</th>
+                <th>Premium</th>
+                <th>Total Premium</th>
                 <th>Status</th>
                 <th>Remark</th>
                 <th>Actions</th>
@@ -533,10 +533,10 @@ const WaterFilling = () => {
                   <td>{e.customerName || 'N/A'}</td>
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
-                  <td className="text-right">
+                  <td>
                     {e.premiumCurrency ? formatPremium(toNumber(e.unitPremium), e.premiumCurrency) : '—'}
                   </td>
-                  <td className="text-right">
+                  <td>
                     {e.premiumCurrency ? formatPremium(toNumber(e.totalPremium), e.premiumCurrency) : '—'}
                   </td>
                   <td>
@@ -571,7 +571,7 @@ const WaterFilling = () => {
             <div className="modal-content">
               <div className="exchange-rate-banner" style={{ marginBottom: 'var(--s-3)' }}>
                 <span className="exchange-rate-banner-label">Exchange Rate</span>
-                <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} LBP</span>
+                <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} L.L</span>
               </div>
               <div className="missing-item-form-grid">
                 <div className="form-group">

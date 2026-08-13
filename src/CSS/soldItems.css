@@ -212,16 +212,16 @@
   white-space: nowrap;
 }
 
-/* Stack Edit / Delete buttons so Actions column is half as wide */
+/* Icon-only Edit / Delete buttons sit side by side */
 .sold-items-container .data-table .action-buttons {
-  flex-direction: column;
-  gap: 3px;
-  align-items: stretch;
+  flex-direction: row;
+  gap: 4px;
+  align-items: center;
 }
 
 /* Smaller action buttons */
 .sold-items-container .data-table .action-buttons .btn-small {
-  padding: 3px 7px;
+  padding: 5px 7px;
   font-size: 12px;
 }
 

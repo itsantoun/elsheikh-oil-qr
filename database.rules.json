@@ -62,6 +62,19 @@
       }
     },
 
+    "employees": {
+      ".read": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
+      ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
+      "$eid": {
+        "name":         { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+        "nationality":  { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 80)" },
+        "phone":        { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 30)" },
+        "salaryUSD":    { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
+        "salaryLBP":    { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
+        "$other":       { ".validate": true }
+      }
+    },
+
     "productArchives": {
       ".read": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'",
       ".write": "auth.token.admin === true || auth.token.email === 'doris@elsheikh.lb'"

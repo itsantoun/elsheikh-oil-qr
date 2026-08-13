@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, get, set, update, remove, push } from 'firebase/database';
+import { ref, get, set, update, remove, push, onValue } from 'firebase/database';
 import '../CSS/addCustomer.css';
 import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash, IconUser } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
@@ -41,6 +41,8 @@ const emptyForm = {
   nameArabic: '',
   phone: '',
   address: '',
+  city: '',
+  remark: '',
   clientTypes: [],
   waterFillingSizes: [],
   waterFillingPricing: {},
@@ -57,6 +59,8 @@ const AddCustomer = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [expandedCustomer, setExpandedCustomer] = useState(null);
   const [filterType, setFilterType] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
+  const [cities, setCities] = useState([]);
   const [confirm, confirmDialog] = useConfirmDialog();
   const exchangeRate = useExchangeRate();
 
@@ -64,6 +68,16 @@ const AddCustomer = () => {
 
   useEffect(() => {
     fetchCustomers();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onValue(ref(database, 'settings/customerCities'), (snap) => {
+      if (!snap.exists()) { setCities([]); return; }
+      const val = snap.val();
+      const arr = Array.isArray(val) ? val : Object.values(val || {});
+      setCities(arr.filter((v) => typeof v === 'string' && v.trim().length > 0));
+    });
+    return () => unsub();
   }, []);
 
   const fetchCustomers = async () => {
@@ -79,6 +93,8 @@ const AddCustomer = () => {
           nameArabic: data[key].nameArabic || '',
           phone: data[key].phone || '',
           address: data[key].address || '',
+          city: data[key].city || '',
+          remark: data[key].remark || '',
           clientTypes: data[key].clientTypes || [],
           waterFillingSizes: data[key].waterFillingSizes || [],
           waterFillingPricing: data[key].waterFillingPricing || {},
@@ -176,6 +192,8 @@ const AddCustomer = () => {
         nameArabic: formData.nameArabic.trim(),
         phone: formData.phone.trim(),
         address: formData.address.trim(),
+        city: formData.city,
+        remark: formData.remark.trim(),
         clientTypes: formData.clientTypes,
         waterFillingSizes: formData.waterFillingSizes,
         waterFillingPricing: buildPricingPayload(formData),
@@ -212,6 +230,8 @@ const AddCustomer = () => {
       nameArabic: customer.nameArabic,
       phone: customer.phone,
       address: customer.address,
+      city: customer.city || '',
+      remark: customer.remark || '',
       clientTypes: customer.clientTypes || [],
       waterFillingSizes: customer.waterFillingSizes || [],
       waterFillingPricing: hydratePricingForEdit(customer.waterFillingPricing),
@@ -232,6 +252,8 @@ const AddCustomer = () => {
         nameArabic: editData.nameArabic.trim(),
         phone: editData.phone.trim(),
         address: editData.address.trim(),
+        city: editData.city,
+        remark: editData.remark.trim(),
         clientTypes: editData.clientTypes,
         waterFillingSizes: editData.waterFillingSizes,
         waterFillingPricing: buildPricingPayload(editData),
@@ -301,6 +323,7 @@ const AddCustomer = () => {
   const filteredCustomers = customers
     .filter(customer => {
       if (filterType && !isClientTypeChecked(filterType, customer)) return false;
+      if (cityFilter && customer.city !== cityFilter) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -503,6 +526,26 @@ const AddCustomer = () => {
                 disabled={isLoading}
               />
             </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                <span className="label-text">City</span>
+              </label>
+              <select
+                value={formData.city}
+                onChange={(e) => handleFormChange('city', e.target.value)}
+                className="form-select"
+                disabled={isLoading}
+              >
+                <option value="">Select city…</option>
+                {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {cities.length === 0 && (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  No cities set up yet. Add them from <strong>Settings</strong>.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="form-group form-group-full">
@@ -518,6 +561,20 @@ const AddCustomer = () => {
               {renderSizePricingControls(formData.waterFillingSizes, formData.waterFillingPricing, false)}
             </div>
           )}
+
+          <div className="form-group form-group-full">
+            <label className="form-label">
+              <span className="label-text">Remarks</span>
+            </label>
+            <textarea
+              placeholder="Any notes about this customer..."
+              value={formData.remark}
+              onChange={(e) => handleFormChange('remark', e.target.value)}
+              className="form-textarea"
+              rows="2"
+              disabled={isLoading}
+            />
+          </div>
 
           <div className="form-actions">
             <div className="form-actions-buttons">
@@ -543,7 +600,7 @@ const AddCustomer = () => {
                 onClick={handleClearForm}
                 className="btn-secondary"
                 disabled={isLoading || (
-                  !formData.name && !formData.nameArabic && !formData.phone && !formData.address && formData.clientTypes.length === 0
+                  !formData.name && !formData.nameArabic && !formData.phone && !formData.address && !formData.city && !formData.remark && formData.clientTypes.length === 0
                 )}
               >
                 Clear Form
@@ -580,6 +637,15 @@ const AddCustomer = () => {
               {CLIENT_TYPES.map(type => (
                 <option key={type.value} value={type.value}>{type.label}</option>
               ))}
+            </select>
+            <select
+              className="filter-select"
+              value={cityFilter}
+              onChange={(e) => setCityFilter(e.target.value)}
+              disabled={isLoading}
+            >
+              <option value="">All Cities</option>
+              {cities.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             <div className="search-input-group">
               <input
@@ -619,7 +685,7 @@ const AddCustomer = () => {
           ) : filteredCustomers.length === 0 ? (
             <div className="empty-cell">
               <div className="empty-icon"><IconUsers /></div>
-              {searchTerm || filterType ? 'No customers found' : 'No customers added yet'}
+              {searchTerm || filterType || cityFilter ? 'No customers found' : 'No customers added yet'}
             </div>
           ) : (
             filteredCustomers.map((customer) => {
@@ -646,6 +712,7 @@ const AddCustomer = () => {
                       </div>
                       <div className="customer-card-meta">
                         {customer.phone && <span className="meta-item phone-meta">{customer.phone}</span>}
+                        {customer.city && <span className="meta-item">{customer.city}</span>}
                         {renderClientTypeBadges(customer.clientTypes)}
                         {renderWaterFillingSizeBadges(customer.waterFillingSizes, customer.waterFillingPricing)}
                       </div>
@@ -731,6 +798,20 @@ const AddCustomer = () => {
                                 disabled={isLoading}
                               />
                             </div>
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">City</span>
+                              </label>
+                              <select
+                                value={editData.city}
+                                onChange={(e) => handleEditChange('city', e.target.value)}
+                                className="form-select"
+                                disabled={isLoading}
+                              >
+                                <option value="">Select city…</option>
+                                {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
                           </div>
                           <div className="form-group form-group-full">
                             <label className="form-label">
@@ -744,6 +825,18 @@ const AddCustomer = () => {
                               {renderSizePricingControls(editData.waterFillingSizes, editData.waterFillingPricing, true)}
                             </div>
                           )}
+                          <div className="form-group form-group-full">
+                            <label className="form-label">
+                              <span className="label-text">Remarks</span>
+                            </label>
+                            <textarea
+                              value={editData.remark}
+                              onChange={(e) => handleEditChange('remark', e.target.value)}
+                              className="form-textarea"
+                              rows="2"
+                              disabled={isLoading}
+                            />
+                          </div>
                           <div className="edit-actions">
                             <button
                               onClick={() => handleEditCustomer(customer.id)}
@@ -772,6 +865,10 @@ const AddCustomer = () => {
                               <span className="detail-label">Address</span>
                               <span className="detail-value">{customer.address || '—'}</span>
                             </div>
+                            <div className="detail-item">
+                              <span className="detail-label">City</span>
+                              <span className="detail-value">{customer.city || '—'}</span>
+                            </div>
                             <div className="detail-item detail-item-full">
                               <span className="detail-label">Client Types</span>
                               <div className="detail-value">{renderClientTypeBadges(customer.clientTypes)}</div>
@@ -780,6 +877,12 @@ const AddCustomer = () => {
                               <div className="detail-item detail-item-full">
                                 <span className="detail-label">Water Filling Size</span>
                                 <div className="detail-value">{renderWaterFillingSizeBadges(customer.waterFillingSizes, customer.waterFillingPricing)}</div>
+                              </div>
+                            )}
+                            {customer.remark && (
+                              <div className="detail-item detail-item-full">
+                                <span className="detail-label">Remarks</span>
+                                <span className="detail-value">{customer.remark}</span>
                               </div>
                             )}
                           </div>
@@ -793,11 +896,12 @@ const AddCustomer = () => {
           )}
         </div>
 
-        {(searchTerm || filterType) && filteredCustomers.length > 0 && (
+        {(searchTerm || filterType || cityFilter) && filteredCustomers.length > 0 && (
           <div className="search-info">
             Showing {filteredCustomers.length} of {customers.length} customers
             {searchTerm && ` for "${searchTerm}"`}
             {filterType && ` (${getClientTypeLabel(filterType)})`}
+            {cityFilter && ` in ${cityFilter}`}
           </div>
         )}
       </div>

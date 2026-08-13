@@ -282,11 +282,11 @@ const ClientReports = () => {
     return typeFilter === section;
   };
 
-  // Payment Status options — Paid/Unpaid/Hold always offered regardless of
-  // whether any record currently uses them, plus anything else found live.
+  // Payment Status options — Paid/Unpaid/Hold/Free always offered regardless
+  // of whether any record currently uses them, plus anything else found live.
   // "Used" is intentionally excluded — not a status worth filtering by here.
   const availablePaymentStatuses = useMemo(() => {
-    const set = new Set(['Paid', 'Unpaid', 'Hold']);
+    const set = new Set(['Paid', 'Unpaid', 'Hold', 'Free']);
     maghsalEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
     waterFillingEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
     soldItems.forEach((it) => set.add(it.paymentStatus || 'N/A'));

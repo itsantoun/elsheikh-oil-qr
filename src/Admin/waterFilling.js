@@ -3,7 +3,7 @@ import { database } from '../Auth/firebase';
 import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
-import { IconRefresh, IconX, IconPlus } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
@@ -71,17 +71,13 @@ const WaterFilling = () => {
   const exchangeRate = useExchangeRate();
 
   // ── Format helpers ──────────────────────────────
-  const formatDateTime = (d) => {
+  const formatDate = (d) => {
     try {
       const date = new Date(d);
       if (isNaN(date.getTime())) return 'Invalid Date';
       const day = String(date.getDate()).padStart(2, '0');
       const month = String(date.getMonth() + 1).padStart(2, '0');
-      let hours = date.getHours();
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12 || 12;
-      return `${day}-${month}-${date.getFullYear()} ${hours}:${minutes} ${ampm}`;
+      return `${day}-${month}-${date.getFullYear()}`;
     } catch { return 'Invalid Date'; }
   };
 
@@ -211,12 +207,13 @@ const WaterFilling = () => {
   }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   const totals = useMemo(() => {
-    const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0 };
+    const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0 };
     for (const e of filtered) {
       t.count += 1;
       t.quantity += toNumber(e.quantity);
       if (e.paymentStatus === 'Paid') t.paidCount += 1;
       else if (e.paymentStatus === 'Hold') t.holdCount += 1;
+      else if (e.paymentStatus === 'Free') t.freeCount += 1;
       else t.unpaidCount += 1;
     }
     return t;
@@ -424,6 +421,10 @@ const WaterFilling = () => {
             <div className="kpi-card-label">Hold</div>
             <div className="kpi-card-value">{totals.holdCount}</div>
           </div>
+          <div className="kpi-card tone-purple">
+            <div className="kpi-card-label">Free</div>
+            <div className="kpi-card-value">{totals.freeCount}</div>
+          </div>
         </div>
       )}
 
@@ -449,7 +450,7 @@ const WaterFilling = () => {
           <div className="filter-group">
             <label>Payment Status <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}></span></label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['Paid', 'Unpaid', 'Hold'].map((s) => (
+              {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -502,14 +503,14 @@ const WaterFilling = () => {
       )}
 
       {/* Table */}
-      <div className="table-container">
+      <div className="table-container" style={{ overflowX: 'auto' }}>
         {filtered.length === 0 ? (
           <div className="empty-table">
             <p>No Water Filling entries match the current filters.</p>
             <button className="btn-secondary" onClick={clearAllFilters} style={{ marginTop: 10 }}>Clear Filters</button>
           </div>
         ) : (
-          <table className="data-table">
+          <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
             <thead>
               <tr>
                 <th>Date</th>
@@ -527,7 +528,7 @@ const WaterFilling = () => {
               {filtered.map((e) => (
                 <tr key={e.id}>
                   <td className="date-cell">
-                    <span className="date-display">{formatDateTime(e.date)}</span>
+                    <span className="date-display">{formatDate(e.date)}</span>
                   </td>
                   <td>{e.customerName || 'N/A'}</td>
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
@@ -544,8 +545,12 @@ const WaterFilling = () => {
                   <td>{e.remark || '—'}</td>
                   <td>
                     <div className="action-buttons">
-                      <button className="btn-small btn-primary" onClick={() => openEditModal(e)}>Edit</button>
-                      <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)}>Delete</button>
+                      <button className="btn-small btn-primary" onClick={() => openEditModal(e)} title="Edit Entry">
+                        <IconEdit />
+                      </button>
+                      <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)} title="Delete Entry">
+                        <IconTrash />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -625,6 +630,7 @@ const WaterFilling = () => {
                     <option value="Unpaid">Unpaid</option>
                     <option value="Hold">Hold</option>
                     <option value="Paid">Paid</option>
+                    <option value="Free">Free</option>
                   </select>
                 </div>
               </div>

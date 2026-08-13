@@ -6,7 +6,7 @@ import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
-import { IconRefresh, IconX, IconPlus } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
@@ -1143,6 +1143,7 @@ const OilSoldItems = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
+              <option value="Free">Free</option>
               <option value="Stock">Stock</option>
             </select>
           </div>
@@ -1267,7 +1268,7 @@ const OilSoldItems = () => {
       )}
 
       {/* Table */}
-      <div className="table-container">
+      <div className="table-container" style={{ overflowX: 'auto' }}>
         {filteredItems.length === 0 ? (
           <div className="empty-state">
             <p>No items match the current filters.</p>
@@ -1276,7 +1277,7 @@ const OilSoldItems = () => {
             </button>
           </div>
         ) : (
-          <table className="data-table">
+          <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
             <thead>
               <tr>
                 <th>Date</th>
@@ -1300,7 +1301,7 @@ const OilSoldItems = () => {
                 return (
                 <tr key={item.id} className={checkedItems.includes(item.id) ? 'checked-row' : ''}>
                   <td className="date-cell">
-                    <span className="date-display">{formatDateTime(item.dateScanned)}</span>
+                    <span className="date-display">{formatDate(item.dateScanned)}</span>
                   </td>
                   <td>{item.customerName || 'N/A'}</td>
                   <td>{item.name || 'N/A'}</td>
@@ -1345,11 +1346,11 @@ const OilSoldItems = () => {
                   </td>
                   <td>
                     <div className="action-buttons">
-                      <button className="btn-small btn-primary" onClick={() => handleEdit(item)}>
-                        Edit
+                      <button className="btn-small btn-primary" onClick={() => handleEdit(item)} title="Edit">
+                        <IconEdit />
                       </button>
-                      <button className="btn-small btn-danger" onClick={() => handleDeleteConfirmation(item.id)}>
-                        Delete/Refund
+                      <button className="btn-small btn-danger" onClick={() => handleDeleteConfirmation(item.id)} title="Delete / Refund">
+                        <IconTrash />
                       </button>
                     </div>
                   </td>
@@ -1414,6 +1415,7 @@ const OilSoldItems = () => {
                   <select value={newPaymentStatus} onChange={(e) => setNewPaymentStatus(e.target.value)} className="form-select">
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
+                    <option value="Free">Free</option>
                     <option value="Stock">Stock</option>
                   </select>
                 </div>
@@ -1550,6 +1552,7 @@ const OilSoldItems = () => {
                         >
                           <option value="Paid">Paid</option>
                           <option value="Unpaid">Unpaid</option>
+                          <option value="Free">Free</option>
                           <option value="Stock">Stock</option>
                         </select>
                       </div>

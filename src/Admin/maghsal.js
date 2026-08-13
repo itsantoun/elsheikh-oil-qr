@@ -814,6 +814,7 @@ const Maghsal = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
+              <option value="Free">Free</option>
             </select>
           </div>
 
@@ -1041,6 +1042,7 @@ const Maghsal = () => {
                   <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
+                    <option value="Free">Free</option>
                     <option value="Used">Used</option>
                     {!editingEntryId && <option value="Stock">Stock</option>}
                   </select>

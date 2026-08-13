@@ -26,6 +26,11 @@ const RemainingProducts = () => {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [pendingChecks, setPendingChecks]       = useState([]);
   const [allCheckedProductIds, setAllCheckedProductIds] = useState(new Set());
+  // Products with an "Add Missing Item → Stock" transaction still sitting
+  // unconfirmed in Transactions — a third, separate kind of "pending" from
+  // stock-check status, surfaced in the Pending Review tab so it's not
+  // silently invisible until someone happens to check Transactions.
+  const [pendingStockInProductIds, setPendingStockInProductIds] = useState(new Set());
   const [searchTerm, setSearchTerm]             = useState('');
   const [activeTab, setActiveTab]               = useState('check');
   const [isLoading, setIsLoading]               = useState(false);
@@ -100,12 +105,9 @@ const RemainingProducts = () => {
     try {
       const d = new Date(iso);
       if (isNaN(d)) return 'N/A';
-      const dd   = String(d.getDate()).padStart(2, '0');
-      const mm   = String(d.getMonth() + 1).padStart(2, '0');
-      const hh   = String(d.getHours() % 12 || 12).padStart(2, '0');
-      const min  = String(d.getMinutes()).padStart(2, '0');
-      const ampm = d.getHours() >= 12 ? 'PM' : 'AM';
-      return `${dd}-${mm}-${d.getFullYear()} ${hh}:${min} ${ampm}`;
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}-${mm}-${d.getFullYear()}`;
     } catch { return 'N/A'; }
   };
 
@@ -242,11 +244,12 @@ const RemainingProducts = () => {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [prodSnap, checkSnap, soldSnap, maghsalSnap] = await Promise.all([
+      const [prodSnap, checkSnap, soldSnap, maghsalSnap, txSnap] = await Promise.all([
         get(ref(database, 'products')),
         get(ref(database, 'stockChecks')),
         get(ref(database, 'SoldItems')),
         get(ref(database, 'maghsalEntries')),
+        get(ref(database, 'transactions')),
       ]);
 
       let productScopeById = {};
@@ -284,6 +287,18 @@ const RemainingProducts = () => {
       } else {
         setPendingChecks([]);
         setAllCheckedProductIds(new Set());
+      }
+
+      if (txSnap.exists()) {
+        const pendingIds = new Set();
+        Object.values(txSnap.val()).forEach((tx) => {
+          if (tx?.paymentStatus !== 'Pending') return;
+          const productKey = String(tx.productId || tx.barcode || '').trim();
+          if (productKey) pendingIds.add(productKey);
+        });
+        setPendingStockInProductIds(pendingIds);
+      } else {
+        setPendingStockInProductIds(new Set());
       }
 
       // Build { [productKey]: qtySoldSinceLastCheck }.
@@ -763,64 +778,6 @@ const RemainingProducts = () => {
     } catch (err) { console.error(err); showError('Failed to save.'); }
   };
 
-  // ── Actions: delete ───────────────────────────────────────────────────────
-
-  const handleDeleteProduct = async (product) => {
-    const confirmed = await confirm({
-      title: 'Delete Product?',
-      message: `Delete "${product.name}" permanently? This will remove the product plus all its transactions, sold records, and stock history.`,
-    });
-    if (!confirmed) return;
-    try {
-      // Write deletion event first so the audit trail survives the history cleanup below.
-      await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'deleted', new Date().toISOString());
-
-      const [soldSnap, txSnap, historySnap] = await Promise.all([
-        get(ref(database, 'SoldItems')),
-        get(ref(database, 'transactions')),
-        get(ref(database, 'stockCheckHistory')),
-      ]);
-
-      const updates = {};
-      updates[`products/${product.id}`] = null;
-      updates[`stockChecks/${product.id}`] = null;
-
-      if (soldSnap.exists()) {
-        Object.entries(soldSnap.val()).forEach(([key, item]) => {
-          if (item.barcode === product.id || item.productId === product.id) {
-            updates[`SoldItems/${key}`] = null;
-          }
-        });
-      }
-
-      if (txSnap.exists()) {
-        Object.entries(txSnap.val()).forEach(([key, tx]) => {
-          if (tx.barcode === product.id || tx.productId === product.id) {
-            updates[`transactions/${key}`] = null;
-          }
-        });
-      }
-
-      if (historySnap.exists()) {
-        Object.entries(historySnap.val()).forEach(([month, monthData]) => {
-          if (!monthData || typeof monthData !== 'object') return;
-          Object.entries(monthData).forEach(([key, entry]) => {
-            // Keep 'deleted' events so the audit trail is preserved even after deletion.
-            if (entry.productId === product.id && entry.status !== 'deleted') {
-              updates[`stockCheckHistory/${month}/${key}`] = null;
-            }
-          });
-        });
-      }
-
-      await update(ref(database), updates);
-
-      setProducts(prev => prev.filter(p => p.id !== product.id));
-      setPendingChecks(prev => prev.filter(c => c.id !== product.id));
-      showSuccess(`"${product.name}" and all its data deleted.`);
-    } catch (err) { console.error(err); showError('Failed to delete product.'); }
-  };
-
   // ── Actions: hold ─────────────────────────────────────────────────────────
 
   const handleHoldProduct = async (product) => {
@@ -996,8 +953,8 @@ const RemainingProducts = () => {
 
       <div className="table-section">
         <div className="table-card">
-          <div className="table-container">
-            <table className="data-table">
+          <div className="table-container" style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
               <thead>
                 <tr>
                   <th>Barcode</th>
@@ -1023,8 +980,8 @@ const RemainingProducts = () => {
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                   return (
                     <tr key={product.id} className={isPending ? 'row-warning' : ''}>
-                      <td><span className="barcode-cell">{product.id}</span></td>
-                      <td>
+                      <td title={product.id}><span className="barcode-cell">{product.id}</span></td>
+                      <td title={product.name}>
                         <span className="product-name-cell">{product.name}</span>
                         {' '}
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
@@ -1037,7 +994,7 @@ const RemainingProducts = () => {
                           </span>
                         )}
                       </td>
-                      <td><span className="type-cell">{product.productType}</span></td>
+                      <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
                       <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
                       <td className="text-right">
                         <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
@@ -1070,10 +1027,17 @@ const RemainingProducts = () => {
                       </td>
                       <td>
                         <div className="action-buttons">
-                          <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /> Accurate</button>
-                          <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /> Inaccurate</button>
-                          <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
-                          <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
+                          {/* title on a wrapping span, not just the button — disabled
+                              buttons suppress hover tooltips in some browsers */}
+                          <span title="Mark this count as Accurate">
+                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /></button>
+                          </span>
+                          <span title="Flag this count as Inaccurate for review">
+                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /></button>
+                          </span>
+                          <span title="Hold this product (move to Held)">
+                            <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /></button>
+                          </span>
                         </div>
                       </td>
                     </tr>
@@ -1098,14 +1062,19 @@ const RemainingProducts = () => {
   const renderPendingTab = () => {
     const pendingProductIds = new Set(pendingChecks.map(c => c.id));
     const scopedProducts = scopedProductsForGroup;
+    // Pending Review = Inaccurate (flagged wrong count) + Not Checked (no
+    // check on record at all) + Stock-In Pending (an "Add Missing Item →
+    // Stock" transaction still awaiting confirmation in Transactions). A
+    // product can land here for more than one of these reasons at once.
     const pendingProducts = scopedProducts.filter(
-      p => pendingProductIds.has(p.id) || !allCheckedProductIds.has(p.id)
+      p => pendingProductIds.has(p.id) || !allCheckedProductIds.has(p.id) || pendingStockInProductIds.has(p.id)
     );
     const inaccurateCount = pendingChecks.filter(c => {
       const product = products.find(p => p.id === c.id);
       return product && inStockGroup(product);
     }).length;
     const uncheckedCount  = scopedProducts.filter(p => !allCheckedProductIds.has(p.id)).length;
+    const stockInPendingCount = scopedProducts.filter(p => pendingStockInProductIds.has(p.id)).length;
 
     return (
       <div className="stock-tab-panel">
@@ -1119,6 +1088,11 @@ const RemainingProducts = () => {
             {uncheckedCount > 0 && (
               <div className="stats-badge badge-blue">{uncheckedCount} Not Checked</div>
             )}
+            {stockInPendingCount > 0 && (
+              <div className="stats-badge badge-amber" title="Has an unconfirmed 'Add Missing Item → Stock' transaction awaiting confirmation in Transactions">
+                {stockInPendingCount} Stock-In Pending
+              </div>
+            )}
           </div>
           <div className="header-right">
             <button onClick={fetchData} className="btn-secondary" disabled={isLoading}><IconRefresh /> {isLoading ? 'Loading...' : 'Refresh'}</button>
@@ -1127,8 +1101,8 @@ const RemainingProducts = () => {
 
         <div className="table-section">
           <div className="table-card">
-            <div className="table-container">
-              <table className="data-table">
+            <div className="table-container" style={{ overflowX: 'auto' }}>
+              <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
                 <thead>
                   <tr>
                     <th>Barcode</th>
@@ -1147,6 +1121,7 @@ const RemainingProducts = () => {
                 <tbody>
                   {pendingProducts.map(product => {
                     const isPending         = pendingProductIds.has(product.id);
+                    const isPendingStockIn  = pendingStockInProductIds.has(product.id);
                     const inputVal          = countedQty[product.id] ?? '';
                     const movementTotal     = getMovementTotal(product);
                     const currentStock      = getCurrentStockForDisplay(product);
@@ -1154,8 +1129,8 @@ const RemainingProducts = () => {
                     const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                     return (
                       <tr key={product.id} className={isPending ? 'row-warning' : 'row-info'}>
-                        <td><span className="barcode-cell">{product.id}</span></td>
-                        <td>
+                        <td title={product.id}><span className="barcode-cell">{product.id}</span></td>
+                        <td title={product.name}>
                         <span className="product-name-cell">{product.name}</span>
                         {' '}
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
@@ -1168,7 +1143,7 @@ const RemainingProducts = () => {
                           </span>
                         )}
                       </td>
-                        <td><span className="type-cell">{product.productType}</span></td>
+                        <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
                         <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
                         <td className="text-right">
                           <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
@@ -1195,16 +1170,28 @@ const RemainingProducts = () => {
                           />
                         </td>
                         <td>
-                          {isPending
-                            ? <span className="status-badge status-stock"><IconAlertTriangle /> Inaccurate</span>
-                            : <span className="status-badge status-stock-confirmed"><IconPackage /> Not Checked</span>}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                            {isPending
+                              ? <span className="status-badge status-stock"><IconAlertTriangle /> Inaccurate</span>
+                              : <span className="status-badge status-stock-confirmed"><IconPackage /> Not Checked</span>}
+                            {isPendingStockIn && (
+                              <span className="status-badge status-stock" title="Unconfirmed stock-in transaction awaiting confirmation in Transactions">
+                                <IconClipboard /> Stock-In Pending
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <div className="action-buttons">
-                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /> Accurate</button>
-                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /> Inaccurate</button>
-                            <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /> Hold</button>
-                            <button className="btn-small btn-danger" onClick={() => handleDeleteProduct(product)}><IconX /> Delete</button>
+                            <span title="Mark this count as Accurate">
+                              <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /></button>
+                            </span>
+                            <span title="Flag this count as Inaccurate for review">
+                              <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /></button>
+                            </span>
+                            <span title="Hold this product (move to Held)">
+                              <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /></button>
+                            </span>
                           </div>
                         </td>
                       </tr>

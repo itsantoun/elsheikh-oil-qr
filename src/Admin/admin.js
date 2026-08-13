@@ -4,6 +4,7 @@ import AddUsers from './adduser';
 import FetchProducts from './fetchProducts';
 import ItemsSold from './oilSoldItems';
 import AddCustomer from './addCustomer';
+import Employees from './employees';
 import RemainingProducts from './remainingProducts';
 import Transactions from './transactions';
 import Archives from './archives';
@@ -78,6 +79,7 @@ const Admin = () => {
       case 'holdProducts':       return <FetchProducts />;
       case 'itemsSold':          return <ItemsSold />;
       case 'addCustomer':        return <AddCustomer />;
+      case 'employees':          return <Employees />;
       case 'stock':              return <RemainingProducts />;
       case 'transactions':       return <Transactions />;
       case 'archives':           return <Archives />;

@@ -34,6 +34,27 @@ const IconDollar = () => (
   </svg>
 );
 
+const IconMapPin = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+    <circle cx="12" cy="10" r="3" />
+  </svg>
+);
+
+const IconFlag = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+    <line x1="4" y1="22" x2="4" y2="15" />
+  </svg>
+);
+
+const IconBriefcase = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+  </svg>
+);
+
 const IconDatabase = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <ellipse cx="12" cy="5" rx="9" ry="3" />
@@ -61,6 +82,27 @@ const Settings = () => {
   const [categoriesBusy, setCategoriesBusy] = useState(false);
   const [editingIdx, setEditingIdx] = useState(null);
   const [editingValue, setEditingValue] = useState('');
+
+  // Customer cities
+  const [cities, setCities] = useState([]);
+  const [newCity, setNewCity] = useState('');
+  const [citiesBusy, setCitiesBusy] = useState(false);
+  const [editingCityIdx, setEditingCityIdx] = useState(null);
+  const [editingCityValue, setEditingCityValue] = useState('');
+
+  // Employee nationalities
+  const [nationalities, setNationalities] = useState([]);
+  const [newNationality, setNewNationality] = useState('');
+  const [nationalitiesBusy, setNationalitiesBusy] = useState(false);
+  const [editingNationalityIdx, setEditingNationalityIdx] = useState(null);
+  const [editingNationalityValue, setEditingNationalityValue] = useState('');
+
+  // Employee roles
+  const [roles, setRoles] = useState([]);
+  const [newRole, setNewRole] = useState('');
+  const [rolesBusy, setRolesBusy] = useState(false);
+  const [editingRoleIdx, setEditingRoleIdx] = useState(null);
+  const [editingRoleValue, setEditingRoleValue] = useState('');
 
   // Currency exchange rate (LBP per 1 USD)
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_USD_TO_LBP_RATE);
@@ -102,6 +144,63 @@ const Settings = () => {
       })
       .catch((err) => {
         console.error('Failed to load Maghsal categories:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
+        }
+      });
+    // Load customer cities
+    get(ref(database, 'settings/customerCities'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (Array.isArray(val) && val.length > 0) {
+            setCities(val);
+          } else if (val && typeof val === 'object') {
+            const arr = Object.values(val).filter((v) => typeof v === 'string' && v.trim().length > 0);
+            if (arr.length > 0) setCities(arr);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load customer cities:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
+        }
+      });
+    // Load employee nationalities
+    get(ref(database, 'settings/nationalities'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (Array.isArray(val) && val.length > 0) {
+            setNationalities(val);
+          } else if (val && typeof val === 'object') {
+            const arr = Object.values(val).filter((v) => typeof v === 'string' && v.trim().length > 0);
+            if (arr.length > 0) setNationalities(arr);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load nationalities:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
+        }
+      });
+    // Load employee roles
+    get(ref(database, 'settings/employeeRoles'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (Array.isArray(val) && val.length > 0) {
+            setRoles(val);
+          } else if (val && typeof val === 'object') {
+            const arr = Object.values(val).filter((v) => typeof v === 'string' && v.trim().length > 0);
+            if (arr.length > 0) setRoles(arr);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load employee roles:', err);
         if (err?.code === 'PERMISSION_DENIED') {
           setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
         }
@@ -379,6 +478,180 @@ const Settings = () => {
   const resetCategoriesToDefaults = async () => {
     if (!window.confirm('Reset Maghsal categories to defaults? Custom entries will be removed.')) return;
     await saveCategories(DEFAULT_CATEGORIES);
+  };
+
+  // ── Cities handlers ───────────────────────────────────
+  const saveCities = async (next) => {
+    setCitiesBusy(true);
+    try {
+      await set(ref(database, 'settings/customerCities'), next);
+      setCities(next);
+      flashMessage('Cities saved.');
+    } catch (err) {
+      console.error(err);
+      flashError('Failed to save cities. You may not have permission.');
+    } finally {
+      setCitiesBusy(false);
+    }
+  };
+
+  const addCity = async () => {
+    const v = newCity.trim();
+    if (!v) return;
+    if (cities.some((c) => c.toLowerCase() === v.toLowerCase())) {
+      flashError('That city already exists.');
+      return;
+    }
+    await saveCities([...cities, v].sort((a, b) => a.localeCompare(b)));
+    setNewCity('');
+  };
+
+  const removeCity = async (idx) => {
+    const target = cities[idx];
+    if (!window.confirm(`Remove city "${target}"? Existing customers keep this city text but it won't be selectable for new/edited entries.`)) {
+      return;
+    }
+    const next = cities.filter((_, i) => i !== idx);
+    await saveCities(next);
+  };
+
+  const startEditCity = (idx) => {
+    setEditingCityIdx(idx);
+    setEditingCityValue(cities[idx]);
+  };
+
+  const cancelEditCity = () => {
+    setEditingCityIdx(null);
+    setEditingCityValue('');
+  };
+
+  const saveEditCity = async () => {
+    const v = editingCityValue.trim();
+    if (!v) return;
+    if (cities.some((c, i) => i !== editingCityIdx && c.toLowerCase() === v.toLowerCase())) {
+      flashError('Another city with that name already exists.');
+      return;
+    }
+    const next = cities.map((c, i) => (i === editingCityIdx ? v : c)).sort((a, b) => a.localeCompare(b));
+    await saveCities(next);
+    setEditingCityIdx(null);
+    setEditingCityValue('');
+  };
+
+  // ── Nationalities handlers ────────────────────────────
+  const saveNationalities = async (next) => {
+    setNationalitiesBusy(true);
+    try {
+      await set(ref(database, 'settings/nationalities'), next);
+      setNationalities(next);
+      flashMessage('Nationalities saved.');
+    } catch (err) {
+      console.error(err);
+      flashError('Failed to save nationalities. You may not have permission.');
+    } finally {
+      setNationalitiesBusy(false);
+    }
+  };
+
+  const addNationality = async () => {
+    const v = newNationality.trim();
+    if (!v) return;
+    if (nationalities.some((n) => n.toLowerCase() === v.toLowerCase())) {
+      flashError('That nationality already exists.');
+      return;
+    }
+    await saveNationalities([...nationalities, v].sort((a, b) => a.localeCompare(b)));
+    setNewNationality('');
+  };
+
+  const removeNationality = async (idx) => {
+    const target = nationalities[idx];
+    if (!window.confirm(`Remove nationality "${target}"? Existing employees keep this nationality text but it won't be selectable for new/edited entries.`)) {
+      return;
+    }
+    const next = nationalities.filter((_, i) => i !== idx);
+    await saveNationalities(next);
+  };
+
+  const startEditNationality = (idx) => {
+    setEditingNationalityIdx(idx);
+    setEditingNationalityValue(nationalities[idx]);
+  };
+
+  const cancelEditNationality = () => {
+    setEditingNationalityIdx(null);
+    setEditingNationalityValue('');
+  };
+
+  const saveEditNationality = async () => {
+    const v = editingNationalityValue.trim();
+    if (!v) return;
+    if (nationalities.some((n, i) => i !== editingNationalityIdx && n.toLowerCase() === v.toLowerCase())) {
+      flashError('Another nationality with that name already exists.');
+      return;
+    }
+    const next = nationalities.map((n, i) => (i === editingNationalityIdx ? v : n)).sort((a, b) => a.localeCompare(b));
+    await saveNationalities(next);
+    setEditingNationalityIdx(null);
+    setEditingNationalityValue('');
+  };
+
+  // ── Employee roles handlers ────────────────────────────
+  const saveRoles = async (next) => {
+    setRolesBusy(true);
+    try {
+      await set(ref(database, 'settings/employeeRoles'), next);
+      setRoles(next);
+      flashMessage('Employee roles saved.');
+    } catch (err) {
+      console.error(err);
+      flashError('Failed to save roles. You may not have permission.');
+    } finally {
+      setRolesBusy(false);
+    }
+  };
+
+  const addRole = async () => {
+    const v = newRole.trim();
+    if (!v) return;
+    if (roles.some((r) => r.toLowerCase() === v.toLowerCase())) {
+      flashError('That role already exists.');
+      return;
+    }
+    await saveRoles([...roles, v].sort((a, b) => a.localeCompare(b)));
+    setNewRole('');
+  };
+
+  const removeRole = async (idx) => {
+    const target = roles[idx];
+    if (!window.confirm(`Remove role "${target}"? Existing employees keep this role text but it won't be selectable for new/edited entries.`)) {
+      return;
+    }
+    const next = roles.filter((_, i) => i !== idx);
+    await saveRoles(next);
+  };
+
+  const startEditRole = (idx) => {
+    setEditingRoleIdx(idx);
+    setEditingRoleValue(roles[idx]);
+  };
+
+  const cancelEditRole = () => {
+    setEditingRoleIdx(null);
+    setEditingRoleValue('');
+  };
+
+  const saveEditRole = async () => {
+    const v = editingRoleValue.trim();
+    if (!v) return;
+    if (roles.some((r, i) => i !== editingRoleIdx && r.toLowerCase() === v.toLowerCase())) {
+      flashError('Another role with that name already exists.');
+      return;
+    }
+    const next = roles.map((r, i) => (i === editingRoleIdx ? v : r)).sort((a, b) => a.localeCompare(b));
+    await saveRoles(next);
+    setEditingRoleIdx(null);
+    setEditingRoleValue('');
   };
 
   // ── Exchange rate handler ─────────────────────────────
@@ -722,6 +995,255 @@ const Settings = () => {
             disabled={categoriesBusy}
           >
             Reset to Defaults
+          </button>
+        </div>
+      </div>
+
+      {/* Customer Cities */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconMapPin /></span>
+          <div>
+            <h3>Cities</h3>
+            <p>Cities shown in the customer City dropdown, and used to filter the customer list. Existing customers are not affected when you remove or rename a city.</p>
+          </div>
+        </div>
+
+        <ul className="settings-list">
+          {cities.length === 0 && (
+            <li className="settings-list-empty">No cities yet. Add one below.</li>
+          )}
+          {cities.map((city, idx) => (
+            <li key={`${city}-${idx}`} className="settings-list-item">
+              {editingCityIdx === idx ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingCityValue}
+                    onChange={(e) => setEditingCityValue(e.target.value)}
+                    className="settings-input"
+                    disabled={citiesBusy}
+                  />
+                  <button
+                    className="settings-btn settings-btn-primary settings-btn-sm"
+                    onClick={saveEditCity}
+                    disabled={citiesBusy || !editingCityValue.trim()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={cancelEditCity}
+                    disabled={citiesBusy}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="settings-list-text">{city}</span>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={() => startEditCity(idx)}
+                    disabled={citiesBusy}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-danger settings-btn-sm"
+                    onClick={() => removeCity(idx)}
+                    disabled={citiesBusy}
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="settings-add-row">
+          <input
+            type="text"
+            placeholder="New city name"
+            value={newCity}
+            onChange={(e) => setNewCity(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addCity(); }}
+            className="settings-input"
+            disabled={citiesBusy}
+          />
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={addCity}
+            disabled={citiesBusy || !newCity.trim()}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Employee Nationalities */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconFlag /></span>
+          <div>
+            <h3>Nationalities</h3>
+            <p>Nationalities shown in the employee Nationality dropdown, and used to filter the employee list. Existing employees are not affected when you remove or rename one.</p>
+          </div>
+        </div>
+
+        <ul className="settings-list">
+          {nationalities.length === 0 && (
+            <li className="settings-list-empty">No nationalities yet. Add one below.</li>
+          )}
+          {nationalities.map((nationality, idx) => (
+            <li key={`${nationality}-${idx}`} className="settings-list-item">
+              {editingNationalityIdx === idx ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingNationalityValue}
+                    onChange={(e) => setEditingNationalityValue(e.target.value)}
+                    className="settings-input"
+                    disabled={nationalitiesBusy}
+                  />
+                  <button
+                    className="settings-btn settings-btn-primary settings-btn-sm"
+                    onClick={saveEditNationality}
+                    disabled={nationalitiesBusy || !editingNationalityValue.trim()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={cancelEditNationality}
+                    disabled={nationalitiesBusy}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="settings-list-text">{nationality}</span>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={() => startEditNationality(idx)}
+                    disabled={nationalitiesBusy}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-danger settings-btn-sm"
+                    onClick={() => removeNationality(idx)}
+                    disabled={nationalitiesBusy}
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="settings-add-row">
+          <input
+            type="text"
+            placeholder="New nationality"
+            value={newNationality}
+            onChange={(e) => setNewNationality(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addNationality(); }}
+            className="settings-input"
+            disabled={nationalitiesBusy}
+          />
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={addNationality}
+            disabled={nationalitiesBusy || !newNationality.trim()}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Employee Roles */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconBriefcase /></span>
+          <div>
+            <h3>Employee Roles</h3>
+            <p>Roles shown in the employee Role dropdown, and used to filter the employee list. Existing employees are not affected when you remove or rename a role.</p>
+          </div>
+        </div>
+
+        <ul className="settings-list">
+          {roles.length === 0 && (
+            <li className="settings-list-empty">No roles yet. Add one below.</li>
+          )}
+          {roles.map((role, idx) => (
+            <li key={`${role}-${idx}`} className="settings-list-item">
+              {editingRoleIdx === idx ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingRoleValue}
+                    onChange={(e) => setEditingRoleValue(e.target.value)}
+                    className="settings-input"
+                    disabled={rolesBusy}
+                  />
+                  <button
+                    className="settings-btn settings-btn-primary settings-btn-sm"
+                    onClick={saveEditRole}
+                    disabled={rolesBusy || !editingRoleValue.trim()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={cancelEditRole}
+                    disabled={rolesBusy}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="settings-list-text">{role}</span>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={() => startEditRole(idx)}
+                    disabled={rolesBusy}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-danger settings-btn-sm"
+                    onClick={() => removeRole(idx)}
+                    disabled={rolesBusy}
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="settings-add-row">
+          <input
+            type="text"
+            placeholder="New role"
+            value={newRole}
+            onChange={(e) => setNewRole(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addRole(); }}
+            className="settings-input"
+            disabled={rolesBusy}
+          />
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={addRole}
+            disabled={rolesBusy || !newRole.trim()}
+          >
+            Add
           </button>
         </div>
       </div>

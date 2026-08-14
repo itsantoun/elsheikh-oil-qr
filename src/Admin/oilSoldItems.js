@@ -345,9 +345,7 @@ const OilSoldItems = () => {
     }
 
     if (productFilter) {
-      filtered = filtered.filter((item) =>
-        item.name?.toLowerCase().includes(productFilter.toLowerCase())
-      );
+      filtered = filtered.filter((item) => item.name === productFilter);
     }
 
     if (dateFromFilter || dateToFilter) {
@@ -780,6 +778,15 @@ const OilSoldItems = () => {
 
   const getTodayDateForInput = () => formatDateForInput(new Date().toISOString());
 
+  // Unique product names sold so far, for the Product filter dropdown.
+  const productFilterOptions = useMemo(() => {
+    const names = new Set();
+    soldItems.forEach((item) => {
+      if (item.name && !isLegacyMaghsalItem(item, products)) names.add(item.name);
+    });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [soldItems, products]);
+
   // Oil/Filter products only (Maghsal items are sold from the Maghsal page).
   const missingItemEligibleProducts = products.filter((p) => {
     const scope = String(p.scope || '').toLowerCase();
@@ -1081,12 +1088,17 @@ const OilSoldItems = () => {
 
           <div className="filter-group">
             <label>Product</label>
-            <input
-              type="text"
-              placeholder="Search product"
+            <select
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
-            />
+            >
+              <option value="">All Products</option>
+              {productFilterOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="filter-group">

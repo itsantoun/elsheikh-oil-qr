@@ -43,7 +43,12 @@ const Maghsal = () => {
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('All');
+  const [serviceCategoryFilters, setServiceCategoryFilters] = useState([]);
+  const toggleServiceCategoryFilter = (cat) => {
+    setServiceCategoryFilters((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
@@ -328,8 +333,8 @@ const Maghsal = () => {
       result = result.filter((e) => (e.category || '') === categoryFilter);
     }
 
-    if (serviceCategoryFilter !== 'All') {
-      result = result.filter((e) => (e.serviceCategory || '') === serviceCategoryFilter);
+    if (serviceCategoryFilters.length > 0) {
+      result = result.filter((e) => serviceCategoryFilters.includes(e.serviceCategory || ''));
     }
 
     if (paymentStatusFilter !== 'All') {
@@ -359,7 +364,7 @@ const Maghsal = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, categoryFilter, serviceCategoryFilter, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
+  }, [entries, customerFilter, categoryFilter, serviceCategoryFilters, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
 
   // Table view — sharedFiltered further split by the All/Used tab.
   const filtered = useMemo(() => (
@@ -406,7 +411,7 @@ const Maghsal = () => {
   const clearAllFilters = () => {
     setCustomerFilter('');
     setCategoryFilter('All');
-    setServiceCategoryFilter('All');
+    setServiceCategoryFilters([]);
     setDateFromFilter('');
     setDateToFilter('');
     setMonthFilter('');
@@ -486,7 +491,7 @@ const Maghsal = () => {
         // Stock-in: product + positive quantity is enough.
         ? (formStockProductId && stockQuantityValue > 0)
         // Sale: same rules as before.
-        : (formCustomerId && toNumber(formQuantity) > 0 && toNumber(formServicePrice) > 0)
+        : (formCustomerId && toNumber(formQuantity) > 0 && toNumber(formServicePrice) >= 0)
     )
   );
 
@@ -784,10 +789,19 @@ const Maghsal = () => {
 
           <div className="filter-group">
             <label>Service</label>
-            <select value={serviceCategoryFilter} onChange={(e) => setServiceCategoryFilter(e.target.value)}>
-              <option value="All">All Services</option>
-              {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  className={serviceCategoryFilters.includes(cat) ? 'btn-primary' : 'btn-secondary'}
+                  onClick={() => toggleServiceCategoryFilter(cat)}
+                  style={{ padding: '4px 10px', fontSize: 12 }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="filter-group">
@@ -853,13 +867,15 @@ const Maghsal = () => {
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || categoryFilter !== 'All' || serviceCategoryFilter !== 'All' || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
+      {(customerFilter || categoryFilter !== 'All' || serviceCategoryFilters.length > 0 || dateFromFilter || dateToFilter || monthFilter || paymentStatusFilter !== 'All' || checkFilter !== 'all') && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
             {categoryFilter !== 'All' && <span className="filter-tag">Product: {categoryFilter}<button onClick={() => setCategoryFilter('All')}><IconX /></button></span>}
-            {serviceCategoryFilter !== 'All' && <span className="filter-tag">Service: {serviceCategoryFilter}<button onClick={() => setServiceCategoryFilter('All')}><IconX /></button></span>}
+            {serviceCategoryFilters.map((cat) => (
+              <span key={cat} className="filter-tag">Service: {cat}<button onClick={() => toggleServiceCategoryFilter(cat)}><IconX /></button></span>
+            ))}
             {dateFromFilter && <span className="filter-tag">From: {getDateDisplay(dateFromFilter)}<button onClick={() => setDateFromFilter('')}><IconX /></button></span>}
             {dateToFilter && <span className="filter-tag">To: {getDateDisplay(dateToFilter)}<button onClick={() => setDateToFilter('')}><IconX /></button></span>}
             {monthFilter && <span className="filter-tag">Month: {monthNames[parseInt(monthFilter, 10) - 1]}<button onClick={() => setMonthFilter('')}><IconX /></button></span>}

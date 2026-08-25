@@ -200,6 +200,15 @@ const OilSoldItems = () => {
 
   const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
 
+  // Sold items don't carry their own Oil/Filter type — look it up from the
+  // linked product so the table can show it.
+  const getItemProductType = (item) => {
+    const linkedProduct = products.find((product) => (
+      product.id === item.barcode || product.id === item.productId || product.id === item.id
+    ));
+    return linkedProduct?.productType || item.category || '—';
+  };
+
   const getItemProfitMetrics = (item, overrides = {}) => {
     const merged = { ...item, ...overrides };
     const quantity = toNumber(merged.quantity);
@@ -1299,7 +1308,8 @@ const OilSoldItems = () => {
               <tr>
                 <th>Date</th>
                 <th>Customer</th>
-                <th>Product Type</th>
+                <th>Product</th>
+                <th>Type</th>
                 <th>Quantity</th>
                 <th>Sell Price</th>
                 <th>Purchasing Price</th>
@@ -1322,6 +1332,7 @@ const OilSoldItems = () => {
                   </td>
                   <td>{item.customerName || 'N/A'}</td>
                   <td>{item.name || 'N/A'}</td>
+                  <td><span className="type-cell">{getItemProductType(item)}</span></td>
                   <td>{item.quantity || 0}</td>
                   <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
                   <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>

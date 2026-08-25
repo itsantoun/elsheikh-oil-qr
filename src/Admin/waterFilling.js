@@ -51,6 +51,10 @@ const WaterFilling = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Bulk payment-status selection
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
   // Add/Edit modal
   const [showModal, setShowModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
@@ -205,6 +209,41 @@ const WaterFilling = () => {
 
     return sortByDate(result, 'desc');
   }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+
+  // Drop any selected ids that are no longer visible (filtered out, deleted, etc).
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => filtered.some((e) => e.id === id)));
+  }, [filtered]);
+
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((e) => selectedIds.includes(e.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(allFilteredSelected ? [] : filtered.map((e) => e.id));
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  const handleBulkPaymentStatus = async (status) => {
+    if (selectedIds.length === 0 || isBulkUpdating) return;
+    setIsBulkUpdating(true);
+    try {
+      const updates = {};
+      selectedIds.forEach((id) => {
+        updates[`waterFillingEntries/${id}/paymentStatus`] = status;
+      });
+      await update(ref(database), updates);
+      flash(`Marked ${selectedIds.length} ${selectedIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error('Bulk payment status update failed:', err);
+      flash(`Failed to update entries: ${err?.message || err}`, 'error');
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
 
   const totals = useMemo(() => {
     const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0 };
@@ -502,6 +541,29 @@ const WaterFilling = () => {
         </div>
       )}
 
+      {/* Bulk actions */}
+      {selectedIds.length > 0 && (
+        <div className="filters-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong>{selectedIds.length} selected</strong>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
+            {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="btn-secondary"
+                disabled={isBulkUpdating}
+                onClick={() => handleBulkPaymentStatus(s)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="table-container" style={{ overflowX: 'auto' }}>
         {filtered.length === 0 ? (
@@ -513,6 +575,9 @@ const WaterFilling = () => {
           <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
             <thead>
               <tr>
+                <th style={{ width: 32 }}>
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
+                </th>
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Transaction Type</th>
@@ -526,7 +591,10 @@ const WaterFilling = () => {
             </thead>
             <tbody>
               {filtered.map((e) => (
-                <tr key={e.id}>
+                <tr key={e.id} className={selectedIds.includes(e.id) ? 'checked-row' : ''}>
+                  <td>
+                    <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggleSelected(e.id)} />
+                  </td>
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>

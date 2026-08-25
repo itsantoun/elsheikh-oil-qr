@@ -51,6 +51,7 @@ const OilSoldItems = () => {
   const [checkFilter, setCheckFilter] = useState('all');
   
   const [customers, setCustomers] = useState([]);
+  const customersListRef = React.useRef([]);
   const [products, setProducts] = useState([]);
   // { [productId]: lastReconciledISODate } — from the Stock Checker's "Mark
   // Accurate" action. Movement before this date is already baked into
@@ -268,37 +269,40 @@ const OilSoldItems = () => {
     const productsRef = ref(database, 'products');
 
     const unsubscribeCustomers = onValue(customersRef, (customersSnapshot) => {
-      get(soldItemsRef).then((soldItemsSnapshot) => {
-        let customerList = [];
-        if (customersSnapshot.exists()) {
-          const customersData = customersSnapshot.val();
-          customerList = Object.keys(customersData).map((key) => ({
-            id: key,
-            name: customersData[key].name,
-            nameArabic: customersData[key].nameArabic,
-          }));
-          customerList.sort((a, b) => sortByName(a, b));
-        }
-        setCustomers(customerList);
+      let customerList = [];
+      if (customersSnapshot.exists()) {
+        const customersData = customersSnapshot.val();
+        customerList = Object.keys(customersData).map((key) => ({
+          id: key,
+          name: customersData[key].name,
+          nameArabic: customersData[key].nameArabic,
+        }));
+        customerList.sort((a, b) => sortByName(a, b));
+      }
+      customersListRef.current = customerList;
+      setCustomers(customerList);
+    });
 
-        if (soldItemsSnapshot.exists()) {
-          const soldData = soldItemsSnapshot.val();
-          const soldItemList = Object.keys(soldData)
-            .map((key) => ({
-              id: key,
-              ...soldData[key],
-              customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-                          soldData[key].customerName,
-            }))
-            .filter(item => !isStockLikeStatus(item.paymentStatus));
-          const sortedItems = sortItemsByDate(soldItemList);
-          setSoldItems(sortedItems);
-          setFilteredItems(sortedItems);
-        } else {
-          setSoldItems([]);
-          setFilteredItems([]);
-        }
-      });
+    // Live listener (not a one-time get()) so items scanned via Barcode
+    // Scanner appear immediately instead of only after a manual refresh.
+    const unsubscribeSoldItems = onValue(soldItemsRef, (soldItemsSnapshot) => {
+      if (soldItemsSnapshot.exists()) {
+        const soldData = soldItemsSnapshot.val();
+        const soldItemList = Object.keys(soldData)
+          .map((key) => ({
+            id: key,
+            ...soldData[key],
+            customerName: customersListRef.current.find(c => c.nameArabic === soldData[key].customerName)?.name ||
+                        soldData[key].customerName,
+          }))
+          .filter(item => !isStockLikeStatus(item.paymentStatus));
+        const sortedItems = sortItemsByDate(soldItemList);
+        setSoldItems(sortedItems);
+        setFilteredItems(sortedItems);
+      } else {
+        setSoldItems([]);
+        setFilteredItems([]);
+      }
     });
 
     const unsubscribeProducts = onValue(productsRef, (snapshot) => {
@@ -328,6 +332,7 @@ const OilSoldItems = () => {
 
     return () => {
       unsubscribeCustomers();
+      unsubscribeSoldItems();
       unsubscribeProducts();
       unsubscribeStockChecks();
     };

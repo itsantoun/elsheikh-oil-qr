@@ -7,7 +7,7 @@ import {
   IconRefresh, IconSearch, IconPackage, IconAlertTriangle, IconCheck, IconX,
   IconXCircle, IconPause, IconCamera, IconArchive, IconCalendar, IconFolderOpen,
   IconClipboard, IconArrowUp, IconArrowDown, IconCheckCircle, IconCornerUpLeft,
-  IconEdit, IconSave,
+  IconEdit, IconSave, IconTrash,
 } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
@@ -512,10 +512,11 @@ const RemainingProducts = () => {
 
       // History events: stock checks, inaccurate checks, held, restored, deleted
       if (historySnap.exists()) {
-        Object.values(historySnap.val()).forEach(monthData => {
+        Object.entries(historySnap.val()).forEach(([monthKey, monthData]) => {
           if (!monthData || typeof monthData !== 'object') return;
-          Object.values(monthData).forEach(entry => {
+          Object.entries(monthData).forEach(([entryKey, entry]) => {
             if (entry.productId !== product.id) return;
+            const historyKey = { monthKey, key: entryKey };
             if (entry.status === 'accurate') {
               events.push({
                 date: entry.checkedAt,
@@ -525,6 +526,7 @@ const RemainingProducts = () => {
                 paymentStatus: null,
                 isCheckEvent: true,
                 isInfoEvent: false,
+                historyKey,
               });
             } else if (entry.status === 'inaccurate') {
               events.push({
@@ -535,6 +537,7 @@ const RemainingProducts = () => {
                 paymentStatus: null,
                 isCheckEvent: false,
                 isInfoEvent: true,
+                historyKey,
               });
             } else if (entry.status === 'held') {
               events.push({
@@ -625,6 +628,24 @@ const RemainingProducts = () => {
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
   }, [showError, isStockLikeStatus]);
+
+  // Removes a mistaken Stock Check / Inaccurate Check entry from the audit
+  // log. This only cleans up the history timeline — it does not touch the
+  // live products/{id}.quantity, which should already have been corrected
+  // separately (e.g. via another accurate check or the direct quantity edit).
+  const handleDeleteHistoryEntry = async (entry) => {
+    if (!entry.historyKey) return;
+    const confirmed = await confirm({
+      title: 'Delete this history entry?',
+      message: `Remove the "${entry.type}" entry from ${formatDate(entry.date)} (${entry.isCheckEvent ? `set to ${entry.setTo}` : entry.note})? This only removes it from the history log.`,
+    });
+    if (!confirmed) return;
+    try {
+      await remove(ref(database, `stockCheckHistory/${entry.historyKey.monthKey}/${entry.historyKey.key}`));
+      showSuccess('History entry deleted.');
+      if (historySelectedProduct) fetchProductHistory(historySelectedProduct);
+    } catch (err) { console.error(err); showError('Failed to delete history entry.'); }
+  };
 
   const fetchArchives = useCallback(async () => {
     setArchivesLoading(true);
@@ -1464,6 +1485,7 @@ const RemainingProducts = () => {
                           <th className="text-right">Qty Change</th>
                           <th className="text-right">Stock After</th>
                           <th>Status</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1526,6 +1548,13 @@ const RemainingProducts = () => {
                               {entry.paymentStatus && (
                                 <span className={`status-badge status-${entry.paymentStatus?.toLowerCase()}`}>
                                   {entry.paymentStatus}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {entry.historyKey && (
+                                <span title="Delete this history entry (does not change current stock)">
+                                  <button className="btn-small btn-danger" onClick={() => handleDeleteHistoryEntry(entry)}><IconTrash /></button>
                                 </span>
                               )}
                             </td>

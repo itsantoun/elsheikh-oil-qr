@@ -455,13 +455,12 @@ const WaterFilling = () => {
             <div className="kpi-card-value">{totals.quantity}</div>
           </div>
           <div className="kpi-card">
-            <div className="kpi-card-label">Total Price</div>
-            <div className="kpi-card-value" style={{ fontSize: totals.totalPremiumUSD > 0 && totals.totalPremiumLBP > 0 ? 16 : undefined }}>
-              {totals.totalPremiumUSD > 0 && formatUSD(totals.totalPremiumUSD)}
-              {totals.totalPremiumUSD > 0 && totals.totalPremiumLBP > 0 && ' + '}
-              {totals.totalPremiumLBP > 0 && formatLBP(totals.totalPremiumLBP)}
-              {totals.totalPremiumUSD === 0 && totals.totalPremiumLBP === 0 && formatUSD(0)}
-            </div>
+            <div className="kpi-card-label">Total Account (USD)</div>
+            <div className="kpi-card-value">{formatUSD(totals.totalPremiumUSD)}</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-card-label">Total Account (LL)</div>
+            <div className="kpi-card-value">{formatLBP(totals.totalPremiumLBP)}</div>
           </div>
           <div className="kpi-card tone-green">
             <div className="kpi-card-label">Paid</div>

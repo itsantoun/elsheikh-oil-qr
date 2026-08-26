@@ -1265,25 +1265,63 @@ const BarcodeScanner = () => {
           setIsProcessing(false);
           return;
         }
-        const newItem = {
-          barcode: scannedProduct.barcode,
-          productId: scannedProduct.id || scannedProduct.barcode,
-          name: scannedProduct.name,
-          category: scannedProduct.category || 'Unknown',
-          price: scannedProduct.price || 0,
-          dateScanned: currentDate,
-          scannedBy: scannedBy,
-          customerName: customer.name,
-          quantity: quantity,
-          paymentStatus: paymentStatus,
-          itemCost: saleUnitPrice,
-          purchasingPrice: purchaseUnitPrice,
-          totalCost: totalCost,
-          unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
-          totalProfit: profitMetrics.profit,
-          remark: remark,
-        };
-        await push(ref(database, 'SoldItems'), newItem);
+
+        const isMaghsalProduct = String(scannedProduct.productType || '').toLowerCase() === 'maghsal' ||
+          String(scannedProduct.scope || '').toLowerCase() === 'maghsal';
+
+        if (isMaghsalProduct) {
+          // Maghsal-tagged products belong in the Maghsal section (its own
+          // `maghsalEntries` node/schema), not the Oil/Filter `SoldItems` list.
+          const customerSnapshot = await get(ref(database, `customers/${selectedCustomer}`));
+          const customerData = customerSnapshot.exists() ? customerSnapshot.val() : {};
+          const maghsalEntry = {
+            customerId: selectedCustomer,
+            customerName: customerData.name || customer.name || '',
+            customerNameArabic: customerData.nameArabic || '',
+            date: currentDate,
+            category: scannedProduct.name || '',
+            serviceCategory: '',
+            price: saleUnitPrice,
+            servicePrice: saleUnitPrice,
+            quantity: quantity,
+            goodsTotal: 0,
+            totalPrice: totalCost,
+            consumablesUsed: [{
+              productId: scannedProduct.id || scannedProduct.barcode,
+              name: scannedProduct.name,
+              quantity: quantity,
+              unitCost: saleUnitPrice,
+              purchasingPrice: purchaseUnitPrice,
+            }],
+            paymentStatus: paymentStatus,
+            employee: scannedBy,
+            employeeId: '',
+            remark: remark,
+            createdAt: currentDate,
+            stockAdjusted: false,
+          };
+          await push(ref(database, 'maghsalEntries'), maghsalEntry);
+        } else {
+          const newItem = {
+            barcode: scannedProduct.barcode,
+            productId: scannedProduct.id || scannedProduct.barcode,
+            name: scannedProduct.name,
+            category: scannedProduct.category || 'Unknown',
+            price: scannedProduct.price || 0,
+            dateScanned: currentDate,
+            scannedBy: scannedBy,
+            customerName: customer.name,
+            quantity: quantity,
+            paymentStatus: paymentStatus,
+            itemCost: saleUnitPrice,
+            purchasingPrice: purchaseUnitPrice,
+            totalCost: totalCost,
+            unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
+            totalProfit: profitMetrics.profit,
+            remark: remark,
+          };
+          await push(ref(database, 'SoldItems'), newItem);
+        }
       }
 
       setSuccessMessage(`بنجاح "${scannedProduct.name}" تم اضافة`);

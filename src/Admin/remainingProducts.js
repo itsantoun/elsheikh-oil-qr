@@ -7,6 +7,7 @@ import {
   IconRefresh, IconSearch, IconPackage, IconAlertTriangle, IconCheck, IconX,
   IconXCircle, IconPause, IconCamera, IconArchive, IconCalendar, IconFolderOpen,
   IconClipboard, IconArrowUp, IconArrowDown, IconCheckCircle, IconCornerUpLeft,
+  IconEdit, IconSave,
 } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
@@ -37,6 +38,8 @@ const RemainingProducts = () => {
   const [isRestoring, setIsRestoring]           = useState(false);
 
   const [countedQty, setCountedQty] = useState({});
+  const [editingQtyId, setEditingQtyId] = useState(null);
+  const [editQtyValue, setEditQtyValue] = useState('');
   const [checkDate, setCheckDate]   = useState({});
   const [soldTotals, setSoldTotals] = useState({});
   const [usedTotals, setUsedTotals] = useState({});
@@ -807,6 +810,30 @@ const RemainingProducts = () => {
 
   // ── Actions: table ─────────────────────────────────────────────────────────
 
+  // Plain direct override — no accurate/inaccurate workflow, no expected-qty
+  // gating. Whatever the user types is written to products/{id}.quantity as-is.
+  const startEditQty = (product) => {
+    setEditingQtyId(product.id);
+    setEditQtyValue(String(product.quantity ?? 0));
+  };
+
+  const cancelEditQty = () => {
+    setEditingQtyId(null);
+    setEditQtyValue('');
+  };
+
+  const saveEditQty = async (product) => {
+    const newQty = parseFloat(editQtyValue);
+    if (isNaN(newQty)) { showError('Enter a valid quantity.'); return; }
+    try {
+      await update(ref(database, `products/${product.id}`), { quantity: newQty });
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: newQty } : p));
+      setEditingQtyId(null);
+      setEditQtyValue('');
+      showSuccess(`"${product.name}" quantity set to ${newQty}.`);
+    } catch (err) { console.error(err); showError('Failed to update quantity.'); }
+  };
+
   const handleAccurate = async (product) => {
     const counted = parseFloat(countedQty[product.id]);
     if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
@@ -995,7 +1022,33 @@ const RemainingProducts = () => {
                         )}
                       </td>
                       <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
-                      <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
+                      <td className="text-right">
+                        {editingQtyId === product.id ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                            <input
+                              type="number" autoFocus value={editQtyValue}
+                              onChange={e => setEditQtyValue(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveEditQty(product); if (e.key === 'Escape') cancelEditQty(); }}
+                              className="edit-input"
+                              style={{ width: 80 }}
+                            />
+                            <span title="Save">
+                              <button className="btn-small btn-success" onClick={() => saveEditQty(product)}><IconSave /></button>
+                            </span>
+                            <span title="Cancel">
+                              <button className="btn-small" onClick={cancelEditQty}><IconX /></button>
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span className="quantity-cell">{currentStock}</span>
+                            <button
+                              className="btn-small" title="Edit quantity directly"
+                              onClick={() => startEditQty(product)}
+                            ><IconEdit /></button>
+                          </span>
+                        )}
+                      </td>
                       <td className="text-right">
                         <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
                       </td>

@@ -182,16 +182,27 @@
   overflow-x: visible;
 }
 
-/* Tighter cell padding + wrapping headers only — font size & content untouched */
+/* Tighter cell padding + smaller font so the whole table stays narrower
+   without wrapping any cell content onto multiple lines. */
+.sold-items-container .data-table {
+  font-size: 12px;
+}
+
 .sold-items-container .data-table th {
-  padding: 7px 3px;
+  padding: 6px 3px;
   white-space: normal;      /* let long headers wrap instead of forcing column width */
+  font-size: 10px;
   letter-spacing: 0.2px;
   line-height: 1.2;
 }
 
 .sold-items-container .data-table td {
-  padding: 6px 3px;
+  padding: 4px 3px;
+}
+
+.sold-items-container .data-table .status-badge {
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
 /* Keep monetary / numeric values on a single line */
@@ -221,8 +232,8 @@
 
 /* Smaller action buttons */
 .sold-items-container .data-table .action-buttons .btn-small {
-  padding: 5px 7px;
-  font-size: 12px;
+  padding: 4px 6px;
+  font-size: 11px;
 }
 
 /* ── Empty state ─────────────────────────────────── */

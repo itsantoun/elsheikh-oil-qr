@@ -246,7 +246,10 @@ const WaterFilling = () => {
   };
 
   const totals = useMemo(() => {
-    const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0 };
+    const t = {
+      count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0,
+      totalPremiumUSD: 0, totalPremiumLBP: 0,
+    };
     for (const e of filtered) {
       t.count += 1;
       t.quantity += toNumber(e.quantity);
@@ -254,6 +257,9 @@ const WaterFilling = () => {
       else if (e.paymentStatus === 'Hold') t.holdCount += 1;
       else if (e.paymentStatus === 'Free') t.freeCount += 1;
       else t.unpaidCount += 1;
+
+      if (e.premiumCurrency === 'LBP') t.totalPremiumLBP += toNumber(e.totalPremium);
+      else t.totalPremiumUSD += toNumber(e.totalPremium);
     }
     return t;
   }, [filtered]);
@@ -447,6 +453,15 @@ const WaterFilling = () => {
           <div className="kpi-card">
             <div className="kpi-card-label">Total Quantity</div>
             <div className="kpi-card-value">{totals.quantity}</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-card-label">Total Price</div>
+            <div className="kpi-card-value" style={{ fontSize: totals.totalPremiumUSD > 0 && totals.totalPremiumLBP > 0 ? 16 : undefined }}>
+              {totals.totalPremiumUSD > 0 && formatUSD(totals.totalPremiumUSD)}
+              {totals.totalPremiumUSD > 0 && totals.totalPremiumLBP > 0 && ' + '}
+              {totals.totalPremiumLBP > 0 && formatLBP(totals.totalPremiumLBP)}
+              {totals.totalPremiumUSD === 0 && totals.totalPremiumLBP === 0 && formatUSD(0)}
+            </div>
           </div>
           <div className="kpi-card tone-green">
             <div className="kpi-card-label">Paid</div>

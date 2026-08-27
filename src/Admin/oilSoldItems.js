@@ -929,9 +929,9 @@ const OilSoldItems = () => {
 
     setIsSavingMissingItem(true);
 
-    // For a restock (Stock), use whatever the admin edited in the price
-    // fields — it may differ from the product's currently stored price.
-    const sellPriceValue = isStock ? toNumber(missingItemSellPrice) : toNumber(selectedProduct.itemCost);
+    // Use whatever the admin edited in the price fields — it may differ from
+    // the product's currently stored price.
+    const sellPriceValue = toNumber(missingItemSellPrice);
     const purchasingPriceValue = isStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice);
     const dateScannedValue = convertDateInputToISO(missingItemDate);
     const scannedByValue = user?.name || user?.displayName || user?.email || 'Unknown';
@@ -1011,9 +1011,7 @@ const OilSoldItems = () => {
 
   const missingItemQuantityValue = toNumber(missingItemQuantity);
   const missingItemIsStock = isStockLikeStatus(missingItemPaymentStatus);
-  const missingItemSellPriceValue = !selectedProduct
-    ? 0
-    : (missingItemIsStock ? toNumber(missingItemSellPrice) : toNumber(selectedProduct.itemCost));
+  const missingItemSellPriceValue = !selectedProduct ? 0 : toNumber(missingItemSellPrice);
   const missingItemPurchasingPriceValue = !selectedProduct
     ? 0
     : (missingItemIsStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice));
@@ -1464,7 +1462,7 @@ const OilSoldItems = () => {
       {/* Missing Items Modal */}
       {showMissingItemsModal && (
         <div className="modal-overlay">
-          <div className="modal">
+          <div className="modal" style={{ maxWidth: 720 }}>
             <div className="modal-header">
               <h3>Add Missing Item</h3>
               <button className="modal-close" onClick={closeMissingItemsModal}>
@@ -1600,20 +1598,18 @@ const OilSoldItems = () => {
                         </div>
                       )}
 
-                      {missingItemIsStock && (
-                        <div className="form-group">
-                          <label className="form-label">Selling Price</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={missingItemSellPrice}
-                            onChange={(e) => setMissingItemSellPrice(e.target.value)}
-                            className="form-input"
-                            disabled={isSavingMissingItem}
-                          />
-                        </div>
-                      )}
+                      <div className="form-group">
+                        <label className="form-label">Selling Price</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={missingItemSellPrice}
+                          onChange={(e) => setMissingItemSellPrice(e.target.value)}
+                          className="form-input"
+                          disabled={isSavingMissingItem}
+                        />
+                      </div>
                     </div>
 
                     <div className="form-group">
@@ -1628,7 +1624,6 @@ const OilSoldItems = () => {
                     </div>
 
                     <div className="missing-item-summary">
-                      <span>Unit Sell: ${missingItemSellPriceValue.toFixed(2)}</span>
                       <span>Unit Purchase: ${missingItemPurchasingPriceValue.toFixed(2)}</span>
                       <span>Total Cost: ${missingItemTotalCost.toFixed(2)}</span>
                       <span style={{ color: missingItemTotalProfit >= 0 ? '#198754' : '#dc3545' }}>

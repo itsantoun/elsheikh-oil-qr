@@ -31,6 +31,7 @@ const toNumber = (v) => {
 const WaterFilling = () => {
   const { user } = useContext(UserContext);
   const [entries, setEntries] = useState([]);
+  const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [customers, setCustomers] = useState([]);
 
   // Filters
@@ -51,9 +52,23 @@ const WaterFilling = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Bulk payment-status selection
-  const [selectedIds, setSelectedIds] = useState([]);
+  // Bulk payment-status selection — persisted so a page refresh doesn't
+  // silently drop what was checked (same pattern as Oil Sold Items).
+  const [selectedIds, setSelectedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('waterFillingSelectedIds');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('waterFillingSelectedIds', JSON.stringify(selectedIds));
+    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
+  }, [selectedIds]);
 
   // Add/Edit modal
   const [showModal, setShowModal] = useState(false);
@@ -146,10 +161,11 @@ const WaterFilling = () => {
     });
 
     const unsubEntries = onValue(entriesRef, (snap) => {
-      if (!snap.exists()) { setEntries([]); return; }
+      if (!snap.exists()) { setEntries([]); setEntriesLoaded(true); return; }
       const data = snap.val();
       const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
       setEntries(sortByDate(list, 'desc'));
+      setEntriesLoaded(true);
     });
 
     return () => { unsubCustomers(); unsubEntries(); };
@@ -211,9 +227,12 @@ const WaterFilling = () => {
   }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // Drop any selected ids that are no longer visible (filtered out, deleted, etc).
+  // Skipped until entries have loaded at least once, so a page refresh doesn't
+  // wipe out a restored (localStorage) selection against a still-empty list.
   useEffect(() => {
+    if (!entriesLoaded) return;
     setSelectedIds((prev) => prev.filter((id) => filtered.some((e) => e.id === id)));
-  }, [filtered]);
+  }, [filtered, entriesLoaded]);
 
   const toggleSelected = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));

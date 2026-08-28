@@ -186,6 +186,13 @@
    without wrapping any cell content onto multiple lines. */
 .sold-items-container .data-table {
   font-size: 12px;
+  /* Base .data-table is width:100%, which stretches every column to fill
+     whatever room the container has — on a wider screen that leaves short
+     columns (Quantity, Type, Status...) looking huge with empty padding.
+     Size the table to its own content instead; leftover container width
+     just stays blank rather than getting distributed into the columns. */
+  width: auto;
+  max-width: 100%;
 }
 
 .sold-items-container .data-table th {

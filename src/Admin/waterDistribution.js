@@ -6,14 +6,7 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
-import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
-
-const TRANSACTION_TYPES = [
-  { value: 'normal', label: 'Water Filling' },
-  { value: 'small', label: 'Water Filling (Small)' },
-];
-
-const getTransactionTypeLabel = (value) => TRANSACTION_TYPES.find((t) => t.value === value)?.label || value;
+import { formatUSD, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -28,15 +21,16 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const WaterFilling = () => {
+const WaterDistribution = () => {
   const { user } = useContext(UserContext);
   const [entries, setEntries] = useState([]);
   const [entriesLoaded, setEntriesLoaded] = useState(false);
-  const [customers, setCustomers] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [truckTypes, setTruckTypes] = useState([]);
 
   // Filters
-  const [customerFilter, setCustomerFilter] = useState('');
-  const [transactionTypeFilter, setTransactionTypeFilter] = useState('All');
+  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [truckTypeFilter, setTruckTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
   // this list is included.
   const [paymentStatusFilters, setPaymentStatusFilters] = useState([]);
@@ -53,10 +47,10 @@ const WaterFilling = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Bulk payment-status selection — persisted so a page refresh doesn't
-  // silently drop what was checked (same pattern as Oil Sold Items).
+  // silently drop what was checked (same pattern as Water Filling).
   const [selectedIds, setSelectedIds] = useState(() => {
     try {
-      const saved = localStorage.getItem('waterFillingSelectedIds');
+      const saved = localStorage.getItem('waterDistributionSelectedIds');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -66,29 +60,27 @@ const WaterFilling = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('waterFillingSelectedIds', JSON.stringify(selectedIds));
+      localStorage.setItem('waterDistributionSelectedIds', JSON.stringify(selectedIds));
     } catch { /* ignore storage errors (private mode, quota, etc.) */ }
   }, [selectedIds]);
 
   // Add/Edit modal
   const [showModal, setShowModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
-  const [formCustomerId, setFormCustomerId] = useState('');
-  const [formTransactionType, setFormTransactionType] = useState('');
+  const [formEmployeeId, setFormEmployeeId] = useState('');
+  const [formTruckType, setFormTruckType] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formQuantity, setFormQuantity] = useState('1');
-  const [formTotalPremium, setFormTotalPremium] = useState('');
-  // True once the user has hand-edited Total Premium — while true, changing
-  // quantity no longer overwrites their override. Reset whenever customer or
-  // transaction type changes, since that implies a genuinely different premium.
-  const [totalPremiumTouched, setTotalPremiumTouched] = useState(false);
+  const [formUnitPrice, setFormUnitPrice] = useState('');
+  const [formTotalPrice, setFormTotalPrice] = useState('');
+  // True once the user has hand-edited Total Price — while true, changing
+  // quantity/unit price no longer overwrites their override.
+  const [totalPriceTouched, setTotalPriceTouched] = useState(false);
   const [formPaymentStatus, setFormPaymentStatus] = useState('Unpaid');
-  const [formDatePaid, setFormDatePaid] = useState('');
   const [formRemark, setFormRemark] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirm, confirmDialog] = useConfirmDialog();
-  const exchangeRate = useExchangeRate();
 
   // ── Format helpers ──────────────────────────────
   const formatDate = (d) => {
@@ -140,25 +132,29 @@ const WaterFilling = () => {
 
   // ── Fetch ────────────────────────────────────────
   useEffect(() => {
-    const customersRef = ref(database, 'customers');
-    const entriesRef = ref(database, 'waterFillingEntries');
+    const employeesRef = ref(database, 'employees');
+    const truckTypesRef = ref(database, 'settings/waterDistributionTruckTypes');
+    const entriesRef = ref(database, 'waterDistributionEntries');
 
-    const unsubCustomers = onValue(customersRef, (snap) => {
+    const unsubEmployees = onValue(employeesRef, (snap) => {
       let list = [];
       if (snap.exists()) {
         const data = snap.val();
-        list = Object.keys(data)
-          .map((k) => ({
-            id: k,
-            name: data[k].name,
-            nameArabic: data[k].nameArabic,
-            waterFillingSizes: data[k].waterFillingSizes || [],
-            waterFillingPricing: data[k].waterFillingPricing || {},
-          }))
-          .filter((c) => (c.waterFillingSizes || []).length > 0);
+        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '', assignedTruckType: data[k].assignedTruckType || '' }));
         list.sort(sortByName);
       }
-      setCustomers(list);
+      setEmployees(list);
+    });
+
+    const unsubTruckTypes = onValue(truckTypesRef, (snap) => {
+      if (!snap.exists()) { setTruckTypes([]); return; }
+      const val = snap.val();
+      if (Array.isArray(val)) { setTruckTypes(val.filter((v) => typeof v === 'string' && v.trim())); return; }
+      if (val && typeof val === 'object') {
+        setTruckTypes(Object.values(val).filter((v) => typeof v === 'string' && v.trim()));
+        return;
+      }
+      setTruckTypes([]);
     });
 
     const unsubEntries = onValue(entriesRef, (snap) => {
@@ -169,43 +165,27 @@ const WaterFilling = () => {
       setEntriesLoaded(true);
     });
 
-    return () => { unsubCustomers(); unsubEntries(); };
+    return () => { unsubEmployees(); unsubTruckTypes(); unsubEntries(); };
   }, []);
 
-  const selectedFormCustomer = customers.find((c) => c.id === formCustomerId) || null;
-
-  // Premium for the currently selected customer + transaction type.
-  const selectedPremium = (formTransactionType && selectedFormCustomer?.waterFillingPricing?.[formTransactionType]) || null;
-  const totalPremiumCurrency = selectedPremium?.currency || 'USD';
-
-  // Total Premium = Premium * Quantity, recalculated below whenever the
-  // customer, type, or quantity changes — unless the user has typed a
-  // manual override into the Total Premium field.
-  const recalcTotalPremium = (customerId, type, quantity) => {
-    const customer = customers.find((c) => c.id === customerId);
-    const premium = customer?.waterFillingPricing?.[type] || null;
-    return premium ? String(toNumber(premium.price) * toNumber(quantity)) : '';
+  // Total Price = Unit Price * Quantity, recalculated whenever unit price or
+  // quantity changes — unless the user has typed a manual override.
+  const recalcTotalPrice = (unitPrice, quantity) => {
+    const price = toNumber(unitPrice);
+    return price ? String(price * toNumber(quantity)) : '';
   };
-
-  // Shows the amount only in the currency it was actually entered in — no
-  // USD/LBP conversion, since a customer's Water Filling premium is fixed in
-  // whichever currency their pricing was set up in.
-  const formatPremium = (amount, currency) => (currency === 'USD' ? formatUSD(amount) : formatLBP(amount));
 
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
     let result = entries;
 
-    if (customerFilter) {
-      const cf = customerFilter.toLowerCase();
-      result = result.filter((e) =>
-        (e.customerName || '').toLowerCase().includes(cf) ||
-        (e.customerNameArabic || '').toLowerCase().includes(cf)
-      );
+    if (employeeFilter) {
+      const ef = employeeFilter.toLowerCase();
+      result = result.filter((e) => (e.employeeName || '').toLowerCase().includes(ef));
     }
 
-    if (transactionTypeFilter !== 'All') {
-      result = result.filter((e) => (e.transactionType || '') === transactionTypeFilter);
+    if (truckTypeFilter !== 'All') {
+      result = result.filter((e) => (e.truckType || '') === truckTypeFilter);
     }
 
     if (paymentStatusFilters.length > 0) {
@@ -225,7 +205,7 @@ const WaterFilling = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, employeeFilter, truckTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // Drop any selected ids that are no longer visible (filtered out, deleted, etc).
   // Skipped until entries have loaded at least once, so a page refresh doesn't
@@ -246,26 +226,17 @@ const WaterFilling = () => {
 
   const clearSelection = () => setSelectedIds([]);
 
-  // Clicking "Paid" opens this inline picker instead of applying immediately,
-  // so one Date Paid can be applied to every selected entry at once.
-  const [showBulkDatePaid, setShowBulkDatePaid] = useState(false);
-  const [bulkDatePaid, setBulkDatePaid] = useState(() => formatDateForInput(new Date().toISOString()));
-
-  const handleBulkPaymentStatus = async (status, datePaid = null) => {
+  const handleBulkPaymentStatus = async (status) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     setIsBulkUpdating(true);
     try {
       const updates = {};
       selectedIds.forEach((id) => {
-        updates[`waterFillingEntries/${id}/paymentStatus`] = status;
-        if (status === 'Paid') {
-          updates[`waterFillingEntries/${id}/datePaid`] = convertDateInputToISO(datePaid || formatDateForInput(new Date().toISOString()));
-        }
+        updates[`waterDistributionEntries/${id}/paymentStatus`] = status;
       });
       await update(ref(database), updates);
       flash(`Marked ${selectedIds.length} ${selectedIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
-      setShowBulkDatePaid(false);
     } catch (err) {
       console.error('Bulk payment status update failed:', err);
       flash(`Failed to update entries: ${err?.message || err}`, 'error');
@@ -274,20 +245,8 @@ const WaterFilling = () => {
     }
   };
 
-  const handleBulkStatusClick = (status) => {
-    if (status === 'Paid') {
-      setBulkDatePaid(formatDateForInput(new Date().toISOString()));
-      setShowBulkDatePaid(true);
-      return;
-    }
-    handleBulkPaymentStatus(status);
-  };
-
   const totals = useMemo(() => {
-    const t = {
-      count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0,
-      totalPremiumUSD: 0, totalPremiumLBP: 0,
-    };
+    const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0, totalPriceUSD: 0 };
     for (const e of filtered) {
       t.count += 1;
       t.quantity += toNumber(e.quantity);
@@ -296,15 +255,14 @@ const WaterFilling = () => {
       else if (e.paymentStatus === 'Free') t.freeCount += 1;
       else t.unpaidCount += 1;
 
-      if (e.premiumCurrency === 'LBP') t.totalPremiumLBP += toNumber(e.totalPremium);
-      else t.totalPremiumUSD += toNumber(e.totalPremium);
+      t.totalPriceUSD += toNumber(e.totalPrice);
     }
     return t;
   }, [filtered]);
 
   const clearAllFilters = () => {
-    setCustomerFilter('');
-    setTransactionTypeFilter('All');
+    setEmployeeFilter('');
+    setTruckTypeFilter('All');
     setPaymentStatusFilters([]);
     setDateFromFilter('');
     setDateToFilter('');
@@ -322,80 +280,68 @@ const WaterFilling = () => {
   // ── Add / Edit modal ──────────────────────────────
   const openAddModal = () => {
     setEditingEntryId(null);
-    setFormCustomerId('');
-    setFormTransactionType('');
+    setFormEmployeeId('');
+    setFormTruckType('');
     setFormDate(formatDateForInput(new Date().toISOString()));
     setFormQuantity('1');
-    setFormTotalPremium('');
-    setTotalPremiumTouched(false);
+    setFormUnitPrice('');
+    setFormTotalPrice('');
+    setTotalPriceTouched(false);
     setFormPaymentStatus('Unpaid');
-    setFormDatePaid('');
     setFormRemark('');
     setShowModal(true);
   };
 
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
-    setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
-    setFormTransactionType(entry.transactionType || '');
+    setFormEmployeeId(entry.employeeId || employees.find((e) => e.name === entry.employeeName)?.id || '');
+    setFormTruckType(entry.truckType || '');
     setFormDate(formatDateForInput(entry.date));
     setFormQuantity(String(toNumber(entry.quantity)));
-    // Preserve the saved Total Premium as-is (treated as a manual value) so
-    // reopening for edit doesn't silently recompute it from current pricing.
-    setFormTotalPremium(entry.totalPremium != null ? String(toNumber(entry.totalPremium)) : '');
-    setTotalPremiumTouched(true);
+    setFormUnitPrice(entry.unitPrice != null ? String(toNumber(entry.unitPrice)) : '');
+    // Preserve the saved Total Price as-is (treated as a manual value) so
+    // reopening for edit doesn't silently recompute it.
+    setFormTotalPrice(entry.totalPrice != null ? String(toNumber(entry.totalPrice)) : '');
+    setTotalPriceTouched(true);
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
-    setFormDatePaid(entry.datePaid ? formatDateForInput(entry.datePaid) : '');
     setFormRemark(entry.remark || '');
     setShowModal(true);
   };
 
   const closeModal = () => { setShowModal(false); setEditingEntryId(null); };
 
-  // Switching to Paid defaults Date Paid to today (only if it's not already
-  // set) so the field isn't left blank; switching away leaves it untouched.
-  const handlePaymentStatusChange = (status) => {
-    setFormPaymentStatus(status);
-    if (status === 'Paid' && !formDatePaid) {
-      setFormDatePaid(formatDateForInput(new Date().toISOString()));
+  // Selecting an employee auto-fills their assigned truck type (if any) as a
+  // starting default — the user can still change it manually afterward.
+  const handleEmployeeChange = (employeeId) => {
+    setFormEmployeeId(employeeId);
+    const employee = employees.find((e) => e.id === employeeId);
+    if (employee?.assignedTruckType) {
+      setFormTruckType(employee.assignedTruckType);
     }
   };
 
-  // Customer picker changes: default the transaction type — auto-pick when
-  // the customer only has one Water Filling size checked, otherwise let the
-  // user choose between the two. A new customer means a genuinely different
-  // premium, so Total Premium recalculates fresh.
-  const handleCustomerChange = (customerId) => {
-    setFormCustomerId(customerId);
-    const customer = customers.find((c) => c.id === customerId);
-    const sizes = customer?.waterFillingSizes || [];
-    const newType = sizes.length === 1 ? sizes[0] : '';
-    setFormTransactionType(newType);
-    setTotalPremiumTouched(false);
-    setFormTotalPremium(recalcTotalPremium(customerId, newType, formQuantity));
-  };
-
-  const handleTransactionTypeChange = (type) => {
-    setFormTransactionType(type);
-    setTotalPremiumTouched(false);
-    setFormTotalPremium(recalcTotalPremium(formCustomerId, type, formQuantity));
+  const handleUnitPriceChange = (value) => {
+    setFormUnitPrice(value);
+    if (!totalPriceTouched) {
+      setFormTotalPrice(recalcTotalPrice(value, formQuantity));
+    }
   };
 
   const handleQuantityChange = (value) => {
     setFormQuantity(value);
-    if (!totalPremiumTouched) {
-      setFormTotalPremium(recalcTotalPremium(formCustomerId, formTransactionType, value));
+    if (!totalPriceTouched) {
+      setFormTotalPrice(recalcTotalPrice(formUnitPrice, value));
     }
   };
 
-  const handleTotalPremiumChange = (value) => {
-    setFormTotalPremium(value);
-    setTotalPremiumTouched(true);
+  const handleTotalPriceChange = (value) => {
+    setFormTotalPrice(value);
+    setTotalPriceTouched(true);
   };
 
   const canSave = Boolean(
-    formCustomerId &&
-    formTransactionType &&
+    formEmployeeId &&
+    formTruckType &&
     formDate &&
     toNumber(formQuantity) > 0 &&
     !isSaving
@@ -403,55 +349,48 @@ const WaterFilling = () => {
 
   const handleSave = async () => {
     if (!canSave) return;
-    const selectedCustomer = customers.find((c) => c.id === formCustomerId);
-    if (!selectedCustomer) {
-      flash('Selected customer is no longer available.', 'error');
+    const selectedEmployee = employees.find((e) => e.id === formEmployeeId);
+    if (!selectedEmployee) {
+      flash('Selected employee is no longer available.', 'error');
       return;
     }
 
     setIsSaving(true);
     try {
-      const premium = selectedCustomer.waterFillingPricing?.[formTransactionType] || null;
-      const unitPremium = premium ? toNumber(premium.price) : 0;
-      const premiumCurrency = premium ? premium.currency : 'USD';
       const quantity = toNumber(formQuantity);
-      // Total Premium is user-editable — save what's in the field (defaulting
-      // to Premium × Quantity if it was left blank) rather than forcing the
-      // calculated value.
-      const totalPremium = formTotalPremium !== '' ? toNumber(formTotalPremium) : unitPremium * quantity;
+      const unitPrice = toNumber(formUnitPrice);
+      // Total Price is user-editable — save what's in the field (defaulting
+      // to Unit Price × Quantity if it was left blank) rather than forcing
+      // the calculated value.
+      const totalPrice = formTotalPrice !== '' ? toNumber(formTotalPrice) : unitPrice * quantity;
 
       const payload = {
-        customerId: selectedCustomer.id,
-        customerName: selectedCustomer.name || '',
-        customerNameArabic: selectedCustomer.nameArabic || '',
-        transactionType: formTransactionType,
+        employeeId: selectedEmployee.id,
+        employeeName: selectedEmployee.name || '',
+        truckType: formTruckType,
         date: convertDateInputToISO(formDate),
         quantity,
-        unitPremium,
-        premiumCurrency,
-        totalPremium,
+        unitPrice,
+        totalPrice,
         paymentStatus: formPaymentStatus,
-        datePaid: formPaymentStatus === 'Paid'
-          ? convertDateInputToISO(formDatePaid || formatDateForInput(new Date().toISOString()))
-          : null,
         remark: formRemark.trim(),
       };
 
       if (editingEntryId) {
-        await update(ref(database, `waterFillingEntries/${editingEntryId}`), payload);
+        await update(ref(database, `waterDistributionEntries/${editingEntryId}`), payload);
         flash('Entry updated.');
       } else {
-        await update(push(ref(database, 'waterFillingEntries')), {
+        await update(push(ref(database, 'waterDistributionEntries')), {
           ...payload,
-          employee: user?.name || user?.displayName || user?.email || 'Unknown',
-          employeeId: user?.uid || '',
+          loggedBy: user?.name || user?.displayName || user?.email || 'Unknown',
+          loggedByUid: user?.uid || '',
           createdAt: new Date().toISOString(),
         });
         flash('Entry saved.');
       }
       closeModal();
     } catch (err) {
-      console.error('Water Filling save failed:', err);
+      console.error('Water Distribution save failed:', err);
       flash(`Failed to save entry: ${err?.message || err}`, 'error');
     } finally {
       setIsSaving(false);
@@ -462,11 +401,11 @@ const WaterFilling = () => {
   const requestDelete = async (id) => {
     const confirmed = await confirm({
       title: 'Delete Entry?',
-      message: 'Deleting this entry removes it from Water Filling records. This action cannot be undone.',
+      message: 'Deleting this entry removes it from Water Distribution records. This action cannot be undone.',
     });
     if (!confirmed) return;
     try {
-      await update(ref(database), { [`waterFillingEntries/${id}`]: null });
+      await update(ref(database), { [`waterDistributionEntries/${id}`]: null });
       flash('Entry deleted.');
     } catch (err) {
       console.error(err);
@@ -478,8 +417,8 @@ const WaterFilling = () => {
   return (
     <div className="page-shell">
       <PageHeader
-        title="Water Filling"
-        subtitle="Track water filling entries per customer."
+        title="Water Distribution"
+        subtitle="Track water distribution entries per employee."
         actions={(
           <>
             <button className="btn-secondary" onClick={handleRefresh} disabled={isRefreshing}>
@@ -508,11 +447,7 @@ const WaterFilling = () => {
           </div>
           <div className="kpi-card">
             <div className="kpi-card-label">Total Account (USD)</div>
-            <div className="kpi-card-value">{formatUSD(totals.totalPremiumUSD)}</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-card-label">Total Account (LL)</div>
-            <div className="kpi-card-value">{formatLBP(totals.totalPremiumLBP)}</div>
+            <div className="kpi-card-value">{formatUSD(totals.totalPriceUSD)}</div>
           </div>
           <div className="kpi-card tone-green">
             <div className="kpi-card-label">Paid</div>
@@ -537,23 +472,23 @@ const WaterFilling = () => {
       <div className="filters-section">
         <div className="filters-grid">
           <div className="filter-group">
-            <label>Customer</label>
-            <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)}>
-              <option value="">All Customers</option>
-              {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            <label>Employee</label>
+            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
+              <option value="">All Employees</option>
+              {employees.map((e) => <option key={e.id} value={e.name}>{e.name}</option>)}
             </select>
           </div>
 
           <div className="filter-group">
-            <label>Transaction Type</label>
-            <select value={transactionTypeFilter} onChange={(e) => setTransactionTypeFilter(e.target.value)}>
+            <label>Truck Type</label>
+            <select value={truckTypeFilter} onChange={(e) => setTruckTypeFilter(e.target.value)}>
               <option value="All">All Types</option>
-              {TRANSACTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              {truckTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
 
           <div className="filter-group">
-            <label>Payment Status <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}></span></label>
+            <label>Payment Status</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
                 <button
@@ -580,24 +515,18 @@ const WaterFilling = () => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div className="filter-actions">
-            <button className="btn-secondary" onClick={clearAllFilters}>Clear Filters</button>
-          </div>
-          <div className="exchange-rate-banner">
-            <span className="exchange-rate-banner-label">Exchange Rate</span>
-            <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} L.L</span>
-          </div>
+        <div className="filter-actions">
+          <button className="btn-secondary" onClick={clearAllFilters}>Clear Filters</button>
         </div>
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || transactionTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
+      {(employeeFilter || truckTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
-            {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
-            {transactionTypeFilter !== 'All' && <span className="filter-tag">Type: {getTransactionTypeLabel(transactionTypeFilter)}<button onClick={() => setTransactionTypeFilter('All')}><IconX /></button></span>}
+            {employeeFilter && <span className="filter-tag">Employee: {employeeFilter}<button onClick={() => setEmployeeFilter('')}><IconX /></button></span>}
+            {truckTypeFilter !== 'All' && <span className="filter-tag">Truck: {truckTypeFilter}<button onClick={() => setTruckTypeFilter('All')}><IconX /></button></span>}
             {paymentStatusFilters.map((s) => (
               <span key={s} className="filter-tag">Status: {s}<button onClick={() => togglePaymentStatusFilter(s)}><IconX /></button></span>
             ))}
@@ -609,56 +538,24 @@ const WaterFilling = () => {
 
       {/* Bulk actions */}
       {selectedIds.length > 0 && (
-        <div className="filters-section" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <strong>{selectedIds.length} selected</strong>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
-              {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className="btn-secondary"
-                  disabled={isBulkUpdating}
-                  onClick={() => handleBulkStatusClick(s)}
-                  style={{ padding: '4px 10px', fontSize: 12 }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-            <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
-          </div>
-
-          {showBulkDatePaid && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date Paid for all {selectedIds.length} selected:</span>
-              <input
-                type="date"
-                value={bulkDatePaid}
-                onChange={(e) => setBulkDatePaid(e.target.value)}
-                style={{ padding: '4px 8px', fontSize: 12 }}
-              />
+        <div className="filters-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong>{selectedIds.length} selected</strong>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
+            {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
               <button
-                type="button"
-                className="btn-primary"
-                disabled={isBulkUpdating}
-                onClick={() => handleBulkPaymentStatus('Paid', bulkDatePaid)}
-                style={{ padding: '4px 10px', fontSize: 12 }}
-              >
-                Apply
-              </button>
-              <button
+                key={s}
                 type="button"
                 className="btn-secondary"
                 disabled={isBulkUpdating}
-                onClick={() => setShowBulkDatePaid(false)}
+                onClick={() => handleBulkPaymentStatus(s)}
                 style={{ padding: '4px 10px', fontSize: 12 }}
               >
-                Cancel
+                {s}
               </button>
-            </div>
-          )}
+            ))}
+          </div>
+          <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
         </div>
       )}
 
@@ -666,7 +563,7 @@ const WaterFilling = () => {
       <div className="table-container" style={{ overflowX: 'auto' }}>
         {filtered.length === 0 ? (
           <div className="empty-table">
-            <p>No Water Filling entries match the current filters.</p>
+            <p>No Water Distribution entries match the current filters.</p>
             <button className="btn-secondary" onClick={clearAllFilters} style={{ marginTop: 10 }}>Clear Filters</button>
           </div>
         ) : (
@@ -677,13 +574,12 @@ const WaterFilling = () => {
                   <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
                 </th>
                 <th>Date</th>
-                <th>Customer</th>
-                <th>Transaction Type</th>
+                <th>Employee</th>
+                <th>Truck Type</th>
                 <th className="text-right">Quantity</th>
-                <th>Premium</th>
-                <th>Total Premium</th>
+                <th>Unit Price</th>
+                <th>Total Price</th>
                 <th>Status</th>
-                <th>Date Paid</th>
                 <th>Remark</th>
                 <th>Actions</th>
               </tr>
@@ -697,20 +593,13 @@ const WaterFilling = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
-                  <td>{e.customerName || 'N/A'}</td>
-                  <td>{getTransactionTypeLabel(e.transactionType)}</td>
+                  <td>{e.employeeName || 'N/A'}</td>
+                  <td>{e.truckType || 'N/A'}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
-                  <td>
-                    {e.premiumCurrency ? formatPremium(toNumber(e.unitPremium), e.premiumCurrency) : '—'}
-                  </td>
-                  <td>
-                    {e.premiumCurrency ? formatPremium(toNumber(e.totalPremium), e.premiumCurrency) : '—'}
-                  </td>
+                  <td>{formatUSD(toNumber(e.unitPrice))}</td>
+                  <td>{formatUSD(toNumber(e.totalPrice))}</td>
                   <td>
                     <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
-                  </td>
-                  <td className="date-cell">
-                    {e.paymentStatus === 'Paid' && e.datePaid ? <span className="date-display">{formatDate(e.datePaid)}</span> : '—'}
                   </td>
                   <td>{e.remark || '—'}</td>
                   <td>
@@ -735,41 +624,35 @@ const WaterFilling = () => {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 560 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{editingEntryId ? 'Edit Entry' : 'Add Water Filling Entry'}</h3>
+              <h3 className="modal-title">{editingEntryId ? 'Edit Entry' : 'Add Water Distribution Entry'}</h3>
               <button className="modal-close" onClick={closeModal}><IconX /></button>
             </div>
             <div className="modal-content">
-              <div className="exchange-rate-banner" style={{ marginBottom: 'var(--s-3)' }}>
-                <span className="exchange-rate-banner-label">Exchange Rate</span>
-                <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} L.L</span>
-              </div>
               <div className="missing-item-form-grid">
                 <div className="form-group">
-                  <label className="form-label">Customer</label>
-                  <select value={formCustomerId} onChange={(e) => handleCustomerChange(e.target.value)} className="form-select" disabled={isSaving}>
-                    <option value="">Select Customer</option>
-                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <label className="form-label">Employee</label>
+                  <select value={formEmployeeId} onChange={(e) => handleEmployeeChange(e.target.value)} className="form-select" disabled={isSaving}>
+                    <option value="">Select Employee</option>
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
-                  {customers.length === 0 && (
+                  {employees.length === 0 && (
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                      No customers have Water Filling checked yet. Add it from <strong>Customers</strong>.
+                      No employees found. Add one from <strong>Employees</strong>.
                     </p>
                   )}
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Transaction Type</label>
-                  <select
-                    value={formTransactionType}
-                    onChange={(e) => handleTransactionTypeChange(e.target.value)}
-                    className="form-select"
-                    disabled={isSaving || !selectedFormCustomer}
-                  >
+                  <label className="form-label">Truck Type</label>
+                  <select value={formTruckType} onChange={(e) => setFormTruckType(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="">Select Type</option>
-                    {(selectedFormCustomer?.waterFillingSizes || []).map((size) => (
-                      <option key={size} value={size}>{getTransactionTypeLabel(size)}</option>
-                    ))}
+                    {truckTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
+                  {truckTypes.length === 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                      No truck types configured yet. Add them from <strong>Settings</strong>.
+                    </p>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -783,12 +666,24 @@ const WaterFilling = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Total Premium ({totalPremiumCurrency})</label>
+                  <label className="form-label">Unit Price (USD)</label>
                   <input
                     type="text"
                     inputMode="decimal"
-                    value={formatNumberInput(formTotalPremium)}
-                    onChange={(e) => handleTotalPremiumChange(stripCommas(e.target.value))}
+                    value={formatNumberInput(formUnitPrice)}
+                    onChange={(e) => handleUnitPriceChange(stripCommas(e.target.value))}
+                    className="form-input"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Total Price (USD)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formatNumberInput(formTotalPrice)}
+                    onChange={(e) => handleTotalPriceChange(stripCommas(e.target.value))}
                     className="form-input"
                     disabled={isSaving}
                   />
@@ -796,37 +691,21 @@ const WaterFilling = () => {
 
                 <div className="form-group">
                   <label className="form-label">Payment Status</label>
-                  <select value={formPaymentStatus} onChange={(e) => handlePaymentStatusChange(e.target.value)} className="form-select" disabled={isSaving}>
+                  <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Unpaid">Unpaid</option>
                     <option value="Hold">Hold</option>
                     <option value="Paid">Paid</option>
                     <option value="Free">Free</option>
                   </select>
                 </div>
-
-                {formPaymentStatus === 'Paid' && (
-                  <div className="form-group">
-                    <label className="form-label">Date Paid</label>
-                    <input type="date" value={formDatePaid} onChange={(e) => setFormDatePaid(e.target.value)} className="form-input" disabled={isSaving} />
-                  </div>
-                )}
               </div>
 
-              {selectedPremium && (
+              {totalPriceTouched && formTotalPrice !== '' && (
                 <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-                  <span>Premium: {formatPremium(toNumber(selectedPremium.price), selectedPremium.currency)}</span>
-                  {formTotalPremium !== '' && (
-                    <span style={{ color: 'var(--brand)' }}>
-                      Total Premium: {formatPremium(toNumber(formTotalPremium), selectedPremium.currency)}
-                      {totalPremiumTouched && ' (manually overridden)'}
-                    </span>
-                  )}
+                  <span style={{ color: 'var(--brand)' }}>
+                    Total Price: {formatUSD(toNumber(formTotalPrice))} (manually overridden)
+                  </span>
                 </div>
-              )}
-              {formTransactionType && !selectedPremium && (
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 'var(--s-3)' }}>
-                  No pricing set for this customer/type. Set it from <strong>Customers</strong>, or enter Total Premium manually below.
-                </p>
               )}
 
               <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
@@ -849,4 +728,4 @@ const WaterFilling = () => {
   );
 };
 
-export default WaterFilling;
+export default WaterDistribution;

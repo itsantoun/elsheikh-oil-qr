@@ -63,6 +63,15 @@ const IconDatabase = () => (
   </svg>
 );
 
+const IconTruck = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 3h15v13H1z" />
+    <path d="M16 8h4l3 3v5h-7V8z" />
+    <circle cx="5.5" cy="18.5" r="2.5" />
+    <circle cx="18.5" cy="18.5" r="2.5" />
+  </svg>
+);
+
 const isMaghsalRow = (row) => {
   if (!row || typeof row !== 'object') return false;
   if (String(row.productType || '').toLowerCase() === 'maghsal') return true;
@@ -103,6 +112,13 @@ const Settings = () => {
   const [rolesBusy, setRolesBusy] = useState(false);
   const [editingRoleIdx, setEditingRoleIdx] = useState(null);
   const [editingRoleValue, setEditingRoleValue] = useState('');
+
+  // Water Distribution truck types
+  const [truckTypes, setTruckTypes] = useState([]);
+  const [newTruckType, setNewTruckType] = useState('');
+  const [truckTypesBusy, setTruckTypesBusy] = useState(false);
+  const [editingTruckTypeIdx, setEditingTruckTypeIdx] = useState(null);
+  const [editingTruckTypeValue, setEditingTruckTypeValue] = useState('');
 
   // Currency exchange rate (LBP per 1 USD)
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_USD_TO_LBP_RATE);
@@ -201,6 +217,25 @@ const Settings = () => {
       })
       .catch((err) => {
         console.error('Failed to load employee roles:', err);
+        if (err?.code === 'PERMISSION_DENIED') {
+          setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
+        }
+      });
+    // Load Water Distribution truck types
+    get(ref(database, 'settings/waterDistributionTruckTypes'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (Array.isArray(val) && val.length > 0) {
+            setTruckTypes(val);
+          } else if (val && typeof val === 'object') {
+            const arr = Object.values(val).filter((v) => typeof v === 'string' && v.trim().length > 0);
+            if (arr.length > 0) setTruckTypes(arr);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load truck types:', err);
         if (err?.code === 'PERMISSION_DENIED') {
           setError('Permission denied while loading Settings. Some admin-only settings may be unavailable.');
         }
@@ -652,6 +687,64 @@ const Settings = () => {
     await saveRoles(next);
     setEditingRoleIdx(null);
     setEditingRoleValue('');
+  };
+
+  // ── Water Distribution truck types handlers ────────────
+  const saveTruckTypes = async (next) => {
+    setTruckTypesBusy(true);
+    try {
+      await set(ref(database, 'settings/waterDistributionTruckTypes'), next);
+      setTruckTypes(next);
+      flashMessage('Truck types saved.');
+    } catch (err) {
+      console.error(err);
+      flashError('Failed to save truck types. You may not have permission.');
+    } finally {
+      setTruckTypesBusy(false);
+    }
+  };
+
+  const addTruckType = async () => {
+    const v = newTruckType.trim();
+    if (!v) return;
+    if (truckTypes.some((t) => t.toLowerCase() === v.toLowerCase())) {
+      flashError('That truck type already exists.');
+      return;
+    }
+    await saveTruckTypes([...truckTypes, v].sort((a, b) => a.localeCompare(b)));
+    setNewTruckType('');
+  };
+
+  const removeTruckType = async (idx) => {
+    const target = truckTypes[idx];
+    if (!window.confirm(`Remove truck type "${target}"? Existing entries keep this text but it won't be selectable for new/edited entries.`)) {
+      return;
+    }
+    const next = truckTypes.filter((_, i) => i !== idx);
+    await saveTruckTypes(next);
+  };
+
+  const startEditTruckType = (idx) => {
+    setEditingTruckTypeIdx(idx);
+    setEditingTruckTypeValue(truckTypes[idx]);
+  };
+
+  const cancelEditTruckType = () => {
+    setEditingTruckTypeIdx(null);
+    setEditingTruckTypeValue('');
+  };
+
+  const saveEditTruckType = async () => {
+    const v = editingTruckTypeValue.trim();
+    if (!v) return;
+    if (truckTypes.some((t, i) => i !== editingTruckTypeIdx && t.toLowerCase() === v.toLowerCase())) {
+      flashError('Another truck type with that name already exists.');
+      return;
+    }
+    const next = truckTypes.map((t, i) => (i === editingTruckTypeIdx ? v : t)).sort((a, b) => a.localeCompare(b));
+    await saveTruckTypes(next);
+    setEditingTruckTypeIdx(null);
+    setEditingTruckTypeValue('');
   };
 
   // ── Exchange rate handler ─────────────────────────────
@@ -1242,6 +1335,89 @@ const Settings = () => {
             className="settings-btn settings-btn-primary"
             onClick={addRole}
             disabled={rolesBusy || !newRole.trim()}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Water Distribution Truck Types */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconTruck /></span>
+          <div>
+            <h3>Water Distribution Truck Types</h3>
+            <p>Truck types shown in the Water Distribution Truck Type dropdown. Existing entries are not affected when you remove or rename a type.</p>
+          </div>
+        </div>
+
+        <ul className="settings-list">
+          {truckTypes.length === 0 && (
+            <li className="settings-list-empty">No truck types yet. Add one below.</li>
+          )}
+          {truckTypes.map((truckType, idx) => (
+            <li key={`${truckType}-${idx}`} className="settings-list-item">
+              {editingTruckTypeIdx === idx ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingTruckTypeValue}
+                    onChange={(e) => setEditingTruckTypeValue(e.target.value)}
+                    className="settings-input"
+                    disabled={truckTypesBusy}
+                  />
+                  <button
+                    className="settings-btn settings-btn-primary settings-btn-sm"
+                    onClick={saveEditTruckType}
+                    disabled={truckTypesBusy || !editingTruckTypeValue.trim()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={cancelEditTruckType}
+                    disabled={truckTypesBusy}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="settings-list-text">{truckType}</span>
+                  <button
+                    className="settings-btn settings-btn-secondary settings-btn-sm"
+                    onClick={() => startEditTruckType(idx)}
+                    disabled={truckTypesBusy}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="settings-btn settings-btn-danger settings-btn-sm"
+                    onClick={() => removeTruckType(idx)}
+                    disabled={truckTypesBusy}
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="settings-add-row">
+          <input
+            type="text"
+            placeholder="New truck type"
+            value={newTruckType}
+            onChange={(e) => setNewTruckType(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addTruckType(); }}
+            className="settings-input"
+            disabled={truckTypesBusy}
+          />
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={addTruckType}
+            disabled={truckTypesBusy || !newTruckType.trim()}
           >
             Add
           </button>

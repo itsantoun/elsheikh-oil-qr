@@ -20,15 +20,40 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const formatDateDisplay = (v) => {
+  if (!v) return null;
+  const [y, m, d] = v.split('-');
+  if (!y || !m || !d) return v;
+  return `${d}-${m}-${y}`;
+};
+
+// Red once expired, amber inside the last 30 days, default color otherwise.
+const licenseExpiryColor = (v) => {
+  if (!v) return undefined;
+  const expiry = new Date(`${v}T00:00:00`);
+  if (isNaN(expiry.getTime())) return undefined;
+  const daysLeft = (expiry.getTime() - Date.now()) / 86400000;
+  if (daysLeft < 0) return '#dc3545';
+  if (daysLeft <= 30) return '#b45309';
+  return undefined;
+};
+
 const emptyForm = {
   name: '',
   nationality: '',
   role: '',
   phone: '',
+  dateOfBirth: '',
+  licenseExpiryDate: '',
   salaryUSD: '',
   salaryLBP: '',
+  assignedTruckType: '',
   remark: '',
 };
+
+// "Driver", "Truck Driver", etc. — matched loosely since roles are a free-text
+// admin-editable list (settings/employeeRoles), not a fixed enum.
+const isDriverRole = (role) => String(role || '').toLowerCase().includes('driver');
 
 const Employees = () => {
   const [employees, setEmployees] = useState([]);
@@ -44,6 +69,7 @@ const Employees = () => {
   const [roleFilter, setRoleFilter] = useState('');
   const [nationalities, setNationalities] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [truckTypes, setTruckTypes] = useState([]);
   const [confirm, confirmDialog] = useConfirmDialog();
   const exchangeRate = useExchangeRate();
 
@@ -71,6 +97,16 @@ const Employees = () => {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const unsub = onValue(ref(database, 'settings/waterDistributionTruckTypes'), (snap) => {
+      if (!snap.exists()) { setTruckTypes([]); return; }
+      const val = snap.val();
+      const arr = Array.isArray(val) ? val : Object.values(val || {});
+      setTruckTypes(arr.filter((v) => typeof v === 'string' && v.trim().length > 0));
+    });
+    return () => unsub();
+  }, []);
+
   const fetchEmployees = async () => {
     try {
       setIsLoading(true);
@@ -84,9 +120,12 @@ const Employees = () => {
           nationality: data[key].nationality || '',
           role: data[key].role || '',
           phone: data[key].phone || '',
+          dateOfBirth: data[key].dateOfBirth || '',
+          licenseExpiryDate: data[key].licenseExpiryDate || '',
           salaryUSD: data[key].salaryUSD ?? '',
           salaryLBP: data[key].salaryLBP ?? '',
           exchangeRateAtEntry: data[key].exchangeRateAtEntry || null,
+          assignedTruckType: data[key].assignedTruckType || '',
           remark: data[key].remark || '',
         }));
         list.sort(sortByName);
@@ -145,9 +184,12 @@ const Employees = () => {
         nationality: formData.nationality,
         role: formData.role,
         phone: formData.phone.trim(),
+        dateOfBirth: formData.dateOfBirth,
+        licenseExpiryDate: formData.licenseExpiryDate,
         salaryUSD: toNumber(formData.salaryUSD),
         salaryLBP: toNumber(formData.salaryLBP),
         exchangeRateAtEntry: exchangeRate,
+        assignedTruckType: isDriverRole(formData.role) ? formData.assignedTruckType : '',
         remark: formData.remark.trim(),
         createdAt: new Date().toISOString(),
       };
@@ -175,8 +217,11 @@ const Employees = () => {
       nationality: employee.nationality,
       role: employee.role,
       phone: employee.phone,
+      dateOfBirth: employee.dateOfBirth || '',
+      licenseExpiryDate: employee.licenseExpiryDate || '',
       salaryUSD: String(employee.salaryUSD ?? ''),
       salaryLBP: String(employee.salaryLBP ?? ''),
+      assignedTruckType: employee.assignedTruckType || '',
       remark: employee.remark,
     });
     setExpandedEmployee(employee.id);
@@ -195,9 +240,12 @@ const Employees = () => {
         nationality: editData.nationality,
         role: editData.role,
         phone: editData.phone.trim(),
+        dateOfBirth: editData.dateOfBirth,
+        licenseExpiryDate: editData.licenseExpiryDate,
         salaryUSD: toNumber(editData.salaryUSD),
         salaryLBP: toNumber(editData.salaryLBP),
         exchangeRateAtEntry: exchangeRate,
+        assignedTruckType: isDriverRole(editData.role) ? editData.assignedTruckType : '',
         remark: editData.remark.trim(),
       };
       await update(ref(database, `employees/${id}`), employeeData);
@@ -354,6 +402,28 @@ const Employees = () => {
               )}
             </div>
 
+            {isDriverRole(formData.role) && (
+              <div className="form-group">
+                <label className="form-label">
+                  <span className="label-text">Truck Type</span>
+                </label>
+                <select
+                  value={formData.assignedTruckType}
+                  onChange={(e) => handleFormChange('assignedTruckType', e.target.value)}
+                  className="form-select"
+                  disabled={isLoading}
+                >
+                  <option value="">Select truck type…</option>
+                  {truckTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {truckTypes.length === 0 && (
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    No truck types set up yet. Add them from <strong>Settings</strong>.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="form-group">
               <label className="form-label">
                 <span className="label-text">Phone Number</span>
@@ -363,6 +433,32 @@ const Employees = () => {
                 placeholder="Enter phone number"
                 value={formData.phone}
                 onChange={(e) => handleFormChange('phone', e.target.value)}
+                className="form-input"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                <span className="label-text">Date of Birth</span>
+              </label>
+              <input
+                type="date"
+                value={formData.dateOfBirth}
+                onChange={(e) => handleFormChange('dateOfBirth', e.target.value)}
+                className="form-input"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                <span className="label-text">Driving License Expiry</span>
+              </label>
+              <input
+                type="date"
+                value={formData.licenseExpiryDate}
+                onChange={(e) => handleFormChange('licenseExpiryDate', e.target.value)}
                 className="form-input"
                 disabled={isLoading}
               />
@@ -547,6 +643,12 @@ const Employees = () => {
                       </div>
                       <div className="customer-card-meta">
                         {employee.role && <span className="meta-item">{employee.role}</span>}
+                        {employee.assignedTruckType && <span className="meta-item">Truck: {employee.assignedTruckType}</span>}
+                        {licenseExpiryColor(employee.licenseExpiryDate) && (
+                          <span className="meta-item" style={{ color: licenseExpiryColor(employee.licenseExpiryDate), fontWeight: 600 }}>
+                            License: {formatDateDisplay(employee.licenseExpiryDate)}
+                          </span>
+                        )}
                         {employee.phone && <span className="meta-item phone-meta">{employee.phone}</span>}
                         <span className="meta-item">${Number(employee.salaryUSD || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         <span className="meta-item">LBP {Number(employee.salaryLBP || 0).toLocaleString('en-US')}</span>
@@ -622,6 +724,22 @@ const Employees = () => {
                                 {roles.map((r) => <option key={r} value={r}>{r}</option>)}
                               </select>
                             </div>
+                            {isDriverRole(editData.role) && (
+                              <div className="form-group">
+                                <label className="form-label">
+                                  <span className="label-text">Truck Type</span>
+                                </label>
+                                <select
+                                  value={editData.assignedTruckType}
+                                  onChange={(e) => handleEditChange('assignedTruckType', e.target.value)}
+                                  className="form-select"
+                                  disabled={isLoading}
+                                >
+                                  <option value="">Select truck type…</option>
+                                  {truckTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                              </div>
+                            )}
                             <div className="form-group">
                               <label className="form-label">
                                 <span className="label-text">Phone Number</span>
@@ -630,6 +748,30 @@ const Employees = () => {
                                 type="tel"
                                 value={editData.phone}
                                 onChange={(e) => handleEditChange('phone', e.target.value)}
+                                className="form-input"
+                                disabled={isLoading}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">Date of Birth</span>
+                              </label>
+                              <input
+                                type="date"
+                                value={editData.dateOfBirth}
+                                onChange={(e) => handleEditChange('dateOfBirth', e.target.value)}
+                                className="form-input"
+                                disabled={isLoading}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">
+                                <span className="label-text">Driving License Expiry</span>
+                              </label>
+                              <input
+                                type="date"
+                                value={editData.licenseExpiryDate}
+                                onChange={(e) => handleEditChange('licenseExpiryDate', e.target.value)}
                                 className="form-input"
                                 disabled={isLoading}
                               />
@@ -701,9 +843,25 @@ const Employees = () => {
                               <span className="detail-label">Role</span>
                               <span className="detail-value">{employee.role || '—'}</span>
                             </div>
+                            {employee.assignedTruckType && (
+                              <div className="detail-item">
+                                <span className="detail-label">Truck Type</span>
+                                <span className="detail-value">{employee.assignedTruckType}</span>
+                              </div>
+                            )}
                             <div className="detail-item">
                               <span className="detail-label">Phone</span>
                               <span className="detail-value">{employee.phone || '—'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">Date of Birth</span>
+                              <span className="detail-value">{formatDateDisplay(employee.dateOfBirth) || '—'}</span>
+                            </div>
+                            <div className="detail-item">
+                              <span className="detail-label">Driving License Expiry</span>
+                              <span className="detail-value" style={{ color: licenseExpiryColor(employee.licenseExpiryDate) }}>
+                                {formatDateDisplay(employee.licenseExpiryDate) || '—'}
+                              </span>
                             </div>
                             <div className="detail-item">
                               <span className="detail-label">Salary (USD)</span>

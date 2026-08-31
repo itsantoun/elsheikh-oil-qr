@@ -26,6 +26,7 @@ const toNumber = (v) => {
 const Maghsal = () => {
   const { user } = useContext(UserContext);
   const [entries, setEntries] = useState([]);
+  const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   // { [productId]: lastReconciledISODate } — from the Stock Checker's
@@ -58,6 +59,24 @@ const Maghsal = () => {
     const saved = localStorage.getItem('checkedMaghsalItems');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Bulk payment-status selection — separate from the "Check" filter above,
+  // and persisted so a page refresh doesn't drop what was selected.
+  const [selectedIds, setSelectedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('maghsalSelectedIds');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('maghsalSelectedIds', JSON.stringify(selectedIds));
+    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
+  }, [selectedIds]);
 
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -168,10 +187,11 @@ const Maghsal = () => {
     });
 
     const unsubEntries = onValue(entriesRef, (snap) => {
-      if (!snap.exists()) { setEntries([]); return; }
+      if (!snap.exists()) { setEntries([]); setEntriesLoaded(true); return; }
       const data = snap.val();
       const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
       setEntries(sortByDate(list, 'desc'));
+      setEntriesLoaded(true);
     });
 
     const unsubCategories = onValue(categoriesRef, (snap) => {
@@ -372,6 +392,46 @@ const Maghsal = () => {
       ? sharedFiltered.filter((e) => e.paymentStatus === 'Used')
       : sharedFiltered.filter((e) => e.paymentStatus !== 'Used')
   ), [sharedFiltered, viewMode]);
+
+  // Drop any selected ids that were actually deleted from Firebase — pruning
+  // against `entries` (not `filtered`), so a filter that merely hides a
+  // selected row doesn't permanently drop it from the selection. Skipped
+  // until entries have loaded at least once, so a page refresh doesn't wipe
+  // a restored (localStorage) selection against a still-empty list.
+  useEffect(() => {
+    if (!entriesLoaded) return;
+    setSelectedIds((prev) => prev.filter((id) => entries.some((e) => e.id === id)));
+  }, [entries, entriesLoaded]);
+
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((e) => selectedIds.includes(e.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(allFilteredSelected ? [] : filtered.map((e) => e.id));
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  const handleBulkPaymentStatus = async (status) => {
+    if (selectedIds.length === 0 || isBulkUpdating) return;
+    setIsBulkUpdating(true);
+    try {
+      const updates = {};
+      selectedIds.forEach((id) => {
+        updates[`maghsalEntries/${id}/paymentStatus`] = status;
+      });
+      await update(ref(database), updates);
+      flash(`Marked ${selectedIds.length} ${selectedIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error('Bulk payment status update failed:', err);
+      flash(`Failed to update entries: ${err?.message || err}`, 'error');
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
 
   const totals = useMemo(() => {
     const t = {
@@ -885,6 +945,29 @@ const Maghsal = () => {
         </div>
       )}
 
+      {/* Bulk actions */}
+      {selectedIds.length > 0 && (
+        <div className="filters-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong>{selectedIds.length} selected</strong>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
+            {['Paid', 'Unpaid', 'Free'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="btn-secondary"
+                disabled={isBulkUpdating}
+                onClick={() => handleBulkPaymentStatus(s)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="table-container">
         {filtered.length === 0 ? (
@@ -896,6 +979,9 @@ const Maghsal = () => {
           <table className="data-table">
             <thead>
               <tr>
+                <th style={{ width: 32 }}>
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
+                </th>
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Service</th>
@@ -911,7 +997,10 @@ const Maghsal = () => {
               {filtered.map((e) => {
                 const m = entryTotals(e);
                 return (
-                  <tr key={e.id} className={checkedItems.includes(e.id) ? 'checked-row' : ''}>
+                  <tr key={e.id} className={selectedIds.includes(e.id) ? 'checked-row' : (checkedItems.includes(e.id) ? 'checked-row' : '')}>
+                    <td>
+                      <input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => toggleSelected(e.id)} />
+                    </td>
                     <td className="date-cell">
                       <span className="date-display">{formatDateTime(e.date)}</span>
                     </td>

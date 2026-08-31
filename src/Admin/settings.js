@@ -130,6 +130,10 @@ const Settings = () => {
   const [migrationBusy, setMigrationBusy] = useState(false);
   const [migrationCounts, setMigrationCounts] = useState(null);
   const [lastMigration, setLastMigration] = useState(null);
+
+  // Customer name fix (Arabic -> English in SoldItems.customerName)
+  const [nameFixBusy, setNameFixBusy] = useState(false);
+  const [nameFixStatus, setNameFixStatus] = useState(null);
   const [productArchiveBusy, setProductArchiveBusy] = useState(false);
   const [stockArchiveBusy, setStockArchiveBusy] = useState(false);
 
@@ -915,6 +919,63 @@ const Settings = () => {
     }
   };
 
+  // ── Customer name fix ─────────────────────────────────
+  // Older records (from a legacy Barcode Scanner convention) stored the
+  // customer's Arabic name in SoldItems.customerName instead of English.
+  // One-time sweep: for every SoldItems row whose customerName matches a
+  // customer's nameArabic, overwrite it with that customer's English name.
+  const runCustomerNameFix = async () => {
+    setNameFixBusy(true);
+    setNameFixStatus('Reading data...');
+    try {
+      const [customersSnap, soldSnap] = await Promise.all([
+        get(ref(database, 'customers')),
+        get(ref(database, 'SoldItems')),
+      ]);
+
+      if (!customersSnap.exists() || !soldSnap.exists()) {
+        setNameFixStatus('No customers or sold items found. Nothing to fix.');
+        return;
+      }
+
+      const customersData = customersSnap.val();
+      const arabicToEnglish = new Map();
+      Object.values(customersData).forEach((c) => {
+        const ar = (c.nameArabic || '').trim().toLowerCase();
+        if (ar && c.name) arabicToEnglish.set(ar, c.name);
+      });
+
+      const soldData = soldSnap.val();
+      const updates = {};
+      let count = 0;
+      Object.entries(soldData).forEach(([id, item]) => {
+        const raw = (item.customerName || '').trim();
+        if (!raw) return;
+        const englishName = arabicToEnglish.get(raw.toLowerCase());
+        if (englishName && englishName !== item.customerName) {
+          updates[`SoldItems/${id}/customerName`] = englishName;
+          count += 1;
+        }
+      });
+
+      if (count === 0) {
+        setNameFixStatus('No Arabic customer names found in SoldItems. Nothing to fix.');
+        return;
+      }
+
+      setNameFixStatus(`Fixing ${count} row(s)...`);
+      await update(ref(database), updates);
+      setNameFixStatus(`Done — ${count} SoldItems row(s) updated to the English customer name.`);
+      flashMessage(`Fixed ${count} customer name(s) in Sold Items.`);
+    } catch (err) {
+      console.error('Customer name fix failed:', err);
+      setNameFixStatus(`Failed: ${err.message || err}`);
+      flashError('Customer name fix failed. Check console for details.');
+    } finally {
+      setNameFixBusy(false);
+    }
+  };
+
   return (
     <div className="settings-page">
       <div className="settings-header">
@@ -1473,6 +1534,33 @@ const Settings = () => {
         {migrationStatus && (
           <div className="settings-note" style={{ marginTop: 10 }}>
             {migrationStatus}
+          </div>
+        )}
+      </div>
+
+      {/* Customer Name Fix */}
+      <div className="settings-card" style={{ marginTop: 18 }}>
+        <div className="settings-card-header">
+          <span className="settings-card-icon"><IconDatabase /></span>
+          <div>
+            <h3>Fix Customer Names in Sold Items</h3>
+            <p>Some older Sold Items rows stored the customer's Arabic name instead of English (a legacy Barcode Scanner behavior, now fixed going forward). Run this to rewrite those rows to the customer's English name.</p>
+          </div>
+        </div>
+
+        <div className="settings-actions">
+          <button
+            className="settings-btn settings-btn-primary"
+            onClick={runCustomerNameFix}
+            disabled={nameFixBusy}
+          >
+            {nameFixBusy ? 'Fixing...' : 'Fix Customer Names'}
+          </button>
+        </div>
+
+        {nameFixStatus && (
+          <div className="settings-note" style={{ marginTop: 10 }}>
+            {nameFixStatus}
           </div>
         )}
       </div>

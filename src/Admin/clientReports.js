@@ -311,7 +311,7 @@ const ClientReports = () => {
         key: `m-${e.id}`,
         date: e.date,
         section: 'Maghsal',
-        item: e.category || 'Service',
+        item: e.serviceCategory || e.category || 'Service',
         quantity: toNumber(e.quantity ?? e.consumablesUsed?.[0]?.quantity),
         total: entryTotal(e),
         status: e.paymentStatus || 'N/A',

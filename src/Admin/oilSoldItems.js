@@ -36,6 +36,17 @@ const sortByName = (a, b) => {
   return 0;
 };
 
+// Older records stored the customer's Arabic name in `customerName` (a
+// legacy Barcode Scanner convention). Resolve it back to the English name
+// for display — trimmed/case-insensitive so stray whitespace doesn't break
+// the match — without touching the stored value.
+const resolveCustomerName = (rawName, customerList) => {
+  const raw = (rawName || '').trim();
+  if (!raw) return rawName;
+  const match = customerList.find((c) => (c.nameArabic || '').trim().toLowerCase() === raw.toLowerCase());
+  return match?.name || rawName;
+};
+
 const OilSoldItems = () => {
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
@@ -301,8 +312,7 @@ const OilSoldItems = () => {
           .map((key) => ({
             id: key,
             ...soldData[key],
-            customerName: customersListRef.current.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-                        soldData[key].customerName,
+            customerName: resolveCustomerName(soldData[key].customerName, customersListRef.current),
           }))
           .filter(item => !isStockLikeStatus(item.paymentStatus));
         const sortedItems = sortItemsByDate(soldItemList);
@@ -599,8 +609,7 @@ const OilSoldItems = () => {
           .map((key) => ({
             id: key,
             ...soldData[key],
-            customerName: customerList.find(c => c.nameArabic === soldData[key].customerName)?.name ||
-                        soldData[key].customerName,
+            customerName: resolveCustomerName(soldData[key].customerName, customerList),
           }))
           .filter(item => !isStockLikeStatus(item.paymentStatus));
         const sortedItems = sortItemsByDate(soldItemList);
@@ -966,8 +975,9 @@ const OilSoldItems = () => {
             totalCost: totalCostValue,
           }
         );
-        const customerNameForStorage = selectedCustomer.nameArabic || selectedCustomer.name || 'Unknown';
-        const customerNameForDisplay = selectedCustomer.name || selectedCustomer.nameArabic || 'Unknown';
+        // Always store the English name — pages across the app display this
+        // value directly, and should never show Arabic.
+        const customerNameForStorage = selectedCustomer.name || selectedCustomer.nameArabic || 'Unknown';
 
         const newItem = {
           barcode: selectedProduct.barcode || selectedProduct.id,
@@ -989,11 +999,7 @@ const OilSoldItems = () => {
         };
 
         const createdRef = await push(ref(database, 'SoldItems'), newItem);
-        const newItemForList = {
-          id: createdRef.key,
-          ...newItem,
-          customerName: customerNameForDisplay,
-        };
+        const newItemForList = { id: createdRef.key, ...newItem };
         const updatedItems = sortItemsByDate([...soldItems, newItemForList]);
         setSoldItems(updatedItems);
       }

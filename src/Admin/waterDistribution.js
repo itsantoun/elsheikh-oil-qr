@@ -207,13 +207,15 @@ const WaterDistribution = () => {
     return sortByDate(result, 'desc');
   }, [entries, employeeFilter, truckTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
-  // Drop any selected ids that are no longer visible (filtered out, deleted, etc).
-  // Skipped until entries have loaded at least once, so a page refresh doesn't
-  // wipe out a restored (localStorage) selection against a still-empty list.
+  // Drop any selected ids that were actually deleted from Firebase — pruning
+  // against `entries` (not `filtered`), so a filter that merely hides a
+  // selected row doesn't permanently drop it from the selection. Skipped
+  // until entries have loaded at least once, so a page refresh doesn't wipe
+  // a restored (localStorage) selection against a still-empty list.
   useEffect(() => {
     if (!entriesLoaded) return;
-    setSelectedIds((prev) => prev.filter((id) => filtered.some((e) => e.id === id)));
-  }, [filtered, entriesLoaded]);
+    setSelectedIds((prev) => prev.filter((id) => entries.some((e) => e.id === id)));
+  }, [entries, entriesLoaded]);
 
   const toggleSelected = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));

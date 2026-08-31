@@ -20,6 +20,16 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// Native <input type="date"> can leave a garbage partial value (e.g. year
+// "1001") behind when a user clears it with the keyboard instead of the
+// picker's clear control. Treat anything with an implausible year as empty
+// rather than persist it.
+const sanitizeDateInput = (v) => {
+  if (!v) return '';
+  const year = parseInt(String(v).split('-')[0], 10);
+  return Number.isFinite(year) && year >= 1900 && year <= 2200 ? v : '';
+};
+
 const formatDateDisplay = (v) => {
   if (!v) return null;
   const [y, m, d] = v.split('-');
@@ -40,6 +50,7 @@ const licenseExpiryColor = (v) => {
 
 const emptyForm = {
   name: '',
+  nickname: '',
   nationality: '',
   role: '',
   phone: '',
@@ -54,6 +65,12 @@ const emptyForm = {
 // "Driver", "Truck Driver", etc. — matched loosely since roles are a free-text
 // admin-editable list (settings/employeeRoles), not a fixed enum.
 const isDriverRole = (role) => String(role || '').toLowerCase().includes('driver');
+
+// Shared across the app: wherever an employee's name is shown, prefer their
+// nickname over the full legal name if one is set.
+export const getEmployeeDisplayName = (employee) => (
+  (employee?.nickname || '').trim() || employee?.name || ''
+);
 
 const Employees = () => {
   const [employees, setEmployees] = useState([]);
@@ -117,6 +134,7 @@ const Employees = () => {
         const list = Object.keys(data).map((key) => ({
           id: key,
           name: data[key].name || '',
+          nickname: data[key].nickname || '',
           nationality: data[key].nationality || '',
           role: data[key].role || '',
           phone: data[key].phone || '',
@@ -181,11 +199,12 @@ const Employees = () => {
       setIsLoading(true);
       const employeeData = {
         name: formData.name.trim(),
+        nickname: formData.nickname.trim(),
         nationality: formData.nationality,
         role: formData.role,
         phone: formData.phone.trim(),
-        dateOfBirth: formData.dateOfBirth,
-        licenseExpiryDate: formData.licenseExpiryDate,
+        dateOfBirth: sanitizeDateInput(formData.dateOfBirth),
+        licenseExpiryDate: sanitizeDateInput(formData.licenseExpiryDate),
         salaryUSD: toNumber(formData.salaryUSD),
         salaryLBP: toNumber(formData.salaryLBP),
         exchangeRateAtEntry: exchangeRate,
@@ -214,6 +233,7 @@ const Employees = () => {
     setEditingEmployee(employee.id);
     setEditData({
       name: employee.name,
+      nickname: employee.nickname || '',
       nationality: employee.nationality,
       role: employee.role,
       phone: employee.phone,
@@ -237,11 +257,12 @@ const Employees = () => {
       setIsLoading(true);
       const employeeData = {
         name: editData.name.trim(),
+        nickname: editData.nickname.trim(),
         nationality: editData.nationality,
         role: editData.role,
         phone: editData.phone.trim(),
-        dateOfBirth: editData.dateOfBirth,
-        licenseExpiryDate: editData.licenseExpiryDate,
+        dateOfBirth: sanitizeDateInput(editData.dateOfBirth),
+        licenseExpiryDate: sanitizeDateInput(editData.licenseExpiryDate),
         salaryUSD: toNumber(editData.salaryUSD),
         salaryLBP: toNumber(editData.salaryLBP),
         exchangeRateAtEntry: exchangeRate,
@@ -364,6 +385,20 @@ const Employees = () => {
 
             <div className="form-group">
               <label className="form-label">
+                <span className="label-text">Nickname</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Shown instead of the full name across the app (optional)"
+                value={formData.nickname}
+                onChange={(e) => handleFormChange('nickname', e.target.value)}
+                className="form-input"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
                 <span className="label-text">Nationality</span>
               </label>
               <select
@@ -442,26 +477,40 @@ const Employees = () => {
               <label className="form-label">
                 <span className="label-text">Date of Birth</span>
               </label>
-              <input
-                type="date"
-                value={formData.dateOfBirth}
-                onChange={(e) => handleFormChange('dateOfBirth', e.target.value)}
-                className="form-input"
-                disabled={isLoading}
-              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="date"
+                  value={formData.dateOfBirth}
+                  onChange={(e) => handleFormChange('dateOfBirth', e.target.value)}
+                  className="form-input"
+                  disabled={isLoading}
+                />
+                {formData.dateOfBirth && (
+                  <button type="button" className="btn-secondary" onClick={() => handleFormChange('dateOfBirth', '')} disabled={isLoading} title="Clear date">
+                    <IconX />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="form-group">
               <label className="form-label">
                 <span className="label-text">Driving License Expiry</span>
               </label>
-              <input
-                type="date"
-                value={formData.licenseExpiryDate}
-                onChange={(e) => handleFormChange('licenseExpiryDate', e.target.value)}
-                className="form-input"
-                disabled={isLoading}
-              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="date"
+                  value={formData.licenseExpiryDate}
+                  onChange={(e) => handleFormChange('licenseExpiryDate', e.target.value)}
+                  className="form-input"
+                  disabled={isLoading}
+                />
+                {formData.licenseExpiryDate && (
+                  <button type="button" className="btn-secondary" onClick={() => handleFormChange('licenseExpiryDate', '')} disabled={isLoading} title="Clear date">
+                    <IconX />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="form-group">
@@ -698,6 +747,18 @@ const Employees = () => {
                             </div>
                             <div className="form-group">
                               <label className="form-label">
+                                <span className="label-text">Nickname</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={editData.nickname}
+                                onChange={(e) => handleEditChange('nickname', e.target.value)}
+                                className="form-input"
+                                disabled={isLoading}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">
                                 <span className="label-text">Nationality</span>
                               </label>
                               <select
@@ -756,25 +817,39 @@ const Employees = () => {
                               <label className="form-label">
                                 <span className="label-text">Date of Birth</span>
                               </label>
-                              <input
-                                type="date"
-                                value={editData.dateOfBirth}
-                                onChange={(e) => handleEditChange('dateOfBirth', e.target.value)}
-                                className="form-input"
-                                disabled={isLoading}
-                              />
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <input
+                                  type="date"
+                                  value={editData.dateOfBirth}
+                                  onChange={(e) => handleEditChange('dateOfBirth', e.target.value)}
+                                  className="form-input"
+                                  disabled={isLoading}
+                                />
+                                {editData.dateOfBirth && (
+                                  <button type="button" className="btn-secondary" onClick={() => handleEditChange('dateOfBirth', '')} disabled={isLoading} title="Clear date">
+                                    <IconX />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="form-group">
                               <label className="form-label">
                                 <span className="label-text">Driving License Expiry</span>
                               </label>
-                              <input
-                                type="date"
-                                value={editData.licenseExpiryDate}
-                                onChange={(e) => handleEditChange('licenseExpiryDate', e.target.value)}
-                                className="form-input"
-                                disabled={isLoading}
-                              />
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <input
+                                  type="date"
+                                  value={editData.licenseExpiryDate}
+                                  onChange={(e) => handleEditChange('licenseExpiryDate', e.target.value)}
+                                  className="form-input"
+                                  disabled={isLoading}
+                                />
+                                {editData.licenseExpiryDate && (
+                                  <button type="button" className="btn-secondary" onClick={() => handleEditChange('licenseExpiryDate', '')} disabled={isLoading} title="Clear date">
+                                    <IconX />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="form-group">
                               <label className="form-label">

@@ -105,7 +105,7 @@
 //           setCustomers(
 //             Object.entries(customersData).map(([key, value]) => ({
 //               id: key,
-//               name: value.nameArabic || value.name || 'عميل غير معروف',
+//               name: value.name || value.nameArabic || 'Unknown Customer',
 //             }))
 //           );
 //         } else {
@@ -875,7 +875,7 @@ const BarcodeScanner = () => {
           setCustomers(
             Object.entries(customersData).map(([key, value]) => ({
               id: key,
-              name: value.nameArabic || value.name || 'عميل غير معروف',
+              name: value.name || value.nameArabic || 'Unknown Customer',
             }))
           );
         } else {

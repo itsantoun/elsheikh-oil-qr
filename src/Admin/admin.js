@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Navbar from './navbar';
 import AddUsers from './adduser';
 import FetchProducts from './fetchProducts';
@@ -22,9 +23,10 @@ import { resolveUserAccess } from '../Auth/accessControl';
 
 const Admin = () => {
   const { user, setUser } = useContext(UserContext);
-  const [activeSection, setActiveSection] = useState('dashboard');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isAuthCheckComplete, setIsAuthCheckComplete] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     let isActive = true;
@@ -33,7 +35,7 @@ const Admin = () => {
       if (!firebaseUser) {
         setIsAuthorized(false);
         setIsAuthCheckComplete(true);
-        window.location.href = '/';
+        navigate('/', { replace: true });
         return;
       }
 
@@ -43,7 +45,7 @@ const Admin = () => {
       setIsAuthorized(allowed);
       setIsAuthCheckComplete(true);
       if (!allowed) {
-        window.location.href = '/';
+        navigate('/', { replace: true });
       }
     });
 
@@ -51,7 +53,7 @@ const Admin = () => {
       isActive = false;
       unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   const handleLogout = async () => {
     try {
@@ -70,37 +72,39 @@ const Admin = () => {
     return null;
   }
 
-  const renderSection = () => {
-    switch (activeSection) {
-      case 'dashboard':          return <Dashboard onNavigate={setActiveSection} />;
-      case 'reports':            return <ClientReports />;
-      case 'addUsers':           return <AddUsers />;
-      case 'addProducts':        return <FetchProducts />;
-      case 'holdProducts':       return <FetchProducts />;
-      case 'itemsSold':          return <ItemsSold />;
-      case 'addCustomer':        return <AddCustomer />;
-      case 'employees':          return <Employees />;
-      case 'stock':              return <RemainingProducts />;
-      case 'transactions':       return <Transactions />;
-      case 'archives':           return <Archives />;
-      case 'settings':           return <Settings />;
-      case 'maghsal':            return <Maghsal />;
-      case 'waterFilling':       return <WaterFilling />;
-      case 'waterDistribution':  return <WaterDistribution />;
-      default:                   return <Dashboard onNavigate={setActiveSection} />;
-    }
-  };
+  // Active nav id, derived from the URL — e.g. /admin/waterFilling -> 'waterFilling'.
+  const activeSection = location.pathname.replace(/^\/admin\/?/, '') || 'dashboard';
+
+  const handleNavigate = (page) => navigate(`/admin/${page}`);
 
   return (
     <div className="admin-container">
       <Navbar
-        onNavigate={setActiveSection}
+        onNavigate={handleNavigate}
         activePage={activeSection}
         onLogout={handleLogout}
       />
       <div className="admin-main">
         <div className="admin-content">
-          {renderSection()}
+          <Routes>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard onNavigate={handleNavigate} />} />
+            <Route path="reports" element={<ClientReports />} />
+            <Route path="addUsers" element={<AddUsers />} />
+            <Route path="addProducts" element={<FetchProducts />} />
+            <Route path="holdProducts" element={<FetchProducts />} />
+            <Route path="itemsSold" element={<ItemsSold />} />
+            <Route path="addCustomer" element={<AddCustomer />} />
+            <Route path="employees" element={<Employees />} />
+            <Route path="stock" element={<RemainingProducts />} />
+            <Route path="transactions" element={<Transactions />} />
+            <Route path="archives" element={<Archives />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="maghsal" element={<Maghsal />} />
+            <Route path="waterFilling" element={<WaterFilling />} />
+            <Route path="waterDistribution" element={<WaterDistribution />} />
+            <Route path="*" element={<Navigate to="dashboard" replace />} />
+          </Routes>
         </div>
       </div>
     </div>

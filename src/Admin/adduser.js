@@ -211,7 +211,7 @@ const AddUser = () => {
   };
 
   return (
-    <div className="admin-container">
+    <div className="page-shell">
       <PageHeader title="User Management" subtitle="Add and manage system users" />
 
       {/* Messages */}
@@ -439,3 +439,4 @@ const AddUser = () => {
 };
 
 export default AddUser;
+

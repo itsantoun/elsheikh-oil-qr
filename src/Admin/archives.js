@@ -577,7 +577,7 @@ const Archives = () => {
   };
 
   return (
-    <div className="admin-container">
+    <div className="page-shell">
       <PageHeader title="Archives Center" subtitle="View all archived stock and product snapshots in one place" />
 
       {errorMessage && (

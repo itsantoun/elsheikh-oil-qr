@@ -774,21 +774,35 @@ const WaterFilling = () => {
             <button className="btn-secondary" onClick={clearAllFilters} style={{ marginTop: 10 }}>Clear Filters</button>
           </div>
         ) : (
-          <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
+          <table className="data-table compact-table">
+            <colgroup>
+              <col style={{ width: '3%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '8%' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th style={{ width: 32 }}>
+                <th>
                   <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
                 </th>
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Employee</th>
-                <th>Transaction Type</th>
-                <th className="text-right">Quantity</th>
+                <th>Type</th>
+                <th className="text-right">Qty</th>
                 <th>Premium</th>
-                <th>Total Premium</th>
+                <th>Total</th>
                 <th>Status</th>
-                <th>Date Paid</th>
+                <th>Paid On</th>
                 <th>Remark</th>
                 <th>Actions</th>
               </tr>

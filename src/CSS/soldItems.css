@@ -20,6 +20,29 @@
   margin-bottom: 0;
 }
 
+/* ── Compact data table (Water Filling) ──────────────
+   Tighter padding/font + wrapped long cells so the table fits without
+   horizontal scrolling instead of forcing every cell onto one line. */
+.compact-table {
+  font-size: 12.5px;
+  table-layout: fixed;
+}
+.compact-table th {
+  padding: 8px 8px;
+  font-size: 10.5px;
+  white-space: normal;
+}
+.compact-table td {
+  padding: 8px 8px;
+  white-space: normal;
+  word-break: break-word;
+}
+.compact-table .date-cell,
+.compact-table td.text-right,
+.compact-table th.text-right {
+  white-space: nowrap;
+}
+
 /* ── Payment Status Badges ───────────────────────── */
 .payment-status {
   display: flex;

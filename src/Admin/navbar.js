@@ -171,7 +171,7 @@ const navGroups = [
     label: 'Water Distribution',
     Icon: IconTruck,
     children: [
-      { id: 'waterDistribution', Icon: IconTruck, label: 'Entries', comingSoon: true },
+      { id: 'waterDistribution', Icon: IconTruck, label: 'Entries', },
     ],
   },
   {

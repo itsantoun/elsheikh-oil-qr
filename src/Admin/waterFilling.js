@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
@@ -33,9 +33,11 @@ const WaterFilling = () => {
   const [entries, setEntries] = useState([]);
   const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [customers, setCustomers] = useState([]);
+  const [employees, setEmployees] = useState([]);
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
   const [transactionTypeFilter, setTransactionTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
   // this list is included.
@@ -74,6 +76,7 @@ const WaterFilling = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [formCustomerId, setFormCustomerId] = useState('');
+  const [formEmployeeId, setFormEmployeeId] = useState('');
   const [formTransactionType, setFormTransactionType] = useState('');
   const [formDate, setFormDate] = useState('');
   const [formQuantity, setFormQuantity] = useState('1');
@@ -141,6 +144,7 @@ const WaterFilling = () => {
   // ── Fetch ────────────────────────────────────────
   useEffect(() => {
     const customersRef = ref(database, 'customers');
+    const employeesRef = ref(database, 'employees');
     const entriesRef = ref(database, 'waterFillingEntries');
 
     const unsubCustomers = onValue(customersRef, (snap) => {
@@ -161,6 +165,16 @@ const WaterFilling = () => {
       setCustomers(list);
     });
 
+    const unsubEmployees = onValue(employeesRef, (snap) => {
+      let list = [];
+      if (snap.exists()) {
+        const data = snap.val();
+        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '' }));
+        list.sort(sortByName);
+      }
+      setEmployees(list);
+    });
+
     const unsubEntries = onValue(entriesRef, (snap) => {
       if (!snap.exists()) { setEntries([]); setEntriesLoaded(true); return; }
       const data = snap.val();
@@ -169,7 +183,7 @@ const WaterFilling = () => {
       setEntriesLoaded(true);
     });
 
-    return () => { unsubCustomers(); unsubEntries(); };
+    return () => { unsubCustomers(); unsubEmployees(); unsubEntries(); };
   }, []);
 
   const selectedFormCustomer = customers.find((c) => c.id === formCustomerId) || null;
@@ -192,6 +206,21 @@ const WaterFilling = () => {
   // whichever currency their pricing was set up in.
   const formatPremium = (amount, currency) => (currency === 'USD' ? formatUSD(amount) : formatLBP(amount));
 
+  // Entries created before the Employee picker existed have `employee` set
+  // to whoever was logged in at the time — not an actual assigned employee.
+  // Only trust the field once its employeeId matches a real Employees-list
+  // id (i.e. it was set via the picker or a bulk assignment); otherwise
+  // treat it as unset so old entries show blank instead of a misleading name.
+  const entryEmployeeName = useCallback((entry) => {
+    const isAssigned = employees.some((emp) => emp.id === entry.employeeId);
+    return isAssigned ? (entry.employee || '') : '';
+  }, [employees]);
+
+  const employeeOptions = useMemo(
+    () => employees.map((e) => e.name).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [employees]
+  );
+
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
     let result = entries;
@@ -202,6 +231,10 @@ const WaterFilling = () => {
         (e.customerName || '').toLowerCase().includes(cf) ||
         (e.customerNameArabic || '').toLowerCase().includes(cf)
       );
+    }
+
+    if (employeeFilter) {
+      result = result.filter((e) => entryEmployeeName(e) === employeeFilter);
     }
 
     if (transactionTypeFilter !== 'All') {
@@ -225,7 +258,7 @@ const WaterFilling = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, entryEmployeeName, customerFilter, employeeFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // Drop any selected ids that were actually deleted from Firebase — pruning
   // against `entries` (not `filtered`), so a filter that merely hides a
@@ -285,6 +318,33 @@ const WaterFilling = () => {
     handleBulkPaymentStatus(status);
   };
 
+  // Lets an admin retroactively assign a real employee to older entries
+  // (created before the Employee picker existed) in one shot.
+  const [bulkEmployeeId, setBulkEmployeeId] = useState('');
+
+  const handleBulkAssignEmployee = async () => {
+    if (selectedIds.length === 0 || isBulkUpdating || !bulkEmployeeId) return;
+    const employee = employees.find((e) => e.id === bulkEmployeeId);
+    if (!employee) return;
+    setIsBulkUpdating(true);
+    try {
+      const updates = {};
+      selectedIds.forEach((id) => {
+        updates[`waterFillingEntries/${id}/employeeId`] = employee.id;
+        updates[`waterFillingEntries/${id}/employee`] = employee.name;
+      });
+      await update(ref(database), updates);
+      flash(`Assigned ${employee.name} to ${selectedIds.length} ${selectedIds.length === 1 ? 'entry' : 'entries'}.`);
+      setSelectedIds([]);
+      setBulkEmployeeId('');
+    } catch (err) {
+      console.error('Bulk employee assignment failed:', err);
+      flash(`Failed to assign employee: ${err?.message || err}`, 'error');
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
   const totals = useMemo(() => {
     const t = {
       count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0,
@@ -306,6 +366,7 @@ const WaterFilling = () => {
 
   const clearAllFilters = () => {
     setCustomerFilter('');
+    setEmployeeFilter('');
     setTransactionTypeFilter('All');
     setPaymentStatusFilters([]);
     setDateFromFilter('');
@@ -325,6 +386,7 @@ const WaterFilling = () => {
   const openAddModal = () => {
     setEditingEntryId(null);
     setFormCustomerId('');
+    setFormEmployeeId('');
     setFormTransactionType('');
     setFormDate(formatDateForInput(new Date().toISOString()));
     setFormQuantity('1');
@@ -339,6 +401,7 @@ const WaterFilling = () => {
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
     setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
+    setFormEmployeeId(entry.employeeId || employees.find((e) => e.name === entry.employee)?.id || '');
     setFormTransactionType(entry.transactionType || '');
     setFormDate(formatDateForInput(entry.date));
     setFormQuantity(String(toNumber(entry.quantity)));
@@ -397,6 +460,7 @@ const WaterFilling = () => {
 
   const canSave = Boolean(
     formCustomerId &&
+    formEmployeeId &&
     formTransactionType &&
     formDate &&
     toNumber(formQuantity) > 0 &&
@@ -408,6 +472,11 @@ const WaterFilling = () => {
     const selectedCustomer = customers.find((c) => c.id === formCustomerId);
     if (!selectedCustomer) {
       flash('Selected customer is no longer available.', 'error');
+      return;
+    }
+    const selectedEmployee = employees.find((e) => e.id === formEmployeeId);
+    if (!selectedEmployee) {
+      flash('Selected employee is no longer available.', 'error');
       return;
     }
 
@@ -426,6 +495,8 @@ const WaterFilling = () => {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name || '',
         customerNameArabic: selectedCustomer.nameArabic || '',
+        employeeId: selectedEmployee.id,
+        employee: selectedEmployee.name || '',
         transactionType: formTransactionType,
         date: convertDateInputToISO(formDate),
         quantity,
@@ -445,8 +516,8 @@ const WaterFilling = () => {
       } else {
         await update(push(ref(database, 'waterFillingEntries')), {
           ...payload,
-          employee: user?.name || user?.displayName || user?.email || 'Unknown',
-          employeeId: user?.uid || '',
+          loggedBy: user?.name || user?.displayName || user?.email || 'Unknown',
+          loggedByUid: user?.uid || '',
           createdAt: new Date().toISOString(),
         });
         flash('Entry saved.');
@@ -547,6 +618,14 @@ const WaterFilling = () => {
           </div>
 
           <div className="filter-group">
+            <label>Employee</label>
+            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
+              <option value="">All Employees</option>
+              {employeeOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-group">
             <label>Transaction Type</label>
             <select value={transactionTypeFilter} onChange={(e) => setTransactionTypeFilter(e.target.value)}>
               <option value="All">All Types</option>
@@ -594,11 +673,12 @@ const WaterFilling = () => {
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || transactionTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
+      {(customerFilter || employeeFilter || transactionTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
+            {employeeFilter && <span className="filter-tag">Employee: {employeeFilter}<button onClick={() => setEmployeeFilter('')}><IconX /></button></span>}
             {transactionTypeFilter !== 'All' && <span className="filter-tag">Type: {getTransactionTypeLabel(transactionTypeFilter)}<button onClick={() => setTransactionTypeFilter('All')}><IconX /></button></span>}
             {paymentStatusFilters.map((s) => (
               <span key={s} className="filter-tag">Status: {s}<button onClick={() => togglePaymentStatusFilter(s)}><IconX /></button></span>
@@ -661,6 +741,28 @@ const WaterFilling = () => {
               </button>
             </div>
           )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Assign employee to all {selectedIds.length} selected:</span>
+            <select
+              value={bulkEmployeeId}
+              onChange={(e) => setBulkEmployeeId(e.target.value)}
+              disabled={isBulkUpdating}
+              style={{ padding: '4px 8px', fontSize: 12 }}
+            >
+              <option value="">Select Employee</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+            </select>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={isBulkUpdating || !bulkEmployeeId}
+              onClick={handleBulkAssignEmployee}
+              style={{ padding: '4px 10px', fontSize: 12 }}
+            >
+              Apply
+            </button>
+          </div>
         </div>
       )}
 
@@ -680,6 +782,7 @@ const WaterFilling = () => {
                 </th>
                 <th>Date</th>
                 <th>Customer</th>
+                <th>Employee</th>
                 <th>Transaction Type</th>
                 <th className="text-right">Quantity</th>
                 <th>Premium</th>
@@ -700,6 +803,7 @@ const WaterFilling = () => {
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
                   <td>{e.customerName || 'N/A'}</td>
+                  <td>{entryEmployeeName(e) || '—'}</td>
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td>
@@ -755,6 +859,19 @@ const WaterFilling = () => {
                   {customers.length === 0 && (
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                       No customers have Water Filling checked yet. Add it from <strong>Customers</strong>.
+                    </p>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Employee</label>
+                  <select value={formEmployeeId} onChange={(e) => setFormEmployeeId(e.target.value)} className="form-select" disabled={isSaving}>
+                    <option value="">Select Employee</option>
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  {employees.length === 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                      No employees found. Add one from <strong>Employees</strong>.
                     </p>
                   )}
                 </div>

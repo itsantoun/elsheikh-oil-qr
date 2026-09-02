@@ -11,9 +11,9 @@ import Archives from './archives';
 import Settings from './settings';
 import Maghsal from './maghsal';
 import WaterFilling from './waterFilling';
+import WaterDistribution from './waterDistribution';
 import Dashboard from './dashboard';
 import ClientReports from './clientReports';
-import ComingSoon from './comingSoon';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
@@ -86,7 +86,7 @@ const Admin = () => {
       case 'settings':           return <Settings />;
       case 'maghsal':            return <Maghsal />;
       case 'waterFilling':       return <WaterFilling />;
-      case 'waterDistribution':  return <ComingSoon title="Water Distribution" description="Delivery and distribution tracking is on the way." />;
+      case 'waterDistribution':  return <WaterDistribution />;
       default:                   return <Dashboard onNavigate={setActiveSection} />;
     }
   };

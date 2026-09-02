@@ -6,7 +6,7 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
-import { formatUSD, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -27,8 +27,10 @@ const WaterDistribution = () => {
   const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [truckTypes, setTruckTypes] = useState([]);
+  const [customers, setCustomers] = useState([]);
 
   // Filters
+  const [customerFilter, setCustomerFilter] = useState('');
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [truckTypeFilter, setTruckTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
@@ -67,11 +69,17 @@ const WaterDistribution = () => {
   // Add/Edit modal
   const [showModal, setShowModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
+  const [formCustomerId, setFormCustomerId] = useState('');
   const [formEmployeeId, setFormEmployeeId] = useState('');
   const [formTruckType, setFormTruckType] = useState('');
+  // True once the user has manually picked a Truck Type (or an existing
+  // entry is being edited) — while true, selecting a customer/employee no
+  // longer auto-fills it, so it won't clobber a deliberate choice.
+  const [truckTypeTouched, setTruckTypeTouched] = useState(false);
   const [formDate, setFormDate] = useState('');
   const [formQuantity, setFormQuantity] = useState('1');
   const [formUnitPrice, setFormUnitPrice] = useState('');
+  const [formPriceCurrency, setFormPriceCurrency] = useState('USD');
   const [formTotalPrice, setFormTotalPrice] = useState('');
   // True once the user has hand-edited Total Price — while true, changing
   // quantity/unit price no longer overwrites their override.
@@ -81,6 +89,7 @@ const WaterDistribution = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirm, confirmDialog] = useConfirmDialog();
+  const exchangeRate = useExchangeRate();
 
   // ── Format helpers ──────────────────────────────
   const formatDate = (d) => {
@@ -132,9 +141,29 @@ const WaterDistribution = () => {
 
   // ── Fetch ────────────────────────────────────────
   useEffect(() => {
+    const customersRef = ref(database, 'customers');
     const employeesRef = ref(database, 'employees');
     const truckTypesRef = ref(database, 'settings/waterDistributionTruckTypes');
     const entriesRef = ref(database, 'waterDistributionEntries');
+
+    const unsubCustomers = onValue(customersRef, (snap) => {
+      let list = [];
+      if (snap.exists()) {
+        const data = snap.val();
+        list = Object.keys(data)
+          .filter((k) => (data[k].clientTypes || []).includes('water-distribution'))
+          .map((k) => ({
+            id: k,
+            name: data[k].name || '',
+            nameArabic: data[k].nameArabic || '',
+            phone: data[k].phone || '',
+            address: data[k].address || '',
+            waterDistributionPricing: data[k].waterDistributionPricing || null,
+          }));
+        list.sort(sortByName);
+      }
+      setCustomers(list);
+    });
 
     const unsubEmployees = onValue(employeesRef, (snap) => {
       let list = [];
@@ -165,7 +194,7 @@ const WaterDistribution = () => {
       setEntriesLoaded(true);
     });
 
-    return () => { unsubEmployees(); unsubTruckTypes(); unsubEntries(); };
+    return () => { unsubCustomers(); unsubEmployees(); unsubTruckTypes(); unsubEntries(); };
   }, []);
 
   // Total Price = Unit Price * Quantity, recalculated whenever unit price or
@@ -175,9 +204,24 @@ const WaterDistribution = () => {
     return price ? String(price * toNumber(quantity)) : '';
   };
 
+  // Shows the amount only in the currency it was actually entered in — no
+  // USD/LBP conversion, since a customer's Water Distribution price is fixed
+  // in whichever currency their pricing was set up in.
+  const formatPrice = (amount, currency) => (currency === 'LBP' ? formatLBP(amount) : formatUSD(amount));
+
+  const selectedFormCustomer = customers.find((c) => c.id === formCustomerId) || null;
+
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
     let result = entries;
+
+    if (customerFilter) {
+      const cf = customerFilter.toLowerCase();
+      result = result.filter((e) =>
+        (e.customerName || '').toLowerCase().includes(cf) ||
+        (e.customerNameArabic || '').toLowerCase().includes(cf)
+      );
+    }
 
     if (employeeFilter) {
       const ef = employeeFilter.toLowerCase();
@@ -205,7 +249,7 @@ const WaterDistribution = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, employeeFilter, truckTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, customerFilter, employeeFilter, truckTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // Drop any selected ids that were actually deleted from Firebase — pruning
   // against `entries` (not `filtered`), so a filter that merely hides a
@@ -248,7 +292,7 @@ const WaterDistribution = () => {
   };
 
   const totals = useMemo(() => {
-    const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0, totalPriceUSD: 0 };
+    const t = { count: 0, quantity: 0, paidCount: 0, unpaidCount: 0, holdCount: 0, freeCount: 0, totalPriceUSD: 0, totalPriceLBP: 0 };
     for (const e of filtered) {
       t.count += 1;
       t.quantity += toNumber(e.quantity);
@@ -257,12 +301,14 @@ const WaterDistribution = () => {
       else if (e.paymentStatus === 'Free') t.freeCount += 1;
       else t.unpaidCount += 1;
 
-      t.totalPriceUSD += toNumber(e.totalPrice);
+      if (e.priceCurrency === 'LBP') t.totalPriceLBP += toNumber(e.totalPrice);
+      else t.totalPriceUSD += toNumber(e.totalPrice);
     }
     return t;
   }, [filtered]);
 
   const clearAllFilters = () => {
+    setCustomerFilter('');
     setEmployeeFilter('');
     setTruckTypeFilter('All');
     setPaymentStatusFilters([]);
@@ -282,13 +328,16 @@ const WaterDistribution = () => {
   // ── Add / Edit modal ──────────────────────────────
   const openAddModal = () => {
     setEditingEntryId(null);
+    setFormCustomerId('');
     setFormEmployeeId('');
     setFormTruckType('');
     setFormDate(formatDateForInput(new Date().toISOString()));
     setFormQuantity('1');
     setFormUnitPrice('');
+    setFormPriceCurrency('USD');
     setFormTotalPrice('');
     setTotalPriceTouched(false);
+    setTruckTypeTouched(false);
     setFormPaymentStatus('Unpaid');
     setFormRemark('');
     setShowModal(true);
@@ -296,15 +345,20 @@ const WaterDistribution = () => {
 
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
+    setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
     setFormEmployeeId(entry.employeeId || employees.find((e) => e.name === entry.employeeName)?.id || '');
     setFormTruckType(entry.truckType || '');
     setFormDate(formatDateForInput(entry.date));
     setFormQuantity(String(toNumber(entry.quantity)));
     setFormUnitPrice(entry.unitPrice != null ? String(toNumber(entry.unitPrice)) : '');
+    setFormPriceCurrency(entry.priceCurrency || 'USD');
     // Preserve the saved Total Price as-is (treated as a manual value) so
     // reopening for edit doesn't silently recompute it.
     setFormTotalPrice(entry.totalPrice != null ? String(toNumber(entry.totalPrice)) : '');
     setTotalPriceTouched(true);
+    // Preserve the saved Truck Type as-is — picking the customer or employee
+    // again while editing shouldn't silently swap it out.
+    setTruckTypeTouched(true);
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
     setFormRemark(entry.remark || '');
     setShowModal(true);
@@ -312,14 +366,41 @@ const WaterDistribution = () => {
 
   const closeModal = () => { setShowModal(false); setEditingEntryId(null); };
 
+  // Selecting a customer auto-fills their Water Distribution price (and its
+  // currency) from customers.js, plus the truck type they were delivered
+  // with last time (if we have a prior entry for them and the user hasn't
+  // picked a truck type manually yet) — the user can still override both.
+  const handleCustomerChange = (customerId) => {
+    setFormCustomerId(customerId);
+    const customer = customers.find((c) => c.id === customerId);
+    const pricing = customer?.waterDistributionPricing || null;
+    const newUnitPrice = pricing ? String(toNumber(pricing.price)) : '';
+    setFormUnitPrice(newUnitPrice);
+    setFormPriceCurrency(pricing?.currency || 'USD');
+    setTotalPriceTouched(false);
+    setFormTotalPrice(recalcTotalPrice(newUnitPrice, formQuantity));
+
+    if (!truckTypeTouched) {
+      const lastEntry = entries.find((e) => e.customerId === customerId && e.truckType);
+      if (lastEntry) setFormTruckType(lastEntry.truckType);
+    }
+  };
+
   // Selecting an employee auto-fills their assigned truck type (if any) as a
-  // starting default — the user can still change it manually afterward.
+  // starting default, unless a truck type has already been picked (manually,
+  // or from the customer's last delivery) — the user can still change it.
   const handleEmployeeChange = (employeeId) => {
     setFormEmployeeId(employeeId);
+    if (truckTypeTouched) return;
     const employee = employees.find((e) => e.id === employeeId);
     if (employee?.assignedTruckType) {
       setFormTruckType(employee.assignedTruckType);
     }
+  };
+
+  const handleTruckTypeChange = (value) => {
+    setFormTruckType(value);
+    setTruckTypeTouched(true);
   };
 
   const handleUnitPriceChange = (value) => {
@@ -342,6 +423,7 @@ const WaterDistribution = () => {
   };
 
   const canSave = Boolean(
+    formCustomerId &&
     formEmployeeId &&
     formTruckType &&
     formDate &&
@@ -351,6 +433,11 @@ const WaterDistribution = () => {
 
   const handleSave = async () => {
     if (!canSave) return;
+    const selectedCustomer = customers.find((c) => c.id === formCustomerId);
+    if (!selectedCustomer) {
+      flash('Selected customer is no longer available.', 'error');
+      return;
+    }
     const selectedEmployee = employees.find((e) => e.id === formEmployeeId);
     if (!selectedEmployee) {
       flash('Selected employee is no longer available.', 'error');
@@ -367,12 +454,16 @@ const WaterDistribution = () => {
       const totalPrice = formTotalPrice !== '' ? toNumber(formTotalPrice) : unitPrice * quantity;
 
       const payload = {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name || '',
+        customerNameArabic: selectedCustomer.nameArabic || '',
         employeeId: selectedEmployee.id,
         employeeName: selectedEmployee.name || '',
         truckType: formTruckType,
         date: convertDateInputToISO(formDate),
         quantity,
         unitPrice,
+        priceCurrency: formPriceCurrency,
         totalPrice,
         paymentStatus: formPaymentStatus,
         remark: formRemark.trim(),
@@ -420,7 +511,7 @@ const WaterDistribution = () => {
     <div className="page-shell">
       <PageHeader
         title="Water Distribution"
-        subtitle="Track water distribution entries per employee."
+        subtitle="Track water distribution entries per customer."
         actions={(
           <>
             <button className="btn-secondary" onClick={handleRefresh} disabled={isRefreshing}>
@@ -451,6 +542,10 @@ const WaterDistribution = () => {
             <div className="kpi-card-label">Total Account (USD)</div>
             <div className="kpi-card-value">{formatUSD(totals.totalPriceUSD)}</div>
           </div>
+          <div className="kpi-card">
+            <div className="kpi-card-label">Total Account (LL)</div>
+            <div className="kpi-card-value">{formatLBP(totals.totalPriceLBP)}</div>
+          </div>
           <div className="kpi-card tone-green">
             <div className="kpi-card-label">Paid</div>
             <div className="kpi-card-value">{totals.paidCount}</div>
@@ -473,6 +568,14 @@ const WaterDistribution = () => {
       {/* Filters */}
       <div className="filters-section">
         <div className="filters-grid">
+          <div className="filter-group">
+            <label>Customer</label>
+            <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)}>
+              <option value="">All Customers</option>
+              {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+
           <div className="filter-group">
             <label>Employee</label>
             <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
@@ -517,16 +620,23 @@ const WaterDistribution = () => {
           </div>
         </div>
 
-        <div className="filter-actions">
-          <button className="btn-secondary" onClick={clearAllFilters}>Clear Filters</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div className="filter-actions">
+            <button className="btn-secondary" onClick={clearAllFilters}>Clear Filters</button>
+          </div>
+          <div className="exchange-rate-banner">
+            <span className="exchange-rate-banner-label">Exchange Rate</span>
+            <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} L.L</span>
+          </div>
         </div>
       </div>
 
       {/* Active filter tags */}
-      {(employeeFilter || truckTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
+      {(customerFilter || employeeFilter || truckTypeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
+            {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
             {employeeFilter && <span className="filter-tag">Employee: {employeeFilter}<button onClick={() => setEmployeeFilter('')}><IconX /></button></span>}
             {truckTypeFilter !== 'All' && <span className="filter-tag">Truck: {truckTypeFilter}<button onClick={() => setTruckTypeFilter('All')}><IconX /></button></span>}
             {paymentStatusFilters.map((s) => (
@@ -576,6 +686,7 @@ const WaterDistribution = () => {
                   <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
                 </th>
                 <th>Date</th>
+                <th>Customer</th>
                 <th>Employee</th>
                 <th>Truck Type</th>
                 <th className="text-right">Quantity</th>
@@ -595,11 +706,12 @@ const WaterDistribution = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
+                  <td>{e.customerName || 'N/A'}</td>
                   <td>{e.employeeName || 'N/A'}</td>
                   <td>{e.truckType || 'N/A'}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
-                  <td>{formatUSD(toNumber(e.unitPrice))}</td>
-                  <td>{formatUSD(toNumber(e.totalPrice))}</td>
+                  <td>{formatPrice(toNumber(e.unitPrice), e.priceCurrency)}</td>
+                  <td>{formatPrice(toNumber(e.totalPrice), e.priceCurrency)}</td>
                   <td>
                     <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
                   </td>
@@ -629,8 +741,23 @@ const WaterDistribution = () => {
               <h3 className="modal-title">{editingEntryId ? 'Edit Entry' : 'Add Water Distribution Entry'}</h3>
               <button className="modal-close" onClick={closeModal}><IconX /></button>
             </div>
-            <div className="modal-content">
-              <div className="missing-item-form-grid">
+            <div className="modal-content" style={{ padding: 18, gap: 10 }}>
+              <div className="exchange-rate-banner">
+                <span className="exchange-rate-banner-label">Exchange Rate</span>
+                <span className="exchange-rate-banner-value">1 USD = {exchangeRate.toLocaleString('en-US')} L.L</span>
+              </div>
+              <div className="missing-item-form-grid" style={{ marginTop: 0 }}>
+                <div className="form-group">
+                  <label className="form-label">Customer</label>
+                  <select value={formCustomerId} onChange={(e) => handleCustomerChange(e.target.value)} className="form-select" disabled={isSaving}>
+                    <option value="">Select Customer</option>
+                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  {customers.length === 0 && (
+                    <p className="form-hint">No customers have Water Distribution checked yet. Add it from <strong>Customers</strong>.</p>
+                  )}
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Employee</label>
                   <select value={formEmployeeId} onChange={(e) => handleEmployeeChange(e.target.value)} className="form-select" disabled={isSaving}>
@@ -638,22 +765,18 @@ const WaterDistribution = () => {
                     {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                   {employees.length === 0 && (
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                      No employees found. Add one from <strong>Employees</strong>.
-                    </p>
+                    <p className="form-hint">No employees found. Add one from <strong>Employees</strong>.</p>
                   )}
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Truck Type</label>
-                  <select value={formTruckType} onChange={(e) => setFormTruckType(e.target.value)} className="form-select" disabled={isSaving}>
+                  <select value={formTruckType} onChange={(e) => handleTruckTypeChange(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="">Select Type</option>
                     {truckTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                   {truckTypes.length === 0 && (
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                      No truck types configured yet. Add them from <strong>Settings</strong>.
-                    </p>
+                    <p className="form-hint">No truck types configured yet. Add them from <strong>Settings</strong>.</p>
                   )}
                 </div>
 
@@ -668,19 +791,33 @@ const WaterDistribution = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Unit Price (USD)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={formatNumberInput(formUnitPrice)}
-                    onChange={(e) => handleUnitPriceChange(stripCommas(e.target.value))}
-                    className="form-input"
-                    disabled={isSaving}
-                  />
+                  <label className="form-label">Unit Price ({formPriceCurrency})</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={formatNumberInput(formUnitPrice)}
+                      onChange={(e) => handleUnitPriceChange(stripCommas(e.target.value))}
+                      className="form-input"
+                      disabled={isSaving}
+                    />
+                    {['USD', 'LBP'].map((currency) => (
+                      <button
+                        key={currency}
+                        type="button"
+                        className={formPriceCurrency === currency ? 'btn-primary' : 'btn-secondary'}
+                        onClick={() => setFormPriceCurrency(currency)}
+                        disabled={isSaving}
+                        style={{ padding: '4px 10px', fontSize: 12 }}
+                      >
+                        {currency}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Total Price (USD)</label>
+                  <label className="form-label">Total Price ({formPriceCurrency})</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -702,15 +839,20 @@ const WaterDistribution = () => {
                 </div>
               </div>
 
-              {totalPriceTouched && formTotalPrice !== '' && (
-                <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-                  <span style={{ color: 'var(--brand)' }}>
-                    Total Price: {formatUSD(toNumber(formTotalPrice))} (manually overridden)
-                  </span>
-                </div>
+              {(formCustomerId || (totalPriceTouched && formTotalPrice !== '')) && (
+                <p className="form-hint" style={{ margin: 0 }}>
+                  {selectedFormCustomer?.waterDistributionPricing?.price != null
+                    ? `Customer price on file: ${formatPrice(toNumber(selectedFormCustomer.waterDistributionPricing.price), selectedFormCustomer.waterDistributionPricing.currency)}`
+                    : formCustomerId && <>No pricing set for this customer — set it from <strong>Customers</strong>, or enter it manually.</>}
+                  {totalPriceTouched && formTotalPrice !== '' && (
+                    <span style={{ color: 'var(--brand)' }}>
+                      {formCustomerId ? ' · ' : ''}Total Price manually overridden: {formatPrice(toNumber(formTotalPrice), formPriceCurrency)}
+                    </span>
+                  )}
+                </p>
               )}
 
-              <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
+              <div className="form-group">
                 <label className="form-label">Notes / Remark</label>
                 <textarea value={formRemark} onChange={(e) => setFormRemark(e.target.value)} className="form-textarea" rows="2" disabled={isSaving} />
               </div>

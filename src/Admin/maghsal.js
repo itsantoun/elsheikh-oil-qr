@@ -888,6 +888,7 @@ const Maghsal = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
+              <option value="Hold">Hold</option>
               <option value="Free">Free</option>
             </select>
           </div>
@@ -951,7 +952,7 @@ const Maghsal = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <strong>{selectedIds.length} selected</strong>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
-            {['Paid', 'Unpaid', 'Free'].map((s) => (
+            {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
               <button
                 key={s}
                 type="button"
@@ -1147,6 +1148,7 @@ const Maghsal = () => {
                   <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
+                    <option value="Hold">Hold</option>
                     <option value="Free">Free</option>
                     <option value="Used">Used</option>
                     {!editingEntryId && <option value="Stock">Stock</option>}

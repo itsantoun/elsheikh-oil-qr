@@ -87,7 +87,65 @@ const OilSoldItems = () => {
     const saved = localStorage.getItem('checkedSoldItems');
     return saved ? JSON.parse(saved) : [];
   });
-  
+
+  // Bulk payment-status selection — distinct from the reconciliation
+  // "Check" column above. Persisted so a page refresh doesn't silently drop
+  // what was checked (same pattern as Water Filling/Maghsal).
+  const [selectedIds, setSelectedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('soldItemsSelectedIds');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [soldItemsLoaded, setSoldItemsLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('soldItemsSelectedIds', JSON.stringify(selectedIds));
+    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
+  }, [selectedIds]);
+
+  // Drop any selected ids that were actually deleted from Firebase. Skipped
+  // until items have loaded at least once, so a page refresh doesn't wipe a
+  // restored (localStorage) selection against a still-empty list.
+  useEffect(() => {
+    if (!soldItemsLoaded) return;
+    setSelectedIds((prev) => prev.filter((id) => soldItems.some((i) => i.id === id)));
+  }, [soldItems, soldItemsLoaded]);
+
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((i) => selectedIds.includes(i.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(allFilteredSelected ? [] : filteredItems.map((i) => i.id));
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  const handleBulkPaymentStatus = async (status) => {
+    if (selectedIds.length === 0 || isBulkUpdating) return;
+    setIsBulkUpdating(true);
+    try {
+      const updates = {};
+      selectedIds.forEach((id) => {
+        updates[`SoldItems/${id}/paymentStatus`] = status;
+      });
+      await update(ref(database), updates);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error('Bulk payment status update failed:', err);
+      setErrorMessage(`Failed to update items: ${err?.message || err}`);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
+
   const [showMissingItemsModal, setShowMissingItemsModal] = useState(false);
   // The product dropdown picks a logical product (group); when that product
   // has more than one price-batch, missingItemBatchId lets the user override
@@ -322,6 +380,7 @@ const OilSoldItems = () => {
         setSoldItems([]);
         setFilteredItems([]);
       }
+      setSoldItemsLoaded(true);
     });
 
     const unsubscribeProducts = onValue(productsRef, (snapshot) => {
@@ -1173,6 +1232,7 @@ const OilSoldItems = () => {
               <option value="All">All Status</option>
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid</option>
+              <option value="Hold">Hold</option>
               <option value="Free">Free</option>
               <option value="Stock">Stock</option>
             </select>
@@ -1297,6 +1357,29 @@ const OilSoldItems = () => {
         </div>
       )}
 
+      {/* Bulk actions */}
+      {selectedIds.length > 0 && (
+        <div className="filters-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong>{selectedIds.length} selected</strong>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
+            {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="btn-secondary"
+                disabled={isBulkUpdating}
+                onClick={() => handleBulkPaymentStatus(s)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="table-container" style={{ overflowX: 'auto' }}>
         {filteredItems.length === 0 ? (
@@ -1310,6 +1393,9 @@ const OilSoldItems = () => {
           <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
             <thead>
               <tr>
+                <th style={{ width: 32 }}>
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
+                </th>
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Product</th>
@@ -1331,6 +1417,9 @@ const OilSoldItems = () => {
                 const rowMetrics = getItemProfitMetrics(item);
                 return (
                 <tr key={item.id} className={checkedItems.includes(item.id) ? 'checked-row' : ''}>
+                  <td>
+                    <input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelected(item.id)} />
+                  </td>
                   <td className="date-cell">
                     <span className="date-display">{formatDate(item.dateScanned)}</span>
                   </td>
@@ -1447,6 +1536,7 @@ const OilSoldItems = () => {
                   <select value={newPaymentStatus} onChange={(e) => setNewPaymentStatus(e.target.value)} className="form-select">
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
+                    <option value="Hold">Hold</option>
                     <option value="Free">Free</option>
                     <option value="Stock">Stock</option>
                   </select>
@@ -1584,6 +1674,7 @@ const OilSoldItems = () => {
                         >
                           <option value="Paid">Paid</option>
                           <option value="Unpaid">Unpaid</option>
+                          <option value="Hold">Hold</option>
                           <option value="Free">Free</option>
                           <option value="Stock">Stock</option>
                         </select>

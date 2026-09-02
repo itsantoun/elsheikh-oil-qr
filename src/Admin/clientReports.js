@@ -57,8 +57,8 @@ const normalizeScope = (scope, productType = '') => {
 };
 
 const SCOPE_TITLES = { oil: 'Oil', filter: 'Filter', maghsal: 'Maghsal' };
-// Section display order — Oil first, then Filter, then Maghsal, then Water Filling, then anything else.
-const SECTION_RANK = { Oil: 0, Filter: 1, Maghsal: 2, 'Water Filling': 3 };
+// Section display order — Oil first, then Filter, then Maghsal, then Water Filling/Distribution, then anything else.
+const SECTION_RANK = { Oil: 0, Filter: 1, Maghsal: 2, 'Water Filling': 3, 'Water Distribution': 4 };
 const sectionRank = (title) => (title in SECTION_RANK ? SECTION_RANK[title] : 99);
 
 const WATER_FILLING_LABELS = { normal: 'Water Filling', small: 'Water Filling (Small)' };
@@ -112,6 +112,7 @@ const ClientReports = () => {
 
   const [maghsalEntries, setMaghsalEntries] = useState([]);
   const [waterFillingEntries, setWaterFillingEntries] = useState([]);
+  const [waterDistributionEntries, setWaterDistributionEntries] = useState([]);
   const [soldItems, setSoldItems] = useState([]);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -142,6 +143,7 @@ const ClientReports = () => {
     const customersRef = ref(database, 'customers');
     const maghsalRef = ref(database, 'maghsalEntries');
     const waterFillingRef = ref(database, 'waterFillingEntries');
+    const waterDistributionRef = ref(database, 'waterDistributionEntries');
     const soldRef = ref(database, 'SoldItems');
     const productsRef = ref(database, 'products');
 
@@ -163,6 +165,11 @@ const ClientReports = () => {
     const unsubW = onValue(waterFillingRef, (snap) => {
       const data = snap.exists() ? snap.val() : {};
       setWaterFillingEntries(Object.keys(data).map((k) => ({ id: k, ...data[k] })));
+    });
+
+    const unsubWD = onValue(waterDistributionRef, (snap) => {
+      const data = snap.exists() ? snap.val() : {};
+      setWaterDistributionEntries(Object.keys(data).map((k) => ({ id: k, ...data[k] })));
     });
 
     const unsubP = onValue(productsRef, (snap) => {
@@ -189,7 +196,7 @@ const ClientReports = () => {
       });
     });
 
-    return () => { unsubC(); unsubM(); unsubW(); unsubP(); unsubS(); };
+    return () => { unsubC(); unsubM(); unsubW(); unsubWD(); unsubP(); unsubS(); };
   }, []);
 
   const applyHistorySnapshot = (snap) => {
@@ -257,7 +264,7 @@ const ClientReports = () => {
   // "Spartan 650ml") — the statement below still shows their real names as
   // section headers, this is only about keeping the filter list clean.
   const availableTypes = useMemo(() => {
-    const set = new Set(['Oil', 'Filter', 'Maghsal', 'Water Filling']);
+    const set = new Set(['Oil', 'Filter', 'Maghsal', 'Water Filling', 'Water Distribution']);
     const hasOther = products.some((p) => normalizeScope(p.scope, p.productType) === 'other');
     if (hasOther) set.add('Other');
     return [...set].sort((a, b) => sectionRank(a) - sectionRank(b) || a.localeCompare(b));
@@ -275,7 +282,7 @@ const ClientReports = () => {
 
   // "Other" in the Type filter should match any of those individually-named
   // sections, not the literal string "Other".
-  const KNOWN_SECTIONS = ['Oil', 'Filter', 'Maghsal', 'Water Filling'];
+  const KNOWN_SECTIONS = ['Oil', 'Filter', 'Maghsal', 'Water Filling', 'Water Distribution'];
   const matchesTypeFilter = (section) => {
     if (typeFilter === 'All') return true;
     if (typeFilter === 'Other') return !KNOWN_SECTIONS.includes(section);
@@ -289,14 +296,15 @@ const ClientReports = () => {
     const set = new Set(['Paid', 'Unpaid', 'Hold', 'Free']);
     maghsalEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
     waterFillingEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
+    waterDistributionEntries.forEach((e) => set.add(e.paymentStatus || 'N/A'));
     soldItems.forEach((it) => set.add(it.paymentStatus || 'N/A'));
     set.delete('Used');
     return [...set].sort();
-  }, [maghsalEntries, waterFillingEntries, soldItems]);
+  }, [maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems]);
 
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
   const statement = useMemo(() => {
-    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0 };
+    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
 
     const records = [];
 
@@ -339,6 +347,27 @@ const ClientReports = () => {
       });
     });
 
+    waterDistributionEntries.forEach((e) => {
+      if (typeFilter !== 'All' && typeFilter !== 'Water Distribution') return;
+      if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
+      if (!inRange(e.date)) return;
+      if (!matchesStatusFilter(e.paymentStatus)) return;
+      // Statement totals are USD-denominated — convert LBP prices so they
+      // aggregate correctly alongside Oil/Filter/Maghsal/Water Filling totals.
+      const totalUSD = e.priceCurrency === 'LBP'
+        ? convertPrice(toNumber(e.totalPrice), 'LBP', exchangeRate)
+        : toNumber(e.totalPrice);
+      records.push({
+        key: `wd-${e.id}`,
+        date: e.date,
+        section: 'Water Distribution',
+        item: e.truckType || 'Water Distribution',
+        quantity: toNumber(e.quantity),
+        total: totalUSD,
+        status: e.paymentStatus || 'N/A',
+      });
+    });
+
     soldItems.forEach((it) => {
       if (!matchesSelectedCustomer(it.customerName, it.customerName)) return;
       if (!inRange(it.dateScanned)) return;
@@ -371,15 +400,16 @@ const ClientReports = () => {
     // Sections: Oil, Filter, Maghsal, then the rest alphabetically.
     sections.sort((a, b) => sectionRank(a.section) - sectionRank(b.section) || a.section.localeCompare(b.section));
 
-    let paid = 0, unpaid = 0, grandTotal = 0;
+    let paid = 0, unpaid = 0, grandTotal = 0, totalQuantity = 0;
     records.forEach((r) => {
       grandTotal += r.total;
+      totalQuantity += toNumber(r.quantity);
       if (r.status === 'Paid') paid += r.total;
       else if (r.status === 'Unpaid') unpaid += r.total;
     });
 
-    return { sections, paid, unpaid, grandTotal };
-  }, [selectedCustomer, maghsalEntries, waterFillingEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { sections, paid, unpaid, grandTotal, totalQuantity };
+  }, [selectedCustomer, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -424,6 +454,7 @@ const ClientReports = () => {
       paid: statement.paid,
       unpaid: statement.unpaid,
       grandTotal: statement.grandTotal,
+      totalQuantity: statement.totalQuantity,
     });
   };
 
@@ -472,7 +503,7 @@ const ClientReports = () => {
 
   // ── PDF export (A5 landscape — shared receipt theme), grouped into sections ────
   // Shared builder — used for both the live statement and a saved history snapshot.
-  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, recordCount: count, customerName, rangeLabel: range, filename }) => {
+  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, totalQuantity = 0, recordCount: count, customerName, rangeLabel: range, filename }) => {
     const doc = createReceiptDoc(jsPDF);
     const density = getReceiptDensity(count + sections.length);
     const startY = await addReceiptHeader(doc, {
@@ -506,6 +537,17 @@ const ClientReports = () => {
       ]);
     });
 
+    // Grand Total row — keeps the quantity total directly under the
+    // Quantity column, right next to the dollar grand total.
+    const grandTotalIndex = body.length;
+    body.push([
+      { content: 'Grand Total', colSpan: 2, styles: { halign: 'right' } },
+      { content: String(totalQuantity), styles: { halign: 'right' } },
+      '',
+      '',
+      { content: money(grandTotal), styles: { halign: 'right' } },
+    ]);
+
     autoTable(doc, {
       ...receiptTableOptions({
         head: ['Date', 'Item', 'Quantity', 'Price per unit', 'Status', 'Total'],
@@ -523,7 +565,11 @@ const ClientReports = () => {
         5: { halign: 'right', cellWidth: 34 },
       },
       didParseCell: (data) => {
-        if (data.section === 'body' && (groupHeaderIndexes.has(data.row.index) || groupTotalIndexes.has(data.row.index))) {
+        if (data.section === 'body' && data.row.index === grandTotalIndex) {
+          data.cell.styles.fillColor = GROUP_FILL;
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = density.fontSize;
+        } else if (data.section === 'body' && (groupHeaderIndexes.has(data.row.index) || groupTotalIndexes.has(data.row.index))) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
           if (data.column.index === 5) data.cell.styles.halign = 'right';
@@ -557,12 +603,21 @@ const ClientReports = () => {
       paid: statement.paid,
       unpaid: statement.unpaid,
       grandTotal: statement.grandTotal,
+      totalQuantity: statement.totalQuantity,
       recordCount,
       customerName: selectedCustomer.name,
       rangeLabel: rangeLabel(),
       filename: `${fileLabel()}.pdf`,
     });
   };
+
+  // Older saved reports (from before the Total Quantity field existed) won't
+  // have it stored — fall back to summing their line items.
+  const entryTotalQuantity = (entry) => (
+    entry.totalQuantity != null
+      ? entry.totalQuantity
+      : entry.sections.reduce((acc, g) => acc + g.rows.reduce((a, r) => a + toNumber(r.quantity), 0), 0)
+  );
 
   const exportHistoryPDF = async (entry) => {
     if (!entry) return;
@@ -572,6 +627,7 @@ const ClientReports = () => {
       paid: entry.paid,
       unpaid: entry.unpaid,
       grandTotal: entry.grandTotal,
+      totalQuantity: entryTotalQuantity(entry),
       recordCount: entry.recordCount,
       customerName: entry.customerName,
       rangeLabel: entry.rangeLabel,
@@ -593,7 +649,7 @@ const ClientReports = () => {
     });
     rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
     rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
-    rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
+    rows.push(['Grand Total', '', '', statement.totalQuantity, '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
       [headers, ...rows]
@@ -757,6 +813,13 @@ const ClientReports = () => {
                       </tr>
                     </React.Fragment>
                   ))}
+                  <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
+                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Grand Total</td>
+                    <td className="text-right" style={{ fontWeight: 800 }}>{statement.totalQuantity}</td>
+                    <td></td>
+                    <td></td>
+                    <td className="text-right" style={{ fontWeight: 800 }}>${formatCurrency(statement.grandTotal)}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -864,6 +927,13 @@ const ClientReports = () => {
                         </tr>
                       </React.Fragment>
                     ))}
+                    <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
+                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Grand Total</td>
+                      <td className="text-right" style={{ fontWeight: 800 }}>{entryTotalQuantity(viewedEntry)}</td>
+                      <td></td>
+                      <td></td>
+                      <td className="text-right" style={{ fontWeight: 800 }}>${formatCurrency(viewedEntry.grandTotal)}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -891,7 +961,7 @@ const ClientReports = () => {
               <p>
                 Client: <strong>{pendingSnapshot.customerName}</strong><br />
                 Type: {pendingSnapshot.typeFilter} · Range: {pendingSnapshot.rangeLabel}<br />
-                {pendingSnapshot.recordCount} record(s) · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
+                {pendingSnapshot.recordCount} record(s) · Total Quantity: {pendingSnapshot.totalQuantity} · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
               </p>
               <p>Confirming will save a snapshot to Report History so you can find it again later without regenerating it.</p>
             </div>

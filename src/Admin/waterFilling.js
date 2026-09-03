@@ -7,6 +7,7 @@ import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icon
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { getEmployeeDisplayName } from './employees';
 
 const TRANSACTION_TYPES = [
   { value: 'normal', label: 'Water Filling' },
@@ -169,8 +170,8 @@ const WaterFilling = () => {
       let list = [];
       if (snap.exists()) {
         const data = snap.val();
-        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '' }));
-        list.sort(sortByName);
+        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '', nickname: data[k].nickname || '' }));
+        list.sort((a, b) => getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b)));
       }
       setEmployees(list);
     });
@@ -211,13 +212,17 @@ const WaterFilling = () => {
   // Only trust the field once its employeeId matches a real Employees-list
   // id (i.e. it was set via the picker or a bulk assignment); otherwise
   // treat it as unset so old entries show blank instead of a misleading name.
+  // Resolved live against the current Employees list (rather than the raw
+  // string saved on the entry) so this always reflects their current
+  // nickname — falls back to blank if the entry predates the Employee
+  // picker or that employee was since removed.
   const entryEmployeeName = useCallback((entry) => {
-    const isAssigned = employees.some((emp) => emp.id === entry.employeeId);
-    return isAssigned ? (entry.employee || '') : '';
+    const assigned = employees.find((emp) => emp.id === entry.employeeId);
+    return assigned ? getEmployeeDisplayName(assigned) : '';
   }, [employees]);
 
   const employeeOptions = useMemo(
-    () => employees.map((e) => e.name).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    () => employees.map((e) => getEmployeeDisplayName(e)).filter(Boolean).sort((a, b) => a.localeCompare(b)),
     [employees]
   );
 
@@ -461,14 +466,10 @@ const WaterFilling = () => {
     setTotalPremiumTouched(true);
   };
 
-  // Employee is only required when adding a new entry — an existing entry
-  // saved before Employee existed as a field can still be edited (e.g. to
-  // fix quantity/price) without being forced to backfill it first.
-  const employeeRequired = !editingEntryId;
-
+  // Employee is always optional — adding or editing an entry never requires
+  // picking one.
   const canSave = Boolean(
     formCustomerId &&
-    (formEmployeeId || !employeeRequired) &&
     formTransactionType &&
     formDate &&
     toNumber(formQuantity) > 0 &&
@@ -476,11 +477,9 @@ const WaterFilling = () => {
   );
 
   // Surfaced near the Save button so a disabled Update isn't silently
-  // confusing — this matters most when editing an entry saved before
-  // Employee/Customer existed as fields, which leaves them unset.
+  // confusing.
   const missingFieldMessages = [
     !formCustomerId && 'Select a Customer',
-    !formEmployeeId && employeeRequired && 'Select an Employee',
     !formTransactionType && 'Select a Transaction Type',
     !formDate && 'Select a Date',
     toNumber(formQuantity) <= 0 && 'Enter a Quantity greater than 0',
@@ -493,8 +492,7 @@ const WaterFilling = () => {
       flash('Selected customer is no longer available.', 'error');
       return;
     }
-    // Employee may be intentionally left unset when editing an old entry —
-    // only validate it if the user actually picked one (or it's required).
+    // Employee is optional — only validate it if the user actually picked one.
     let selectedEmployee = null;
     if (formEmployeeId) {
       selectedEmployee = employees.find((e) => e.id === formEmployeeId);
@@ -502,9 +500,6 @@ const WaterFilling = () => {
         flash('Selected employee is no longer available.', 'error');
         return;
       }
-    } else if (employeeRequired) {
-      flash('Select an employee.', 'error');
-      return;
     }
 
     setIsSaving(true);
@@ -780,7 +775,7 @@ const WaterFilling = () => {
               style={{ padding: '4px 8px', fontSize: 12 }}
             >
               <option value="">Select Employee</option>
-              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{getEmployeeDisplayName(emp)}</option>)}
             </select>
             <button
               type="button"
@@ -910,7 +905,7 @@ const WaterFilling = () => {
                   <label className="form-label">Employee</label>
                   <select value={formEmployeeId} onChange={(e) => setFormEmployeeId(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="">Select Employee</option>
-                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {employees.map((e) => <option key={e.id} value={e.id}>{getEmployeeDisplayName(e)}</option>)}
                   </select>
                   {employees.length === 0 && (
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>

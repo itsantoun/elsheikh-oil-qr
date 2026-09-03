@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
@@ -7,6 +7,7 @@ import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icon
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { getEmployeeDisplayName } from './employees';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -169,8 +170,8 @@ const WaterDistribution = () => {
       let list = [];
       if (snap.exists()) {
         const data = snap.val();
-        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '', assignedTruckType: data[k].assignedTruckType || '' }));
-        list.sort(sortByName);
+        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '', nickname: data[k].nickname || '', assignedTruckType: data[k].assignedTruckType || '' }));
+        list.sort((a, b) => getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b)));
       }
       setEmployees(list);
     });
@@ -211,6 +212,20 @@ const WaterDistribution = () => {
 
   const selectedFormCustomer = customers.find((c) => c.id === formCustomerId) || null;
 
+  // Resolved live against the current Employees list (rather than the raw
+  // string saved on the entry) so this always reflects their current
+  // nickname — falls back to blank if the entry has no employee or that
+  // employee was since removed.
+  const entryEmployeeName = useCallback((entry) => {
+    const assigned = employees.find((emp) => emp.id === entry.employeeId);
+    return assigned ? getEmployeeDisplayName(assigned) : '';
+  }, [employees]);
+
+  const employeeOptions = useMemo(
+    () => employees.map((e) => getEmployeeDisplayName(e)).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [employees]
+  );
+
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
     let result = entries;
@@ -224,8 +239,7 @@ const WaterDistribution = () => {
     }
 
     if (employeeFilter) {
-      const ef = employeeFilter.toLowerCase();
-      result = result.filter((e) => (e.employeeName || '').toLowerCase().includes(ef));
+      result = result.filter((e) => entryEmployeeName(e) === employeeFilter);
     }
 
     if (truckTypeFilter !== 'All') {
@@ -249,7 +263,7 @@ const WaterDistribution = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, employeeFilter, truckTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, entryEmployeeName, customerFilter, employeeFilter, truckTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // Drop any selected ids that were actually deleted from Firebase — pruning
   // against `entries` (not `filtered`), so a filter that merely hides a
@@ -430,9 +444,10 @@ const WaterDistribution = () => {
   // fix quantity/price) without being forced to backfill it first.
   const customerRequired = !editingEntryId;
 
+  // Employee is always optional — adding or editing an entry never requires
+  // picking one.
   const canSave = Boolean(
     (formCustomerId || !customerRequired) &&
-    formEmployeeId &&
     formTruckType &&
     formDate &&
     toNumber(formQuantity) > 0 &&
@@ -444,7 +459,6 @@ const WaterDistribution = () => {
   // Customer existed as a field, which leaves it unset.
   const missingFieldMessages = [
     !formCustomerId && customerRequired && 'Select a Customer',
-    !formEmployeeId && 'Select an Employee',
     !formTruckType && 'Select a Truck Type',
     !formDate && 'Select a Date',
     toNumber(formQuantity) <= 0 && 'Enter a Quantity greater than 0',
@@ -465,10 +479,14 @@ const WaterDistribution = () => {
       flash('Select a customer.', 'error');
       return;
     }
-    const selectedEmployee = employees.find((e) => e.id === formEmployeeId);
-    if (!selectedEmployee) {
-      flash('Selected employee is no longer available.', 'error');
-      return;
+    // Employee is optional — only validate it if the user actually picked one.
+    let selectedEmployee = null;
+    if (formEmployeeId) {
+      selectedEmployee = employees.find((e) => e.id === formEmployeeId);
+      if (!selectedEmployee) {
+        flash('Selected employee is no longer available.', 'error');
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -489,8 +507,10 @@ const WaterDistribution = () => {
           customerName: selectedCustomer.name || '',
           customerNameArabic: selectedCustomer.nameArabic || '',
         } : {}),
-        employeeId: selectedEmployee.id,
-        employeeName: selectedEmployee.name || '',
+        // Omitted (not cleared) when left unset — Firebase's update() only
+        // touches keys present here, so this preserves whatever the entry
+        // already had for employee.
+        ...(selectedEmployee ? { employeeId: selectedEmployee.id, employeeName: selectedEmployee.name || '' } : {}),
         truckType: formTruckType,
         date: convertDateInputToISO(formDate),
         quantity,
@@ -612,7 +632,7 @@ const WaterDistribution = () => {
             <label>Employee</label>
             <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
               <option value="">All Employees</option>
-              {employees.map((e) => <option key={e.id} value={e.name}>{e.name}</option>)}
+              {employeeOptions.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           </div>
 
@@ -739,7 +759,7 @@ const WaterDistribution = () => {
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
                   <td>{e.customerName || 'N/A'}</td>
-                  <td>{e.employeeName || 'N/A'}</td>
+                  <td>{entryEmployeeName(e) || '—'}</td>
                   <td>{e.truckType || 'N/A'}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td>{formatPrice(toNumber(e.unitPrice), e.priceCurrency)}</td>
@@ -794,7 +814,7 @@ const WaterDistribution = () => {
                   <label className="form-label">Employee</label>
                   <select value={formEmployeeId} onChange={(e) => handleEmployeeChange(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="">Select Employee</option>
-                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {employees.map((e) => <option key={e.id} value={e.id}>{getEmployeeDisplayName(e)}</option>)}
                   </select>
                   {employees.length === 0 && (
                     <p className="form-hint">No employees found. Add one from <strong>Employees</strong>.</p>

@@ -870,7 +870,10 @@ const OilSoldItems = () => {
   }, [soldItems, products]);
 
   // Oil/Filter products only (Maghsal items are sold from the Maghsal page).
+  // Held products are excluded too — they're intentionally out of active
+  // rotation (flagged via `held: true`, not deleted from `products/`).
   const missingItemEligibleProducts = products.filter((p) => {
+    if (p.held) return false;
     const scope = String(p.scope || '').toLowerCase();
     const type = String(p.productType || '').toLowerCase();
     return !scope.includes('maghsal') && !type.includes('maghsal');

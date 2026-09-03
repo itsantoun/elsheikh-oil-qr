@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ref, get, set, remove, push } from "firebase/database";
+import { ref, get, set, update, remove, push } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
@@ -27,7 +27,6 @@ const FetchProducts = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('products');
-  const [heldProducts, setHeldProducts] = useState([]);
   const [sortBy, setSortBy] = useState({ field: 'name', order: 'asc' });
   const [scopeFilter, setScopeFilter] = useState('all'); // all | oil | filter | maghsal | other
   const [stockGroup, setStockGroup] = useState('oil-filter'); // 'oil-filter' | 'maghsal'
@@ -154,9 +153,34 @@ const FetchProducts = () => {
     return /^[=+\-@]/.test(flattened) ? `'${flattened}` : flattened;
   };
 
+  // One-time migration: Hold used to delete a product from `products/` and
+  // move it into a separate `heldProducts/` node. Anything still sitting
+  // there from before this changed is otherwise permanently invisible now —
+  // bring it back into `products/{id}` (flagged `held: true`) instead.
+  const migrateLegacyHeldProducts = async () => {
+    try {
+      const legacyRef = ref(database, 'heldProducts');
+      const snapshot = await get(legacyRef);
+      if (!snapshot.exists()) return false;
+      const data = snapshot.val();
+      const ids = Object.keys(data);
+      if (ids.length === 0) return false;
+      await Promise.all(ids.map(async (id) => {
+        const { heldDate, ...rest } = data[id] || {};
+        await set(ref(database, `products/${id}`), { ...rest, held: true, heldDate: heldDate || new Date().toISOString() });
+        await remove(ref(database, `heldProducts/${id}`));
+      }));
+      return true;
+    } catch (error) {
+      console.error('Error migrating legacy held products:', error);
+      return false;
+    }
+  };
+
   const fetchProducts = async () => {
     try {
       setIsRefreshing(true);
+      await migrateLegacyHeldProducts();
       const productsRef = ref(database, 'products');
       const snapshot = await get(productsRef);
       if (snapshot.exists()) {
@@ -181,28 +205,14 @@ const FetchProducts = () => {
     }
   };
 
-  const fetchHeldProducts = async () => {
-    try {
-      const heldProductsRef = ref(database, 'heldProducts');
-      const snapshot = await get(heldProductsRef);
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const heldProductList = Object.keys(data).map((key) => ({
-          id: key,
-          ...data[key],
-        }));
-        setHeldProducts(heldProductList);
-      } else {
-        setHeldProducts([]);
-      }
-    } catch (error) {
-      console.error("Error fetching held products:", error);
-      setHeldProducts([]);
-    }
-  };
+  // Held products are just products with `held: true` — not a separate
+  // Firebase collection — so they're never actually deleted, only flagged
+  // out of the active list. Only the Delete button removes a product.
+  const heldProducts = products.filter((p) => p.held);
+  const activeProducts = products.filter((p) => !p.held);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchProducts(); fetchHeldProducts(); }, []);
+  useEffect(() => { fetchProducts(); }, []);
 
   useEffect(() => {
     handleSearch();
@@ -220,15 +230,14 @@ const FetchProducts = () => {
 
   const handleRefresh = () => {
     fetchProducts();
-    fetchHeldProducts();
     setSuccessMessage("Products refreshed successfully!");
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
   const handleSearch = () => {
     const term = searchTerm.toLowerCase().trim();
-    // Top-level: only items from the active stock group are visible at all.
-    let result = products.filter(inStockGroup);
+    // Top-level: only active (non-held) items from the current stock group.
+    let result = activeProducts.filter(inStockGroup);
 
     // Within oil-filter, the sub-tab can drill down to Oil / Filter / Other.
     if (scopeFilter !== 'all') {
@@ -352,25 +361,13 @@ const FetchProducts = () => {
       const heldDate = new Date().toISOString();
       await writeProductEvent(product.id, product.name, toNumber(product.quantity), 'held');
 
-      const cleanedProduct = {
-        name: product.name || '',
-        productType: product.productType || '',
-        itemCost: product.itemCost || 0,
-        purchasingPrice: product.purchasingPrice || 0,
-        quantity: product.quantity || 0,
-        heldDate,
-      };
-
-      const heldProductRef = ref(database, `heldProducts/${product.id}`);
-      await set(heldProductRef, cleanedProduct);
-
+      // Flag it as held rather than deleting it — the product record stays
+      // in `products/` untouched; only the Delete button removes a product.
       const productRef = ref(database, `products/${product.id}`);
-      await remove(productRef);
+      await update(productRef, { held: true, heldDate });
 
-      const updatedProducts = products.filter((p) => p.id !== product.id);
+      const updatedProducts = products.map((p) => (p.id === product.id ? { ...p, held: true, heldDate } : p));
       setProducts(updatedProducts);
-      setFilteredProducts(updatedProducts);
-      setHeldProducts([...heldProducts, { ...cleanedProduct, id: product.id }]);
 
       setSuccessMessage('Product held successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -393,28 +390,11 @@ const FetchProducts = () => {
     try {
       await writeProductEvent(product.id, product.name, toNumber(product.quantity), 'restored');
 
-      const cleanedProduct = {
-        name: product.name || '',
-        productType: product.productType || '',
-        itemCost: product.itemCost || 0,
-        purchasingPrice: product.purchasingPrice || 0,
-        quantity: product.quantity || 0,
-        ...(product.createdAt ? { createdAt: product.createdAt } : { createdAt: new Date().toISOString() }),
-      };
-
       const productRef = ref(database, `products/${product.id}`);
-      await set(productRef, cleanedProduct);
+      await update(productRef, { held: false, heldDate: null });
 
-      const heldProductRef = ref(database, `heldProducts/${product.id}`);
-      await remove(heldProductRef);
-
-      const updatedHeldProducts = heldProducts.filter((p) => p.id !== product.id);
-      setHeldProducts(updatedHeldProducts);
-
-      const updatedProducts = [...products, { ...cleanedProduct, id: product.id }];
-      const sortedProducts = sortProducts(updatedProducts, sortBy.field, sortBy.order);
-      setProducts(sortedProducts);
-      setFilteredProducts(sortedProducts);
+      const updatedProducts = products.map((p) => (p.id === product.id ? { ...p, held: false, heldDate: null } : p));
+      setProducts(sortProducts(updatedProducts, sortBy.field, sortBy.order));
 
       setSuccessMessage('Product restored successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -982,7 +962,7 @@ const FetchProducts = () => {
           <div className="table-header">
             <h3 className="table-title"><IconPackage /> Product List</h3>
             <div className="table-stats">
-              Showing {filteredProducts.length} of {products.length} products • Potential Profit: ${filteredProductsProfitTotal.toFixed(2)}
+              Showing {filteredProducts.length} of {activeProducts.length} products • Potential Profit: ${filteredProductsProfitTotal.toFixed(2)}
             </div>
           </div>
           
@@ -1339,7 +1319,7 @@ const FetchProducts = () => {
           className={`tab-button ${activeTab === 'products' ? 'active' : ''}`}
         >
           <span className="tab-icon"><IconPackage /></span>
-          <span className="tab-label">Products ({products.length})</span>
+          <span className="tab-label">Products ({activeProducts.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('holds')}

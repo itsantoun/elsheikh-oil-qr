@@ -231,8 +231,10 @@ const Maghsal = () => {
     };
   }, []);
 
+  // Held products (flagged `held: true`, not deleted from `products/`) are
+  // intentionally out of active rotation — excluded from consumable pickers.
   const catalogue = useMemo(
-    () => [...products].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    () => products.filter((p) => !p.held).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
     [products],
   );
 

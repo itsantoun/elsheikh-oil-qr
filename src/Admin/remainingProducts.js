@@ -421,10 +421,13 @@ const RemainingProducts = () => {
 
     // All products show by default, including zero-stock ones — "Zero Stock"
     // is now an opt-in narrowing filter (for restock review) rather than the
-    // thing you have to click to stop items from disappearing.
+    // thing you have to click to stop items from disappearing. Held products
+    // are excluded here (they live in the Hold tab), but stay flagged rather
+    // than deleted — only the Delete button removes a product for real.
+    const activeProducts = products.filter(p => !p.held);
     const baseProducts = showZeroStock
-      ? products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && !hasPositiveExpectedStock(p))
-      : products.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p));
+      ? activeProducts.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && !hasPositiveExpectedStock(p))
+      : activeProducts.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p));
     if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
     const t = searchTerm.toLowerCase();
     setFilteredProducts(baseProducts.filter(p =>
@@ -815,16 +818,10 @@ const RemainingProducts = () => {
     try {
       const heldAt = new Date().toISOString();
       await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'held', heldAt);
-      await set(ref(database, `heldProducts/${product.id}`), {
-        name: product.name || '',
-        productType: product.productType || '',
-        itemCost: product.itemCost || 0,
-        purchasingPrice: product.purchasingPrice || 0,
-        quantity: product.quantity || 0,
-        heldDate: heldAt,
-      });
-      await remove(ref(database, `products/${product.id}`));
-      setProducts(prev => prev.filter(p => p.id !== product.id));
+      // Flag it as held rather than deleting it — the product record stays
+      // in `products/` untouched; only the Delete button removes a product.
+      await update(ref(database, `products/${product.id}`), { held: true, heldDate: heldAt });
+      setProducts(prev => prev.map(p => (p.id === product.id ? { ...p, held: true, heldDate: heldAt } : p)));
       showSuccess(`"${product.name}" moved to Held.`);
     } catch (err) { console.error(err); showError('Failed to hold product.'); }
   };

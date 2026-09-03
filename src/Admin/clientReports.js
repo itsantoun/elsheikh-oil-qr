@@ -403,7 +403,9 @@ const ClientReports = () => {
     let paid = 0, unpaid = 0, grandTotal = 0, totalQuantity = 0;
     records.forEach((r) => {
       grandTotal += r.total;
-      totalQuantity += toNumber(r.quantity);
+      // Quantity is Water Filling-only — other sections use different units
+      // (liters, service count, etc.) that don't sum meaningfully together.
+      if (r.section === 'Water Filling') totalQuantity += toNumber(r.quantity);
       if (r.status === 'Paid') paid += r.total;
       else if (r.status === 'Unpaid') unpaid += r.total;
     });
@@ -542,7 +544,7 @@ const ClientReports = () => {
     // (under the Quantity column) to avoid showing the dollar figure twice.
     const grandTotalIndex = body.length;
     body.push([
-      { content: 'Total Quantity', colSpan: 2, styles: { halign: 'right' } },
+      { content: 'Water Filling Qty', colSpan: 2, styles: { halign: 'right' } },
       { content: String(totalQuantity), styles: { halign: 'right' } },
       '',
       '',
@@ -613,11 +615,13 @@ const ClientReports = () => {
   };
 
   // Older saved reports (from before the Total Quantity field existed) won't
-  // have it stored — fall back to summing their line items.
+  // have it stored — fall back to summing just the Water Filling line items
+  // (other sections use different units that don't sum meaningfully).
   const entryTotalQuantity = (entry) => (
     entry.totalQuantity != null
       ? entry.totalQuantity
-      : entry.sections.reduce((acc, g) => acc + g.rows.reduce((a, r) => a + toNumber(r.quantity), 0), 0)
+      : (entry.sections.find((g) => g.section === 'Water Filling')?.rows || [])
+          .reduce((a, r) => a + toNumber(r.quantity), 0)
   );
 
   const exportHistoryPDF = async (entry) => {
@@ -650,7 +654,7 @@ const ClientReports = () => {
     });
     rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
     rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
-    rows.push(['Total Quantity', '', '', statement.totalQuantity, '', '']);
+    rows.push(['Water Filling Qty', '', '', statement.totalQuantity, '', '']);
     rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
@@ -816,7 +820,7 @@ const ClientReports = () => {
                     </React.Fragment>
                   ))}
                   <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Total Quantity</td>
+                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
                     <td className="text-right" style={{ fontWeight: 800 }}>{statement.totalQuantity}</td>
                     <td></td>
                     <td></td>
@@ -930,7 +934,7 @@ const ClientReports = () => {
                       </React.Fragment>
                     ))}
                     <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Total Quantity</td>
+                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
                       <td className="text-right" style={{ fontWeight: 800 }}>{entryTotalQuantity(viewedEntry)}</td>
                       <td></td>
                       <td></td>
@@ -963,7 +967,7 @@ const ClientReports = () => {
               <p>
                 Client: <strong>{pendingSnapshot.customerName}</strong><br />
                 Type: {pendingSnapshot.typeFilter} · Range: {pendingSnapshot.rangeLabel}<br />
-                {pendingSnapshot.recordCount} record(s) · Total Quantity: {pendingSnapshot.totalQuantity} · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
+                {pendingSnapshot.recordCount} record(s) · Water Filling Qty: {pendingSnapshot.totalQuantity} · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
               </p>
               <p>Confirming will save a snapshot to Report History so you can find it again later without regenerating it.</p>
             </div>

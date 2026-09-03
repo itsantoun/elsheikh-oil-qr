@@ -537,15 +537,16 @@ const ClientReports = () => {
       ]);
     });
 
-    // Grand Total row — keeps the quantity total directly under the
-    // Quantity column, right next to the dollar grand total.
+    // Total Quantity row — the dollar Grand Total is drawn separately below
+    // via drawTotalsBlock, so this row only carries the quantity total
+    // (under the Quantity column) to avoid showing the dollar figure twice.
     const grandTotalIndex = body.length;
     body.push([
-      { content: 'Grand Total', colSpan: 2, styles: { halign: 'right' } },
+      { content: 'Total Quantity', colSpan: 2, styles: { halign: 'right' } },
       { content: String(totalQuantity), styles: { halign: 'right' } },
       '',
       '',
-      { content: money(grandTotal), styles: { halign: 'right' } },
+      '',
     ]);
 
     autoTable(doc, {
@@ -649,7 +650,8 @@ const ClientReports = () => {
     });
     rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
     rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
-    rows.push(['Grand Total', '', '', statement.totalQuantity, '', statement.grandTotal.toFixed(2)]);
+    rows.push(['Total Quantity', '', '', statement.totalQuantity, '', '']);
+    rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
       [headers, ...rows]
@@ -814,11 +816,11 @@ const ClientReports = () => {
                     </React.Fragment>
                   ))}
                   <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Grand Total</td>
+                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Total Quantity</td>
                     <td className="text-right" style={{ fontWeight: 800 }}>{statement.totalQuantity}</td>
                     <td></td>
                     <td></td>
-                    <td className="text-right" style={{ fontWeight: 800 }}>${formatCurrency(statement.grandTotal)}</td>
+                    <td></td>
                   </tr>
                 </tbody>
               </table>
@@ -928,11 +930,11 @@ const ClientReports = () => {
                       </React.Fragment>
                     ))}
                     <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Grand Total</td>
+                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Total Quantity</td>
                       <td className="text-right" style={{ fontWeight: 800 }}>{entryTotalQuantity(viewedEntry)}</td>
                       <td></td>
                       <td></td>
-                      <td className="text-right" style={{ fontWeight: 800 }}>${formatCurrency(viewedEntry.grandTotal)}</td>
+                      <td></td>
                     </tr>
                   </tbody>
                 </table>

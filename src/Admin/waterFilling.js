@@ -405,10 +405,13 @@ const WaterFilling = () => {
     setFormTransactionType(entry.transactionType || '');
     setFormDate(formatDateForInput(entry.date));
     setFormQuantity(String(toNumber(entry.quantity)));
-    // Preserve the saved Total Premium as-is (treated as a manual value) so
-    // reopening for edit doesn't silently recompute it from current pricing.
+    // Show the saved Total Premium as-is when the modal opens, but leave it
+    // untouched (not "manually overridden") so changing Quantity or the
+    // Transaction Type during this edit still recalculates it live — same
+    // as when adding a new entry. It only stops tracking once the user
+    // actually types into Total Premium themselves.
     setFormTotalPremium(entry.totalPremium != null ? String(toNumber(entry.totalPremium)) : '');
-    setTotalPremiumTouched(true);
+    setTotalPremiumTouched(false);
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
     setFormDatePaid(entry.datePaid ? formatDateForInput(entry.datePaid) : '');
     setFormRemark(entry.remark || '');
@@ -458,14 +461,30 @@ const WaterFilling = () => {
     setTotalPremiumTouched(true);
   };
 
+  // Employee is only required when adding a new entry — an existing entry
+  // saved before Employee existed as a field can still be edited (e.g. to
+  // fix quantity/price) without being forced to backfill it first.
+  const employeeRequired = !editingEntryId;
+
   const canSave = Boolean(
     formCustomerId &&
-    formEmployeeId &&
+    (formEmployeeId || !employeeRequired) &&
     formTransactionType &&
     formDate &&
     toNumber(formQuantity) > 0 &&
     !isSaving
   );
+
+  // Surfaced near the Save button so a disabled Update isn't silently
+  // confusing — this matters most when editing an entry saved before
+  // Employee/Customer existed as fields, which leaves them unset.
+  const missingFieldMessages = [
+    !formCustomerId && 'Select a Customer',
+    !formEmployeeId && employeeRequired && 'Select an Employee',
+    !formTransactionType && 'Select a Transaction Type',
+    !formDate && 'Select a Date',
+    toNumber(formQuantity) <= 0 && 'Enter a Quantity greater than 0',
+  ].filter(Boolean);
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -474,9 +493,17 @@ const WaterFilling = () => {
       flash('Selected customer is no longer available.', 'error');
       return;
     }
-    const selectedEmployee = employees.find((e) => e.id === formEmployeeId);
-    if (!selectedEmployee) {
-      flash('Selected employee is no longer available.', 'error');
+    // Employee may be intentionally left unset when editing an old entry —
+    // only validate it if the user actually picked one (or it's required).
+    let selectedEmployee = null;
+    if (formEmployeeId) {
+      selectedEmployee = employees.find((e) => e.id === formEmployeeId);
+      if (!selectedEmployee) {
+        flash('Selected employee is no longer available.', 'error');
+        return;
+      }
+    } else if (employeeRequired) {
+      flash('Select an employee.', 'error');
       return;
     }
 
@@ -495,8 +522,10 @@ const WaterFilling = () => {
         customerId: selectedCustomer.id,
         customerName: selectedCustomer.name || '',
         customerNameArabic: selectedCustomer.nameArabic || '',
-        employeeId: selectedEmployee.id,
-        employee: selectedEmployee.name || '',
+        // Omitted (not cleared) when left unset on an old entry — Firebase's
+        // update() only touches keys present here, so this preserves
+        // whatever the entry already had for employee.
+        ...(selectedEmployee ? { employeeId: selectedEmployee.id, employee: selectedEmployee.name || '' } : {}),
         transactionType: formTransactionType,
         date: convertDateInputToISO(formDate),
         quantity,
@@ -967,11 +996,18 @@ const WaterFilling = () => {
                 <textarea value={formRemark} onChange={(e) => setFormRemark(e.target.value)} className="form-textarea" rows="2" disabled={isSaving} />
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
-                {isSaving ? 'Saving...' : (editingEntryId ? 'Update Entry' : 'Save Entry')}
-              </button>
-              <button className="btn-secondary" onClick={closeModal} disabled={isSaving}>Close</button>
+            <div className="modal-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              {missingFieldMessages.length > 0 && (
+                <p style={{ fontSize: 12, color: 'var(--red, #dc3545)', margin: 0 }}>
+                  Before saving: {missingFieldMessages.join(' · ')}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
+                  {isSaving ? 'Saving...' : (editingEntryId ? 'Update Entry' : 'Save Entry')}
+                </button>
+                <button className="btn-secondary" onClick={closeModal} disabled={isSaving}>Close</button>
+              </div>
             </div>
           </div>
         </div>

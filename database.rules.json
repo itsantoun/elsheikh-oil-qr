@@ -131,6 +131,15 @@
       }
     },
 
+    "waterDistributionEntries": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$id": {
+        ".validate": "newData.hasChildren() || !newData.exists()",
+        "$field": { ".validate": "!newData.isString() || newData.val().length <= 1000" }
+      }
+    },
+
 
     "settings": {
       ".read": "auth != null",

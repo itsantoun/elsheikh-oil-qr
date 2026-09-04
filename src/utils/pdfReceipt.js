@@ -36,8 +36,8 @@ export const money = (value) =>
     maximumFractionDigits: 2,
   })}`;
 
-export const createReceiptDoc = (jsPDF) =>
-  new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a5' });
+export const createReceiptDoc = (jsPDF, { orientation = 'landscape', format = 'a5' } = {}) =>
+  new jsPDF({ orientation, unit: 'mm', format });
 
 export const addReceiptHeader = async (doc, {
   title = 'RECEIPT',
@@ -138,10 +138,13 @@ export const addReceiptHeader = async (doc, {
   return 59;
 };
 
-export const getReceiptDensity = (rowCount) => {
-  if (rowCount > 18) return { fontSize: 6.4, verticalPadding: 0.7, totalsCompact: true };
-  if (rowCount > 12) return { fontSize: 7, verticalPadding: 1, totalsCompact: true };
-  return { fontSize: 8, verticalPadding: 1.6, totalsCompact: false };
+// `scale` lets a caller with more page real estate (e.g. Client Reports on
+// A4 instead of the default A5) ask for uniformly larger text without
+// changing the row-count thresholds that decide when to compact at all.
+export const getReceiptDensity = (rowCount, scale = 1) => {
+  if (rowCount > 18) return { fontSize: 6.4 * scale, verticalPadding: 0.7 * scale, totalsCompact: true };
+  if (rowCount > 12) return { fontSize: 7 * scale, verticalPadding: 1 * scale, totalsCompact: true };
+  return { fontSize: 8 * scale, verticalPadding: 1.6 * scale, totalsCompact: false };
 };
 
 export const receiptTableOptions = ({
@@ -150,11 +153,18 @@ export const receiptTableOptions = ({
   startY,
   rightAlignedColumns = [],
   density = getReceiptDensity(body.length),
+  // Reserves space at the top of page 2+ for a repeating header (e.g. the
+  // client's name), drawn via `onPageDraw` below — 0 keeps the old
+  // behavior where the table butts right up against the top margin.
+  topMargin = 0,
+  // Called on every page as autoTable draws it (including page 1), after
+  // the built-in footer logic — use it to draw a repeating per-page header.
+  onPageDraw,
 }) => ({
   head: [head],
   body,
   startY,
-  margin: { left: 10, right: 10, bottom: TOTALS_BOTTOM_RESERVE },
+  margin: { left: 10, right: 10, bottom: TOTALS_BOTTOM_RESERVE, top: topMargin },
   theme: 'plain',
   tableLineColor: BORDER,
   tableLineWidth: 0.2,
@@ -182,6 +192,7 @@ export const receiptTableOptions = ({
   didDrawPage: (data) => {
     const pageCount = docPageCount(data.doc);
     if (pageCount > 1) drawPageFooter(data.doc);
+    if (onPageDraw) onPageDraw(data);
   },
 });
 
@@ -262,7 +273,32 @@ const drawTotalLine = (doc, label, value, x, y, width) => {
   doc.text(money(value), x + width - 8, y, { align: 'right' });
 };
 
-const drawPageFooter = (doc) => {
+// Repeated on every page after the first (which already has the full
+// `addReceiptHeader` branded header) — a slim band naming the client and
+// noting the page number, so a multi-page report is still identifiable
+// after being separated from page 1.
+export const drawContinuationHeader = (doc, { title = 'CLIENT REPORT', client = '' } = {}) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 10;
+  const bandH = 12;
+
+  doc.setFillColor(...SOFT_BG);
+  doc.roundedRect(margin, 6, pageWidth - margin * 2, bandH, 2, 2, 'F');
+  doc.setDrawColor(...BORDER);
+  doc.roundedRect(margin, 6, pageWidth - margin * 2, bandH, 2, 2, 'S');
+
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(...BRAND_BLUE);
+  doc.text(title, margin + 4, 6 + bandH / 2 + 1.5);
+
+  doc.setFontSize(9.5);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...TEXT_DARK);
+  doc.text(`Client: ${client || 'All Clients'}`, pageWidth - margin - 4, 6 + bandH / 2 + 1.5, { align: 'right' });
+};
+
+export const drawPageFooter = (doc) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   doc.setFontSize(7);

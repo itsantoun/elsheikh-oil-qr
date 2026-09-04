@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, update, onValue, push } from 'firebase/database';
+import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
@@ -294,18 +294,32 @@ const WaterFilling = () => {
   const handleBulkPaymentStatus = async (status, datePaid = null) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     setIsBulkUpdating(true);
+    // Snapshot the ids being written — selectedIds is cleared right after,
+    // so this is what we verify against below.
+    const targetIds = [...selectedIds];
     try {
       const updates = {};
-      selectedIds.forEach((id) => {
+      targetIds.forEach((id) => {
         updates[`waterFillingEntries/${id}/paymentStatus`] = status;
         if (status === 'Paid') {
           updates[`waterFillingEntries/${id}/datePaid`] = convertDateInputToISO(datePaid || formatDateForInput(new Date().toISOString()));
         }
       });
       await update(ref(database), updates);
-      flash(`Marked ${selectedIds.length} ${selectedIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
+      flash(`Marked ${targetIds.length} ${targetIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
       setShowBulkDatePaid(false);
+
+      // Firebase's update() is atomic — it either applies to every path or
+      // throws — but verify anyway so a mismatch is surfaced immediately
+      // instead of silently going unnoticed.
+      const snap = await get(ref(database, 'waterFillingEntries'));
+      const data = snap.exists() ? snap.val() : {};
+      const notApplied = targetIds.filter((id) => data[id]?.paymentStatus !== status);
+      if (notApplied.length > 0) {
+        console.error('Bulk payment status: some ids did not apply', notApplied);
+        flash(`${notApplied.length} of ${targetIds.length} entries did not update — they may have been deleted or changed by someone else. Refresh and try again.`, 'error');
+      }
     } catch (err) {
       console.error('Bulk payment status update failed:', err);
       flash(`Failed to update entries: ${err?.message || err}`, 'error');

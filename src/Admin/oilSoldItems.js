@@ -70,6 +70,7 @@ const OilSoldItems = () => {
   // again (same rule remainingProducts.js itself follows).
   const [stockCheckedAtByProductId, setStockCheckedAtByProductId] = useState({});
   const [errorMessage, setErrorMessage] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
   const [editingItem, setEditingItem] = useState(null);
   const [newDate, setNewDate] = useState('');
@@ -130,13 +131,29 @@ const OilSoldItems = () => {
   const handleBulkPaymentStatus = async (status) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     setIsBulkUpdating(true);
+    // Snapshot the ids being written — selectedIds is cleared right after,
+    // so this is what we verify against and report on below.
+    const targetIds = [...selectedIds];
     try {
       const updates = {};
-      selectedIds.forEach((id) => {
+      targetIds.forEach((id) => {
         updates[`SoldItems/${id}/paymentStatus`] = status;
       });
       await update(ref(database), updates);
       setSelectedIds([]);
+      setSuccessMessage(`Marked ${targetIds.length} ${targetIds.length === 1 ? 'item' : 'items'} as ${status}.`);
+      setTimeout(() => setSuccessMessage(null), 4000);
+
+      // Firebase's update() is atomic — it either applies to every path or
+      // throws — but verify anyway so a mismatch (e.g. an id that no longer
+      // exists) is surfaced immediately instead of silently going unnoticed.
+      const snap = await get(ref(database, 'SoldItems'));
+      const data = snap.exists() ? snap.val() : {};
+      const notApplied = targetIds.filter((id) => data[id]?.paymentStatus !== status);
+      if (notApplied.length > 0) {
+        console.error('Bulk payment status: some ids did not apply', notApplied);
+        setErrorMessage(`${notApplied.length} of ${targetIds.length} item(s) did not update — they may have been deleted or changed by someone else. Refresh and try again.`);
+      }
     } catch (err) {
       console.error('Bulk payment status update failed:', err);
       setErrorMessage(`Failed to update items: ${err?.message || err}`);
@@ -1095,6 +1112,15 @@ const OilSoldItems = () => {
     !isSavingMissingItem
   );
 
+  // Surfaced near the Save button so a disabled Save isn't silently
+  // confusing.
+  const missingItemFieldMessages = [
+    !selectedProduct && 'Select a Product',
+    !isStockLikeStatus(missingItemPaymentStatus) && !missingItemCustomerId && 'Select a Customer',
+    !missingItemDate && 'Select a Date',
+    missingItemQuantityValue <= 0 && 'Enter a Quantity greater than 0',
+  ].filter(Boolean);
+
   const filteredTotals = calculateTotals(filteredItems);
   const profitSummaryLabel = monthFilter
     ? `${formatMonthDisplay(parseInt(monthFilter, 10))} Profit`
@@ -1146,6 +1172,7 @@ const OilSoldItems = () => {
           </button>
         </div>
       </div>
+      {successMessage && <div className="success-message">{successMessage}</div>}
       {errorMessage && <div className="error-message">{errorMessage}</div>}
 
       {/* Filters Section */}
@@ -1459,6 +1486,8 @@ const OilSoldItems = () => {
                               setFilteredItems(updatedItems);
                             } catch (error) {
                               console.error('Error confirming item:', error);
+                              setErrorMessage('Failed to confirm item. Please try again.');
+                              setTimeout(() => setErrorMessage(null), 3000);
                             }
                           }}
                           disabled={item.paymentStatus === 'Stock Confirmed'}
@@ -1734,13 +1763,20 @@ const OilSoldItems = () => {
                 )}
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn-primary" onClick={saveMissingItem} disabled={!canSaveMissingItem}>
-                {isSavingMissingItem ? 'Saving...' : 'Save Missing Item'}
-              </button>
-              <button className="btn-secondary" onClick={closeMissingItemsModal} disabled={isSavingMissingItem}>
-                Close
-              </button>
+            <div className="modal-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              {missingItemFieldMessages.length > 0 && (
+                <p style={{ fontSize: 12, color: 'var(--red, #dc3545)', margin: 0 }}>
+                  Before saving: {missingItemFieldMessages.join(' · ')}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary" onClick={saveMissingItem} disabled={!canSaveMissingItem}>
+                  {isSavingMissingItem ? 'Saving...' : 'Save Missing Item'}
+                </button>
+                <button className="btn-secondary" onClick={closeMissingItemsModal} disabled={isSavingMissingItem}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, update, onValue, push } from 'firebase/database';
+import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus } from '../utils/icons';
@@ -419,14 +419,28 @@ const Maghsal = () => {
   const handleBulkPaymentStatus = async (status) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     setIsBulkUpdating(true);
+    // Snapshot the ids being written — selectedIds is cleared right after,
+    // so this is what we verify against below.
+    const targetIds = [...selectedIds];
     try {
       const updates = {};
-      selectedIds.forEach((id) => {
+      targetIds.forEach((id) => {
         updates[`maghsalEntries/${id}/paymentStatus`] = status;
       });
       await update(ref(database), updates);
-      flash(`Marked ${selectedIds.length} ${selectedIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
+      flash(`Marked ${targetIds.length} ${targetIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
+
+      // Firebase's update() is atomic — it either applies to every path or
+      // throws — but verify anyway so a mismatch is surfaced immediately
+      // instead of silently going unnoticed.
+      const snap = await get(ref(database, 'maghsalEntries'));
+      const data = snap.exists() ? snap.val() : {};
+      const notApplied = targetIds.filter((id) => data[id]?.paymentStatus !== status);
+      if (notApplied.length > 0) {
+        console.error('Bulk payment status: some ids did not apply', notApplied);
+        flash(`${notApplied.length} of ${targetIds.length} entries did not update — they may have been deleted or changed by someone else. Refresh and try again.`, 'error');
+      }
     } catch (err) {
       console.error('Bulk payment status update failed:', err);
       flash(`Failed to update entries: ${err?.message || err}`, 'error');
@@ -556,6 +570,22 @@ const Maghsal = () => {
         : (formCustomerId && toNumber(formQuantity) > 0 && toNumber(formServicePrice) >= 0)
     )
   );
+
+  // Surfaced near the Save button so a disabled Save/Update isn't silently
+  // confusing.
+  const missingFieldMessages = [
+    !formDate && 'Select a Date',
+    ...(isStockMode
+      ? [
+          !formStockProductId && 'Select a Product',
+          stockQuantityValue <= 0 && 'Enter a Quantity greater than 0',
+        ]
+      : [
+          !formCustomerId && 'Select a Customer',
+          toNumber(formQuantity) <= 0 && 'Enter a Quantity greater than 0',
+          toNumber(formServicePrice) < 0 && 'Service Price cannot be negative',
+        ]),
+  ].filter(Boolean);
 
   // Stock-in path — push a single pending transaction, mirroring the
   // BarcodeScanner / Oil-Filter Add Missing Item stock flow.
@@ -1250,13 +1280,20 @@ const Maghsal = () => {
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
-                {isSaving
-                  ? 'Saving...'
-                  : (editingEntryId ? 'Update Item' : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Used Item'))}
-              </button>
-              <button className="btn-secondary" onClick={closeAddModal} disabled={isSaving}>Close</button>
+            <div className="modal-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              {missingFieldMessages.length > 0 && (
+                <p style={{ fontSize: 12, color: 'var(--red, #dc3545)', margin: 0 }}>
+                  Before saving: {missingFieldMessages.join(' · ')}
+                </p>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary" onClick={handleSave} disabled={!canSave}>
+                  {isSaving
+                    ? 'Saving...'
+                    : (editingEntryId ? 'Update Item' : (formPaymentStatus === 'Stock' ? 'Submit Stock In' : 'Save Used Item'))}
+                </button>
+                <button className="btn-secondary" onClick={closeAddModal} disabled={isSaving}>Close</button>
+              </div>
             </div>
           </div>
         </div>

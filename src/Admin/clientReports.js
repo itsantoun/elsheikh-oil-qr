@@ -12,6 +12,7 @@ import {
   getReceiptDensity,
   receiptTableOptions,
   drawTotalsBlock,
+  drawContinuationHeader,
   money,
 } from '../utils/pdfReceipt';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
@@ -132,6 +133,7 @@ const ClientReports = () => {
     ));
   };
   const [message, setMessage] = useState(null);
+  const [messageKind, setMessageKind] = useState('success');
 
   const [pendingSnapshot, setPendingSnapshot] = useState(null);
   const [isSavingReport, setIsSavingReport] = useState(false);
@@ -216,7 +218,7 @@ const ClientReports = () => {
       applyHistorySnapshot(snap);
     } catch (err) {
       console.error('Failed to refresh report history:', err);
-      flash(`Failed to refresh report history: ${err?.message || err}`);
+      flash(`Failed to refresh report history: ${err?.message || err}`, 'error');
     } finally {
       setIsLoadingHistory(false);
     }
@@ -227,12 +229,16 @@ const ClientReports = () => {
     const historyRef = ref(database, 'reports');
     const unsub = onValue(historyRef, applyHistorySnapshot, (err) => {
       console.error('Failed to load report history:', err);
-      flash(`Failed to load report history: ${err?.message || err}`);
+      flash(`Failed to load report history: ${err?.message || err}`, 'error');
     });
     return () => unsub();
   }, []);
 
-  const flash = (msg) => { setMessage(msg); setTimeout(() => setMessage(null), 3000); };
+  const flash = (msg, kind = 'success') => {
+    setMessage(msg);
+    setMessageKind(kind);
+    setTimeout(() => setMessage(null), 3000);
+  };
 
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.id === customerId) || null,
@@ -440,8 +446,8 @@ const ClientReports = () => {
   );
 
   const generateReport = () => {
-    if (!selectedCustomer) { flash('Select a client first.'); return; }
-    if (recordCount === 0) { flash('No activity for this client in range.'); return; }
+    if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
+    if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     setViewingHistoryId(null);
     setPendingSnapshot({
       customerId: selectedCustomer.id,
@@ -478,7 +484,7 @@ const ClientReports = () => {
       flash('Report saved to history.');
     } catch (err) {
       console.error('Failed to save report to history:', err);
-      flash(`Failed to save report: ${err?.message || err}`);
+      flash(`Failed to save report: ${err?.message || err}`, 'error');
     } finally {
       setIsSavingReport(false);
     }
@@ -499,15 +505,18 @@ const ClientReports = () => {
       flash('Report removed from history.');
     } catch (err) {
       console.error('Failed to delete report:', err);
-      flash(`Failed to delete report: ${err?.message || err}`);
+      flash(`Failed to delete report: ${err?.message || err}`, 'error');
     }
   };
 
   // ── PDF export (A5 landscape — shared receipt theme), grouped into sections ────
   // Shared builder — used for both the live statement and a saved history snapshot.
   const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, totalQuantity = 0, recordCount: count, customerName, rangeLabel: range, filename }) => {
-    const doc = createReceiptDoc(jsPDF);
-    const density = getReceiptDensity(count + sections.length);
+    // A4 (not the default A5 receipt size) — client statements can run long
+    // across several sections/date ranges and need the extra room so rows
+    // don't awkwardly overflow onto another page more than necessary.
+    const doc = createReceiptDoc(jsPDF, { format: 'a4' });
+    const density = getReceiptDensity(count + sections.length, 1.4);
     const startY = await addReceiptHeader(doc, {
       title: 'CLIENT REPORT',
       // subtitle: 'Statement by Type',
@@ -558,14 +567,23 @@ const ClientReports = () => {
         startY,
         rightAlignedColumns: [2, 3, 5],
         density,
+        // Leaves room at the top of page 2+ for the repeating client-name
+        // header drawn below, so a multi-page report is still identifiable
+        // after being separated from page 1.
+        topMargin: 22,
+        onPageDraw: (data) => {
+          const pageNumber = data.doc.internal.getCurrentPageInfo().pageNumber;
+          if (pageNumber > 1) drawContinuationHeader(data.doc, { client: customerName });
+        },
       }),
+      // Column widths scaled up from the A5 default to use A4's extra width.
       columnStyles: {
-        0: { cellWidth: 26 },
-        1: { cellWidth: 48 },
-        2: { halign: 'right', cellWidth: 18 },
-        3: { halign: 'right', cellWidth: 24 },
-        4: { cellWidth: 28 },
-        5: { halign: 'right', cellWidth: 34 },
+        0: { cellWidth: 36 },
+        1: { cellWidth: 67 },
+        2: { halign: 'right', cellWidth: 25 },
+        3: { halign: 'right', cellWidth: 34 },
+        4: { cellWidth: 39 },
+        5: { halign: 'right', cellWidth: 48 },
       },
       didParseCell: (data) => {
         if (data.section === 'body' && data.row.index === grandTotalIndex) {
@@ -599,8 +617,8 @@ const ClientReports = () => {
   };
 
   const exportPDF = async () => {
-    if (!selectedCustomer) { flash('Select a client first.'); return; }
-    if (recordCount === 0) { flash('No activity for this client in range.'); return; }
+    if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
+    if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     await buildAndSaveStatementPDF({
       sections: statement.sections,
       paid: statement.paid,
@@ -642,8 +660,8 @@ const ClientReports = () => {
 
   // ── CSV export ────────────────────────────────────────────────────────────────
   const exportCSV = async () => {
-    if (!selectedCustomer) { flash('Select a client first.'); return; }
-    if (recordCount === 0) { flash('No activity for this client in range.'); return; }
+    if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
+    if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
 
     const headers = ['Date', 'Type', 'Item', 'Quantity', 'Status', 'Total'];
     const rows = [];
@@ -692,7 +710,7 @@ const ClientReports = () => {
         </div>
       </div>
 
-      {message && <div className="success-message">{message}</div>}
+      {message && <div className={messageKind === 'error' ? 'error-message' : 'success-message'}>{message}</div>}
 
       {/* Controls */}
       <div className="ui-card">

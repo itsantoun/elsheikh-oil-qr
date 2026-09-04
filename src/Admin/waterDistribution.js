@@ -288,17 +288,52 @@ const WaterDistribution = () => {
 
   const handleBulkPaymentStatus = async (status) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
-    setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against below.
     const targetIds = [...selectedIds];
+
+    // Show exactly which entries are about to change before committing —
+    // so a stale/mismatched selection is caught here instead of discovered
+    // after the fact.
+    const targetEntries = targetIds
+      .map((id) => entries.find((e) => e.id === id))
+      .filter(Boolean);
+    const confirmed = await confirm({
+      title: `Mark ${targetIds.length} ${targetIds.length === 1 ? 'entry' : 'entries'} as ${status}?`,
+      message: (
+        <div>
+          <p>The following {targetIds.length === 1 ? 'entry' : 'entries'} will be marked <strong>{status}</strong>:</p>
+          <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
+            {targetEntries.map((e) => (
+              <div key={e.id} style={{ fontSize: 13, padding: '3px 0' }}>
+                {formatDate(e.date)} — {e.customerName || 'N/A'} ({e.truckType || 'N/A'})
+              </div>
+            ))}
+          </div>
+          {targetEntries.length < targetIds.length && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8 }}>
+              {targetIds.length - targetEntries.length} selected {targetIds.length - targetEntries.length === 1 ? 'entry no longer exists' : 'entries no longer exist'} and will be skipped.
+            </p>
+          )}
+        </div>
+      ),
+      confirmLabel: `Yes, mark as ${status}`,
+      danger: false,
+    });
+    if (!confirmed) return;
+
+    setIsBulkUpdating(true);
     try {
+      // Only write to ids confirmed to still exist (targetEntries) — never
+      // write to a path that isn't a real record, which would silently
+      // create an orphan node instead of erroring.
+      const writeIds = targetEntries.map((e) => e.id);
       const updates = {};
-      targetIds.forEach((id) => {
+      writeIds.forEach((id) => {
         updates[`waterDistributionEntries/${id}/paymentStatus`] = status;
       });
       await update(ref(database), updates);
-      flash(`Marked ${targetIds.length} ${targetIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
+      flash(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
 
       // Firebase's update() is atomic — it either applies to every path or
@@ -306,10 +341,10 @@ const WaterDistribution = () => {
       // instead of silently going unnoticed.
       const snap = await get(ref(database, 'waterDistributionEntries'));
       const data = snap.exists() ? snap.val() : {};
-      const notApplied = targetIds.filter((id) => data[id]?.paymentStatus !== status);
+      const notApplied = writeIds.filter((id) => data[id]?.paymentStatus !== status);
       if (notApplied.length > 0) {
         console.error('Bulk payment status: some ids did not apply', notApplied);
-        flash(`${notApplied.length} of ${targetIds.length} entries did not update — they may have been deleted or changed by someone else. Refresh and try again.`, 'error');
+        flash(`${notApplied.length} of ${writeIds.length} entries did not update — they may have been deleted or changed by someone else. Refresh and try again.`, 'error');
       }
     } catch (err) {
       console.error('Bulk payment status update failed:', err);

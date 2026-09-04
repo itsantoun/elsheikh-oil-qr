@@ -130,18 +130,53 @@ const OilSoldItems = () => {
 
   const handleBulkPaymentStatus = async (status) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
-    setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against and report on below.
     const targetIds = [...selectedIds];
+
+    // Show exactly which items are about to change before committing — so
+    // a stale/mismatched selection is caught here instead of discovered
+    // after the fact.
+    const targetItems = targetIds
+      .map((id) => soldItems.find((i) => i.id === id))
+      .filter(Boolean);
+    const confirmed = await confirm({
+      title: `Mark ${targetIds.length} ${targetIds.length === 1 ? 'item' : 'items'} as ${status}?`,
+      message: (
+        <div>
+          <p>The following {targetIds.length === 1 ? 'item' : 'items'} will be marked <strong>{status}</strong>:</p>
+          <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
+            {targetItems.map((i) => (
+              <div key={i.id} style={{ fontSize: 13, padding: '3px 0' }}>
+                {formatDate(i.dateScanned)} — {i.name || 'N/A'} ({i.customerName || 'N/A'})
+              </div>
+            ))}
+          </div>
+          {targetItems.length < targetIds.length && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8 }}>
+              {targetIds.length - targetItems.length} selected {targetIds.length - targetItems.length === 1 ? 'item no longer exists' : 'items no longer exist'} and will be skipped.
+            </p>
+          )}
+        </div>
+      ),
+      confirmLabel: `Yes, mark as ${status}`,
+      danger: false,
+    });
+    if (!confirmed) return;
+
+    setIsBulkUpdating(true);
     try {
+      // Only write to ids confirmed to still exist (targetItems) — never
+      // write to a path that isn't a real record, which would silently
+      // create an orphan node instead of erroring.
+      const writeIds = targetItems.map((i) => i.id);
       const updates = {};
-      targetIds.forEach((id) => {
+      writeIds.forEach((id) => {
         updates[`SoldItems/${id}/paymentStatus`] = status;
       });
       await update(ref(database), updates);
       setSelectedIds([]);
-      setSuccessMessage(`Marked ${targetIds.length} ${targetIds.length === 1 ? 'item' : 'items'} as ${status}.`);
+      setSuccessMessage(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'item' : 'items'} as ${status}.`);
       setTimeout(() => setSuccessMessage(null), 4000);
 
       // Firebase's update() is atomic — it either applies to every path or
@@ -149,10 +184,10 @@ const OilSoldItems = () => {
       // exists) is surfaced immediately instead of silently going unnoticed.
       const snap = await get(ref(database, 'SoldItems'));
       const data = snap.exists() ? snap.val() : {};
-      const notApplied = targetIds.filter((id) => data[id]?.paymentStatus !== status);
+      const notApplied = writeIds.filter((id) => data[id]?.paymentStatus !== status);
       if (notApplied.length > 0) {
         console.error('Bulk payment status: some ids did not apply', notApplied);
-        setErrorMessage(`${notApplied.length} of ${targetIds.length} item(s) did not update — they may have been deleted or changed by someone else. Refresh and try again.`);
+        setErrorMessage(`${notApplied.length} of ${writeIds.length} item(s) did not update — they may have been deleted or changed by someone else. Refresh and try again.`);
       }
     } catch (err) {
       console.error('Bulk payment status update failed:', err);

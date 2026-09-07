@@ -1,10 +1,12 @@
 import { ref, get } from 'firebase/database';
 import { database } from './firebase';
 
-// Bootstrap allowlist. Used until Firebase custom claims (auth.token.admin === true)
-// are set on real admins. Once claims are configured, set REACT_APP_ADMIN_EMAILS=""
-// in .env to disable this path entirely.
-const DEFAULT_BOOTSTRAP_ADMINS = 'doris@elsheikh.lb';
+// Optional extra allowlist, off by default — set REACT_APP_ADMIN_EMAILS in
+// .env (comma-separated) if you ever need to grant admin by email alone
+// (e.g. before that account has a DB profile at all). The normal path is
+// the `role: 'admin'` field on the user's DB profile (see resolveUserAccess
+// below) or a Firebase custom claim; this is not required for either.
+const DEFAULT_BOOTSTRAP_ADMINS = '';
 
 // Optional: require firebaseUser.emailVerified before honoring the allowlist.
 // Defaults to false because email verification is not yet enforced project-wide.
@@ -48,16 +50,21 @@ const getUserProfile = async (uid) => {
 };
 
 /**
- * Source of truth for admin role:
+ * Source of truth for admin role, in order:
  *   1. Firebase custom claim `admin === true` (set server-side via Admin SDK) — WINS.
- *   2. Bootstrap allowlist in REACT_APP_ADMIN_EMAILS — until claims are set.
+ *   2. Bootstrap allowlist in REACT_APP_ADMIN_EMAILS — opt-in, empty by default.
+ *   3. The `role: 'admin'` field on the user's DB profile (users/$uid/role).
  *
- * The `role` field stored in the DB is DISPLAY ONLY. It is NEVER used to grant
- * privileges, because a malicious user could try to write it directly.
- * Database Rules must additionally restrict `users/$uid/role` writes to admins.
+ * Trusting the DB `role` field here is safe *because* Database Rules
+ * independently restrict who can write users/$uid/role to admins only (see
+ * database.rules.json) — a regular user cannot self-promote by writing it
+ * directly, since that write itself needs one of these same three checks
+ * to already pass. An account is bootstrapped into admin either via a
+ * custom claim, the allowlist, or by an existing DB-role admin promoting
+ * them from the Users page.
  *
- * The DB profile is consulted for `status` (active / inactive) so admins can
- * deactivate accounts without revoking the Firebase user.
+ * The DB profile also contributes `status` (active / inactive) so admins
+ * can deactivate accounts without revoking the Firebase user.
  */
 export const resolveUserAccess = async (firebaseUser) => {
   if (!firebaseUser) {
@@ -77,18 +84,20 @@ export const resolveUserAccess = async (firebaseUser) => {
     console.error('Failed to read auth token claims:', error);
   }
 
-  // 2. Bootstrap allowlist — applies whether or not a DB profile exists, so
-  //    the original admin can still sign in before custom claims are wired up.
+  // 2. Bootstrap allowlist — opt-in via REACT_APP_ADMIN_EMAILS, empty by default.
   if (role !== 'admin' && isAllowlistedAdminEmail(firebaseUser.email)) {
     if (!REQUIRE_VERIFIED_EMAIL_FOR_ALLOWLIST || firebaseUser.emailVerified) {
       role = 'admin';
     }
   }
 
-  // 3. DB profile contributes STATUS only. Role from DB is ignored for auth.
+  // 3. DB profile — role AND status.
   const profile = await getUserProfile(firebaseUser.uid);
   if (profile) {
     status = normalizeStatus(profile.status);
+    if (role !== 'admin' && normalizeRole(profile.role) === 'admin' && status === 'active') {
+      role = 'admin';
+    }
   }
 
   return { role, status };

@@ -6,7 +6,7 @@ import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
-import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash, IconEye, IconEyeOff } from '../utils/icons';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
@@ -83,6 +83,18 @@ const OilSoldItems = () => {
   const [newQuantity, setNewQuantity] = useState('');
 
   const [confirm, confirmDialog] = useConfirmDialog();
+
+  // Employee names are hidden by default — a per-browser preference (not a
+  // security boundary, just keeps names out of view unless deliberately
+  // shown), persisted so it doesn't reset every visit.
+  const [showEmployeeNames, setShowEmployeeNames] = useState(() => (
+    localStorage.getItem('oilSoldItemsShowEmployeeNames') === 'true'
+  ));
+  useEffect(() => {
+    try {
+      localStorage.setItem('oilSoldItemsShowEmployeeNames', String(showEmployeeNames));
+    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
+  }, [showEmployeeNames]);
 
   const [checkedItems, setCheckedItems] = useState(() => {
     const saved = localStorage.getItem('checkedSoldItems');
@@ -1202,6 +1214,13 @@ const OilSoldItems = () => {
               </div>
             )}
           </div>
+          <button
+            className="btn-secondary"
+            onClick={() => setShowEmployeeNames((prev) => !prev)}
+            title={showEmployeeNames ? 'Hide employee names' : 'Show employee names'}
+          >
+            {showEmployeeNames ? <IconEyeOff /> : <IconEye />} {showEmployeeNames ? 'Hide' : 'Show'} Employee Names
+          </button>
           <button className="btn-primary" onClick={openMissingItemsModal}>
             <IconPlus /> Add Sold Item
           </button>
@@ -1494,7 +1513,7 @@ const OilSoldItems = () => {
                   <td>{item.quantity || 0}</td>
                   <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
                   <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>
-                  <td>{item.scannedBy || 'N/A'}</td>
+                  <td>{showEmployeeNames ? (item.scannedBy || 'N/A') : '••••••'}</td>
                   <td>{item.remark || 'N/A'}</td>
                   <td>{`$${rowMetrics.revenue.toFixed(2)}`}</td>
                   <td>

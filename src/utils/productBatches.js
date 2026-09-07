@@ -126,11 +126,17 @@ export const resolveOrCreateBatchForPrice = async (
   const root = siblings.find((p) => p.id === rootId) || siblings[0];
   const newId = push(ref(database, 'products')).key;
 
+  // `name` and `scope` have strict Database Rules validation (name must be
+  // non-empty; scope must match a fixed set of values) — writing '' for
+  // either when `root` can't be found fails that validation, which the
+  // client sees as an opaque PERMISSION_DENIED. Fall back to a real value
+  // for name, and omit scope entirely (rather than send an invalid one) so
+  // `!newData.exists()` — the rule's other allowed branch — is satisfied.
   await update(ref(database), {
     [`products/${newId}`]: {
-      name: root?.name || '',
+      name: root?.name || rootId || 'Unnamed Product',
       productType: root?.productType || '',
-      scope: root?.scope || '',
+      ...(root?.scope ? { scope: root.scope } : {}),
       unit: root?.unit || '',
       ...(root && !isMaghsalProduct(root) ? { barcode: root.barcode || root.id } : {}),
       baseProductId: rootId,

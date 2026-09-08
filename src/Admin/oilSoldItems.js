@@ -142,6 +142,10 @@ const OilSoldItems = () => {
 
   const handleBulkPaymentStatus = async (status) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
+    // Lock the bulk buttons immediately — not just once the write starts —
+    // so clicking a second status while this confirmation popup is still
+    // open can't open a second popup that silently replaces this one.
+    setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against and report on below.
     const targetIds = [...selectedIds];
@@ -174,9 +178,8 @@ const OilSoldItems = () => {
       confirmLabel: `Yes, mark as ${status}`,
       danger: false,
     });
-    if (!confirmed) return;
+    if (!confirmed) { setIsBulkUpdating(false); return; }
 
-    setIsBulkUpdating(true);
     try {
       // Only write to ids confirmed to still exist (targetItems) — never
       // write to a path that isn't a real record, which would silently

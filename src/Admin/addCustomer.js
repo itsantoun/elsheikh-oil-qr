@@ -47,6 +47,7 @@ const emptyForm = {
   waterFillingSizes: [],
   waterFillingPricing: {},
   waterDistributionPricing: emptySizePricing(),
+  pickupWaterDistributionPricing: emptySizePricing(),
 };
 
 const AddCustomer = () => {
@@ -100,6 +101,7 @@ const AddCustomer = () => {
           waterFillingSizes: data[key].waterFillingSizes || [],
           waterFillingPricing: data[key].waterFillingPricing || {},
           waterDistributionPricing: data[key].waterDistributionPricing || null,
+          pickupWaterDistributionPricing: data[key].pickupWaterDistributionPricing || null,
         }));
         customerList.sort(sortByName);
         setCustomers(customerList);
@@ -175,6 +177,14 @@ const AddCustomer = () => {
     }));
   };
 
+  const setPickupWaterDistributionPricingField = (field, value, isEdit = false) => {
+    const setter = isEdit ? setEditData : setFormData;
+    setter(prev => ({
+      ...prev,
+      pickupWaterDistributionPricing: { ...(prev.pickupWaterDistributionPricing || emptySizePricing()), [field]: value },
+    }));
+  };
+
   // Keeps only pricing for currently-checked sizes, with price coerced to a number.
   const buildPricingPayload = (data) => {
     const payload = {};
@@ -198,10 +208,20 @@ const AddCustomer = () => {
     };
   };
 
+  // null when Pickup Water Distribution isn't checked, otherwise the entered amount.
+  const buildPickupWaterDistributionPricingPayload = (data) => {
+    if (!data.clientTypes.includes('pickup-water-distribution')) return null;
+    const entry = data.pickupWaterDistributionPricing || emptySizePricing();
+    return {
+      currency: entry.currency || 'USD',
+      price: parseFloat(entry.price) || 0,
+    };
+  };
+
   const handleAddCustomer = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.nameArabic.trim()) {
-      setErrorMessage('Both English and Arabic names are required.');
+    if (!formData.name.trim()) {
+      setErrorMessage('Customer name is required.');
       return;
     }
 
@@ -218,6 +238,7 @@ const AddCustomer = () => {
         waterFillingSizes: formData.waterFillingSizes,
         waterFillingPricing: buildPricingPayload(formData),
         waterDistributionPricing: buildWaterDistributionPricingPayload(formData),
+        pickupWaterDistributionPricing: buildPickupWaterDistributionPricingPayload(formData),
       };
       const newCustomerRef = push(ref(database, 'customers'));
       await set(newCustomerRef, customerData);
@@ -259,13 +280,16 @@ const AddCustomer = () => {
       waterDistributionPricing: customer.waterDistributionPricing
         ? { currency: customer.waterDistributionPricing.currency || 'USD', price: customer.waterDistributionPricing.price ?? '' }
         : emptySizePricing(),
+      pickupWaterDistributionPricing: customer.pickupWaterDistributionPricing
+        ? { currency: customer.pickupWaterDistributionPricing.currency || 'USD', price: customer.pickupWaterDistributionPricing.price ?? '' }
+        : emptySizePricing(),
     });
     setExpandedCustomer(customer.id);
   };
 
   const handleEditCustomer = async (id) => {
-    if (!editData.name.trim() || !editData.nameArabic.trim()) {
-      setErrorMessage('Both English and Arabic names are required.');
+    if (!editData.name.trim()) {
+      setErrorMessage('Customer name is required.');
       return;
     }
 
@@ -282,6 +306,7 @@ const AddCustomer = () => {
         waterFillingSizes: editData.waterFillingSizes,
         waterFillingPricing: buildPricingPayload(editData),
         waterDistributionPricing: buildWaterDistributionPricingPayload(editData),
+        pickupWaterDistributionPricing: buildPickupWaterDistributionPricingPayload(editData),
       };
       await update(ref(database, `customers/${id}`), customerData);
 
@@ -442,19 +467,22 @@ const AddCustomer = () => {
     </div>
   );
 
-  const renderWaterDistributionPricing = (pricing, isEdit) => {
+  // Shared renderer for a single-price service (Water Distribution, Pickup
+  // Water Distribution) — a currency toggle + one amount, unlike Water
+  // Filling's per-size pricing table.
+  const renderServicePricing = (label, pricing, setFieldFn, isEdit) => {
     const entry = pricing || emptySizePricing();
     return (
       <div className="water-filling-pricing">
         <div className="water-filling-pricing-row">
-          <span className="water-filling-pricing-label">Water Distribution Pricing</span>
+          <span className="water-filling-pricing-label">{label}</span>
           <div className="client-type-selector">
             {CURRENCIES.map((currency) => (
               <button
                 key={currency}
                 type="button"
                 className={`type-chip ${entry.currency === currency ? 'selected' : ''}`}
-                onClick={() => setWaterDistributionPricingField('currency', currency, isEdit)}
+                onClick={() => setFieldFn('currency', currency, isEdit)}
                 disabled={isLoading}
               >
                 <span className="type-chip-label">{currency}</span>
@@ -466,7 +494,7 @@ const AddCustomer = () => {
             inputMode="decimal"
             placeholder="Enter amount"
             value={formatNumberInput(entry.price)}
-            onChange={(e) => setWaterDistributionPricingField('price', stripCommas(e.target.value), isEdit)}
+            onChange={(e) => setFieldFn('price', stripCommas(e.target.value), isEdit)}
             className="form-input"
             disabled={isLoading}
           />
@@ -547,7 +575,7 @@ const AddCustomer = () => {
             <div className="form-group">
               <label className="form-label">
                 <span className="label-text">Customer Name (Arabic)</span>
-                <span className="required-star">*</span>
+                <span className="label-hint">(optional)</span>
               </label>
               <input
                 type="text"
@@ -625,7 +653,13 @@ const AddCustomer = () => {
 
           {formData.clientTypes.includes('water-distribution') && (
             <div className="form-group form-group-full">
-              {renderWaterDistributionPricing(formData.waterDistributionPricing, false)}
+              {renderServicePricing('Water Distribution Pricing', formData.waterDistributionPricing, setWaterDistributionPricingField, false)}
+            </div>
+          )}
+
+          {formData.clientTypes.includes('pickup-water-distribution') && (
+            <div className="form-group form-group-full">
+              {renderServicePricing('Pickup Water Distribution Pricing', formData.pickupWaterDistributionPricing, setPickupWaterDistributionPricingField, false)}
             </div>
           )}
 
@@ -648,7 +682,7 @@ const AddCustomer = () => {
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={isLoading || !formData.name.trim() || !formData.nameArabic.trim()}
+                disabled={isLoading || !formData.name.trim()}
               >
                 {isLoading ? (
                   <>
@@ -830,7 +864,7 @@ const AddCustomer = () => {
                             <div className="form-group">
                               <label className="form-label">
                                 <span className="label-text">Name (Arabic)</span>
-                                <span className="required-star">*</span>
+                                <span className="label-hint">(optional)</span>
                               </label>
                               <input
                                 type="text"
@@ -894,7 +928,12 @@ const AddCustomer = () => {
                           )}
                           {editData.clientTypes.includes('water-distribution') && (
                             <div className="form-group form-group-full">
-                              {renderWaterDistributionPricing(editData.waterDistributionPricing, true)}
+                              {renderServicePricing('Water Distribution Pricing', editData.waterDistributionPricing, setWaterDistributionPricingField, true)}
+                            </div>
+                          )}
+                          {editData.clientTypes.includes('pickup-water-distribution') && (
+                            <div className="form-group form-group-full">
+                              {renderServicePricing('Pickup Water Distribution Pricing', editData.pickupWaterDistributionPricing, setPickupWaterDistributionPricingField, true)}
                             </div>
                           )}
                           <div className="form-group form-group-full">
@@ -913,7 +952,7 @@ const AddCustomer = () => {
                             <button
                               onClick={() => handleEditCustomer(customer.id)}
                               className="btn-primary"
-                              disabled={isLoading || !editData.name.trim() || !editData.nameArabic.trim()}
+                              disabled={isLoading || !editData.name.trim()}
                             >
                               <IconSave /> Save Changes
                             </button>

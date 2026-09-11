@@ -759,7 +759,6 @@ const FetchProducts = () => {
                 type="text"
                 placeholder="Enter barcode"
                 value={editingProduct ? editingProduct.id : newProduct.id}
-                disabled={!!editingProduct}
                 onChange={(e) =>
                   editingProduct
                     ? setEditingProduct({ ...editingProduct, id: e.target.value })
@@ -767,6 +766,11 @@ const FetchProducts = () => {
                 }
                 className="form-input"
               />
+              {editingProduct && (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Changing this moves the product to a new barcode/ID on save — its history stays linked either way.
+                </p>
+              )}
             </div>
 
             <div className="form-group">
@@ -1011,11 +1015,11 @@ const FetchProducts = () => {
                   return (
                   <tr 
                     key={product.id} 
-                    ref={editingProduct?.id === product.id ? rowRef : null}
-                    className={editingProduct?.id === product.id ? 'editing-row' : ''}
+                    ref={editingProduct?.originalId === product.id ? rowRef : null}
+                    className={editingProduct?.originalId === product.id ? 'editing-row' : ''}
                   >
                     <td>
-                      {editingProduct && editingProduct.id === product.id ? (
+                      {editingProduct && editingProduct.originalId === product.id ? (
                         <input
                           type="text"
                           value={editingProduct.id}
@@ -1029,7 +1033,7 @@ const FetchProducts = () => {
                       )}
                     </td>
                     <td>
-                      {editingProduct && editingProduct.id === product.id ? (
+                      {editingProduct && editingProduct.originalId === product.id ? (
                         <input
                           type="text"
                           value={editingProduct.name}
@@ -1043,7 +1047,7 @@ const FetchProducts = () => {
                       )}
                     </td>
                     <td>
-                      {editingProduct && editingProduct.id === product.id ? (
+                      {editingProduct && editingProduct.originalId === product.id ? (
                         <>
                           <select
                             value={normalizeScope(editingProduct.scope, editingProduct.productType)}
@@ -1078,7 +1082,7 @@ const FetchProducts = () => {
                       )}
                     </td>
                     <td className="text-right">
-                      {editingProduct && editingProduct.id === product.id ? (
+                      {editingProduct && editingProduct.originalId === product.id ? (
                         <input
                           type="number"
                           value={editingProduct.quantity}
@@ -1092,7 +1096,7 @@ const FetchProducts = () => {
                       )}
                     </td>
                     <td className="text-right">
-                      {editingProduct && editingProduct.id === product.id ? (
+                      {editingProduct && editingProduct.originalId === product.id ? (
                         <input
                           type="number"
                           step="0.01"
@@ -1107,7 +1111,7 @@ const FetchProducts = () => {
                       )}
                     </td>
                     <td className="text-right">
-                      {editingProduct && editingProduct.id === product.id ? (
+                      {editingProduct && editingProduct.originalId === product.id ? (
                         <input
                           type="number"
                           step="0.01"
@@ -1139,7 +1143,7 @@ const FetchProducts = () => {
                     </td>
                     <td>
                       <div className="action-buttons">
-                        {editingProduct && editingProduct.id === product.id ? (
+                        {editingProduct && editingProduct.originalId === product.id ? (
                           <>
                             <button onClick={handleSaveChanges} className="btn-small btn-success">
                               Save

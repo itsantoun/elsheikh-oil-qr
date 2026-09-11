@@ -864,7 +864,10 @@ const Transactions = () => {
     setEditing(transaction.id);
     setEditedValues({
       quantity: transaction.quantity,
-      dateScanned: transaction.dateScanned.slice(0, 16) // For datetime-local input
+      dateScanned: transaction.dateScanned.slice(0, 16), // For datetime-local input
+      // Only meaningful (and only shown as editable) while the transaction
+      // is still Pending — see handleSave for why.
+      itemCost: transaction.itemCost,
     });
   };
 
@@ -873,7 +876,17 @@ const Transactions = () => {
     try {
       const original = transactions.find((transaction) => transaction.id === id) || {};
       const parsedQuantity = toNumber(editedValues.quantity);
-      const unitSellPrice = toNumber(original.itemCost);
+      const isConfirmed = String(original.paymentStatus || '').toLowerCase() === 'confirmed';
+
+      // Selling Price is only actually editable before a transaction is
+      // confirmed. Once confirmed, its quantity has already been applied to
+      // a specific product/batch — changing the price here would mean
+      // migrating stock between batches, not just relabeling a number, so
+      // that's deliberately not supported by this edit flow.
+      const priceEdited = !isConfirmed && editedValues.itemCost !== '' && editedValues.itemCost != null;
+      const unitSellPrice = priceEdited ? toNumber(editedValues.itemCost) : toNumber(original.itemCost);
+      const priceActuallyChanged = priceEdited && !isSamePrice(unitSellPrice, toNumber(original.itemCost));
+
       const stockLike = isStockLikeStatus(original.paymentStatus);
       const computedTotalCost = stockLike
         ? 0
@@ -884,8 +897,9 @@ const Transactions = () => {
         itemCost: unitSellPrice,
       });
 
-      const updates = {
+      const txUpdates = {
         quantity: parsedQuantity,
+        itemCost: unitSellPrice,
         totalCost: computedTotalCost,
         dateScanned: new Date(editedValues.dateScanned).toISOString(),
         purchasingPrice: metrics.unitPurchasePrice,
@@ -893,11 +907,37 @@ const Transactions = () => {
         totalProfit: metrics.profit,
       };
 
-      await update(ref(database, `transactions/${id}`), updates);
+      // Multi-path root update — lets this also touch products/{key} in the
+      // same atomic write when applicable (see below).
+      const rootUpdates = {};
+      Object.entries(txUpdates).forEach(([field, value]) => {
+        rootUpdates[`transactions/${id}/${field}`] = value;
+      });
+
+      if (priceActuallyChanged) {
+        const rawBarcode = asCleanString(original.productId || original.barcode);
+        const resolvedKey = original.productKey || (rawBarcode !== 'N/A' ? rawBarcode : '');
+        if (resolvedKey) {
+          const productSnapshot = await get(ref(database, `products/${resolvedKey}`));
+          if (productSnapshot.exists() && toNumber(productSnapshot.val().quantity) === 0) {
+            // Empty — there's no old-priced stock sitting around to
+            // protect, so update the product's price in place immediately.
+            // This is what "restocking from empty" means: the new price
+            // takes effect right away, everywhere that reads this product.
+            rootUpdates[`products/${resolvedKey}/itemCost`] = unitSellPrice;
+          }
+          // Otherwise: leave the product/batch alone. The existing Confirm
+          // flow (handleConfirm) already resolves-or-creates the correct
+          // price-batch for this transaction's captured price the moment
+          // it's confirmed, so old stock is never blended with the new one.
+        }
+      }
+
+      await update(ref(database), rootUpdates);
 
       setTransactions(prev =>
         prev
-          .map(t => t.id === id ? { ...t, ...updates } : t)
+          .map(t => t.id === id ? { ...t, ...txUpdates } : t)
           .sort((a, b) => new Date(b.dateScanned) - new Date(a.dateScanned))
       );
 
@@ -1108,8 +1148,10 @@ const Transactions = () => {
     const editingMetrics = editing === item.id
       ? getTransactionMetrics(item, {
         quantity: toNumber(editedValues.quantity ?? item.quantity),
+        itemCost: toNumber(editedValues.itemCost ?? item.itemCost),
       })
       : null;
+    const isConfirmedRow = String(item.paymentStatus || '').toLowerCase() === 'confirmed';
     const rowMetrics = editingMetrics || getTransactionMetrics(item);
 
     return (
@@ -1150,7 +1192,20 @@ const Transactions = () => {
         )}
       </td>
       <td>
-        <span className="cost-display">${rowMetrics.unitSellPrice.toFixed(2)}</span>
+        {editing === item.id && !isConfirmedRow ? (
+          <input
+            type="number"
+            step="0.01"
+            value={editedValues.itemCost ?? item.itemCost}
+            onChange={(e) =>
+              setEditedValues({ ...editedValues, itemCost: e.target.value })
+            }
+            className="edit-input"
+            title="Selling Price — editable until this transaction is confirmed"
+          />
+        ) : (
+          <span className="cost-display">${rowMetrics.unitSellPrice.toFixed(2)}</span>
+        )}
       </td>
       <td>
         <span className="cost-display">${rowMetrics.unitPurchasePrice.toFixed(2)}</span>

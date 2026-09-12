@@ -3,7 +3,7 @@ import { database } from '../Auth/firebase';
 import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
-import { IconRefresh, IconX, IconPlus } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEye, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
@@ -1094,10 +1094,10 @@ const Maghsal = () => {
                     <td>
                       <div className="action-buttons">
                         <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used / sold items, employee & remark">
-                          Details
+                          <IconEye />
                         </button>
-                        <button className="btn-small btn-primary" onClick={() => openEditModal(e)}>Edit</button>
-                        <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)}>Delete</button>
+                        <button className="btn-small btn-primary" onClick={() => openEditModal(e)} title="Edit"><IconEdit /></button>
+                        <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)} title="Delete"><IconTrash /></button>
                       </div>
                     </td>
                     <td className="checkbox-cell">

@@ -156,17 +156,6 @@
   overflow-x: visible;
 }
 
-.archive-table {
-  width: 100%;
-  table-layout: fixed;
-}
-
-.archive-table th,
-.archive-table td {
-  white-space: normal;
-  word-break: break-word;
-}
-
 .archive-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -329,14 +318,6 @@
   box-shadow: none;
 }
 
-.inventory-page .data-table th,
-.inventory-page .data-table td,
-.stock-tab-panel .data-table th,
-.stock-tab-panel .data-table td {
-  padding: 5px 8px;
-  font-size: 13px;
-  line-height: 1.25;
-}
 
 .inventory-page .data-table th,
 .stock-tab-panel .data-table th {

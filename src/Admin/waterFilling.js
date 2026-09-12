@@ -843,28 +843,14 @@ const WaterFilling = () => {
       )}
 
       {/* Table */}
-      <div className="table-container" style={{ overflowX: 'auto' }}>
+      <div className="table-container">
         {filtered.length === 0 ? (
           <div className="empty-table">
             <p>No Water Filling entries match the current filters.</p>
             <button className="btn-secondary" onClick={clearAllFilters} style={{ marginTop: 10 }}>Clear Filters</button>
           </div>
         ) : (
-          <table className="data-table compact-table">
-            <colgroup>
-              <col style={{ width: '3%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '8%' }} />
-            </colgroup>
+          <table className="data-table dense">
             <thead>
               <tr>
                 <th>
@@ -892,8 +878,8 @@ const WaterFilling = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
-                  <td>{e.customerName || 'N/A'}</td>
-                  <td>{entryEmployeeName(e) || '—'}</td>
+                  <td><span className="cell-clip-sm" title={e.customerName || 'N/A'}>{e.customerName || 'N/A'}</span></td>
+                  <td><span className="cell-clip-sm" title={entryEmployeeName(e) || '—'}>{entryEmployeeName(e) || '—'}</span></td>
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td>
@@ -908,7 +894,7 @@ const WaterFilling = () => {
                   <td className="date-cell">
                     {e.paymentStatus === 'Paid' && e.datePaid ? <span className="date-display">{formatDate(e.datePaid)}</span> : '—'}
                   </td>
-                  <td>{e.remark || '—'}</td>
+                  <td><span className="cell-clip-sm" title={e.remark || '—'}>{e.remark || '—'}</span></td>
                   <td>
                     <div className="action-buttons">
                       <button className="btn-small btn-primary" onClick={() => openEditModal(e)} title="Edit Entry">

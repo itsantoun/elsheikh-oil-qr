@@ -998,8 +998,8 @@ const RemainingProducts = () => {
 
       <div className="table-section">
         <div className="table-card">
-          <div className="table-container" style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
+          <div className="table-container">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Barcode</th>
@@ -1172,8 +1172,8 @@ const RemainingProducts = () => {
 
         <div className="table-section">
           <div className="table-card">
-            <div className="table-container" style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
+            <div className="table-container">
+              <table className="data-table">
                 <thead>
                   <tr>
                     <th>Barcode</th>

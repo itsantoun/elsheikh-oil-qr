@@ -1468,7 +1468,7 @@ const OilSoldItems = () => {
       )}
 
       {/* Table */}
-      <div className="table-container" style={{ overflowX: 'auto' }}>
+      <div className="table-container">
         {filteredItems.length === 0 ? (
           <div className="empty-state">
             <p>No items match the current filters.</p>
@@ -1477,7 +1477,7 @@ const OilSoldItems = () => {
             </button>
           </div>
         ) : (
-          <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
+          <table className="data-table dense">
             <thead>
               <tr>
                 <th style={{ width: 32 }}>
@@ -1510,14 +1510,14 @@ const OilSoldItems = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(item.dateScanned)}</span>
                   </td>
-                  <td>{item.customerName || 'N/A'}</td>
-                  <td>{item.name || 'N/A'}</td>
+                  <td><span className="cell-clip-sm" title={item.customerName || 'N/A'}>{item.customerName || 'N/A'}</span></td>
+                  <td><span className="cell-clip-sm" title={item.name || 'N/A'}>{item.name || 'N/A'}</span></td>
                   <td><span className="type-cell">{getItemProductType(item)}</span></td>
                   <td>{item.quantity || 0}</td>
                   <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
                   <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>
                   <td>{showEmployeeNames ? (item.scannedBy || 'N/A') : '••••••'}</td>
-                  <td>{item.remark || 'N/A'}</td>
+                  <td><span className="cell-clip-sm" title={item.remark || 'N/A'}>{item.remark || 'N/A'}</span></td>
                   <td>{`$${rowMetrics.revenue.toFixed(2)}`}</td>
                   <td>
                     <span style={{ color: rowMetrics.totalProfitAmount >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}>

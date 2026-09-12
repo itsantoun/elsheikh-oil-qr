@@ -783,14 +783,14 @@ const WaterDistribution = () => {
       )}
 
       {/* Table */}
-      <div className="table-container" style={{ overflowX: 'auto' }}>
+      <div className="table-container">
         {filtered.length === 0 ? (
           <div className="empty-table">
             <p>No Water Distribution entries match the current filters.</p>
             <button className="btn-secondary" onClick={clearAllFilters} style={{ marginTop: 10 }}>Clear Filters</button>
           </div>
         ) : (
-          <table className="data-table" style={{ whiteSpace: 'nowrap' }}>
+          <table className="data-table dense">
             <thead>
               <tr>
                 <th style={{ width: 32 }}>
@@ -817,8 +817,8 @@ const WaterDistribution = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
-                  <td>{e.customerName || 'N/A'}</td>
-                  <td>{entryEmployeeName(e) || '—'}</td>
+                  <td><span className="cell-clip-sm" title={e.customerName || 'N/A'}>{e.customerName || 'N/A'}</span></td>
+                  <td><span className="cell-clip-sm" title={entryEmployeeName(e) || '—'}>{entryEmployeeName(e) || '—'}</span></td>
                   <td>{getDistributionTypeLabel(e.distributionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td>{formatPrice(toNumber(e.unitPrice), e.priceCurrency)}</td>
@@ -826,7 +826,7 @@ const WaterDistribution = () => {
                   <td>
                     <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
                   </td>
-                  <td>{e.remark || '—'}</td>
+                  <td><span className="cell-clip-sm" title={e.remark || '—'}>{e.remark || '—'}</span></td>
                   <td>
                     <div className="action-buttons">
                       <button className="btn-small btn-primary" onClick={() => openEditModal(e)} title="Edit Entry">

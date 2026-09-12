@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ref, get, set, update, remove, push } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
-import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
+import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown, IconCornerUpLeft } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { isSamePrice, resolveOrCreateBatchForPrice } from '../utils/productBatches';
@@ -1145,23 +1145,23 @@ const FetchProducts = () => {
                       <div className="action-buttons">
                         {editingProduct && editingProduct.originalId === product.id ? (
                           <>
-                            <button onClick={handleSaveChanges} className="btn-small btn-success">
-                              Save
+                            <button onClick={handleSaveChanges} className="btn-small btn-success" title="Save">
+                              <IconSave />
                             </button>
-                            <button onClick={() => setEditingProduct(null)} className="btn-small btn-secondary">
-                              Cancel
+                            <button onClick={() => setEditingProduct(null)} className="btn-small btn-secondary" title="Cancel">
+                              <IconX />
                             </button>
                           </>
                         ) : (
                           <>
-                            <button onClick={() => handleEditProduct(product)} className="btn-small btn-primary">
-                              <IconEdit /> Edit
+                            <button onClick={() => handleEditProduct(product)} className="btn-small btn-primary" title="Edit">
+                              <IconEdit />
                             </button>
-                            <button onClick={() => handleHoldProduct(product)} className="btn-small btn-warning">
-                              <IconPause /> Hold
+                            <button onClick={() => handleHoldProduct(product)} className="btn-small btn-warning" title="Hold">
+                              <IconPause />
                             </button>
-                            <button onClick={() => handleDeleteProduct(product.id)} className="btn-small btn-danger">
-                              <IconTrash /> Delete
+                            <button onClick={() => handleDeleteProduct(product.id)} className="btn-small btn-danger" title="Delete">
+                              <IconTrash />
                             </button>
                           </>
                         )}
@@ -1279,8 +1279,9 @@ const FetchProducts = () => {
                       <button
                         onClick={() => handleRestoreProduct(product)}
                         className="btn-small btn-success"
+                        title="Restore"
                       >
-                        Restore
+                        <IconCornerUpLeft />
                       </button>
                     </td>
                   </tr>

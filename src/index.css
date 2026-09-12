@@ -648,6 +648,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-card);
   overflow-x: auto;
+  max-width: 100%;
 }
 .table-header {
   display: flex;
@@ -666,10 +667,16 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   align-items: center;
   gap: 8px;
 }
-.table-container { overflow-x: auto; }
 
+/* Unified table system used by every CMS page (see .table-container above).
+   Columns size to their content (table-layout: auto); text and numbers
+   never wrap — padding/font-size step down automatically as the viewport
+   narrows to keep tables fitting, and .table-container is the only
+   fallback (horizontal scroll) if a table still can't fit at the
+   smallest tier. */
 .data-table {
   width: 100%;
+  table-layout: auto;
   border-collapse: collapse;
   font-size: 13.5px;
 }
@@ -692,12 +699,44 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   color: var(--text-body);
   border-bottom: 1px solid var(--border-light);
   vertical-align: middle;
+  white-space: nowrap;
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover { background: var(--bg-subtle); }
 .data-table tbody tr.editing-row { background: var(--brand-light); }
 
 .data-table .text-right { text-align: right; }
+
+@media (max-width: 1280px) {
+  .data-table { font-size: 13px; }
+  .data-table th, .data-table td { padding: 10px 12px; }
+}
+@media (max-width: 1024px) {
+  .data-table { font-size: 12.5px; }
+  .data-table th { padding: 8px 10px; font-size: 10.5px; }
+  .data-table td { padding: 8px 10px; }
+}
+@media (max-width: 720px) {
+  .data-table { font-size: 12px; }
+  .data-table th { padding: 6px 8px; font-size: 10px; }
+  .data-table td { padding: 6px 8px; }
+}
+
+/* Dense variant: opt in with `data-table dense` on tables with many columns
+   (10+) — same nowrap/no-overflow system, just tighter from the start so a
+   wide row of columns fits without needing the container's scroll fallback. */
+.data-table.dense { font-size: 12.5px; }
+.data-table.dense th { padding: 8px 8px; font-size: 10px; }
+.data-table.dense td { padding: 6px 8px; }
+@media (max-width: 1280px) {
+  .data-table.dense { font-size: 12px; }
+  .data-table.dense th, .data-table.dense td { padding: 6px 6px; }
+}
+@media (max-width: 1024px) {
+  .data-table.dense { font-size: 11.5px; }
+  .data-table.dense th { padding: 5px 6px; font-size: 9.5px; }
+  .data-table.dense td { padding: 5px 6px; }
+}
 
 /* Cell types */
 .barcode-cell {
@@ -714,13 +753,51 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .price-cell.cost { color: var(--text-secondary); }
 .quantity-cell { font-variant-numeric: tabular-nums; font-weight: 500; }
 .date-cell { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+/* Free-text columns (remark, name, notes...) never wrap either, but are
+   capped and ellipsized so one long value can't blow out the whole
+   table's width — hover (via the cell's title attr) shows the full text. */
+.cell-clip {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1024px) {
+  .cell-clip { max-width: 140px; }
+}
+/* Tighter cap for free-text columns inside a dense (many-column) table */
+.cell-clip-sm {
+  display: block;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1024px) {
+  .cell-clip-sm { max-width: 80px; }
+}
 
 /* Action Buttons in table */
 .action-buttons {
   display: flex;
   gap: 6px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+/* Unified icon-only row actions: every table across the CMS uses icon
+   buttons here, never text labels — keep the icon centered and sized
+   consistently regardless of page-specific btn-small padding tweaks. */
+.action-buttons .btn-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+.action-buttons .btn-small svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 /* Empty State */

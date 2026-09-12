@@ -17,6 +17,7 @@ import {
 } from '../utils/pdfReceipt';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, convertPrice } from '../utils/exchangeRate';
+import { IconEye, IconTrash } from '../utils/icons';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -890,8 +891,10 @@ const ClientReports = () => {
                     <td className="text-right">${formatCurrency(h.grandTotal)}</td>
                     <td>{h.generatedBy}</td>
                     <td>
-                      <button className="btn-secondary" onClick={() => viewHistoryEntry(h.id)}>View</button>{' '}
-                      <button className="btn-danger" onClick={() => requestDeleteHistory(h.id)}>Delete</button>
+                      <div className="action-buttons">
+                        <button className="btn-small btn-secondary" onClick={() => viewHistoryEntry(h.id)} title="View"><IconEye /></button>
+                        <button className="btn-small btn-danger" onClick={() => requestDeleteHistory(h.id)} title="Delete"><IconTrash /></button>
+                      </div>
                     </td>
                   </tr>
                 ))}

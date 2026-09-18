@@ -90,6 +90,7 @@ const WaterDistribution = () => {
   // quantity/unit price no longer overwrites their override.
   const [totalPriceTouched, setTotalPriceTouched] = useState(false);
   const [formPaymentStatus, setFormPaymentStatus] = useState('Unpaid');
+  const [formDatePaid, setFormDatePaid] = useState('');
   const [formRemark, setFormRemark] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -299,7 +300,12 @@ const WaterDistribution = () => {
 
   const clearSelection = () => setSelectedIds([]);
 
-  const handleBulkPaymentStatus = async (status) => {
+  // Clicking "Paid" opens this inline picker instead of applying immediately,
+  // so one Date Paid can be applied to every selected entry at once.
+  const [showBulkDatePaid, setShowBulkDatePaid] = useState(false);
+  const [bulkDatePaid, setBulkDatePaid] = useState(() => formatDateForInput(new Date().toISOString()));
+
+  const handleBulkPaymentStatus = async (status, datePaid = null) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     // Lock the bulk buttons immediately — not just once the write starts —
     // so clicking a second status while this confirmation popup is still
@@ -347,10 +353,14 @@ const WaterDistribution = () => {
       const updates = {};
       writeIds.forEach((id) => {
         updates[`waterDistributionEntries/${id}/paymentStatus`] = status;
+        if (status === 'Paid') {
+          updates[`waterDistributionEntries/${id}/datePaid`] = convertDateInputToISO(datePaid || formatDateForInput(new Date().toISOString()));
+        }
       });
       await update(ref(database), updates);
       flash(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
+      setShowBulkDatePaid(false);
 
       // Firebase's update() is atomic — it either applies to every path or
       // throws — but verify anyway so a mismatch is surfaced immediately
@@ -417,6 +427,7 @@ const WaterDistribution = () => {
     setFormTotalPrice('');
     setTotalPriceTouched(false);
     setFormPaymentStatus('Unpaid');
+    setFormDatePaid('');
     setFormRemark('');
     setShowModal(true);
   };
@@ -438,8 +449,27 @@ const WaterDistribution = () => {
     setFormTotalPrice(entry.totalPrice != null ? String(toNumber(entry.totalPrice)) : '');
     setTotalPriceTouched(false);
     setFormPaymentStatus(entry.paymentStatus || 'Unpaid');
+    setFormDatePaid(entry.datePaid ? formatDateForInput(entry.datePaid) : '');
     setFormRemark(entry.remark || '');
     setShowModal(true);
+  };
+
+  const handleBulkStatusClick = (status) => {
+    if (status === 'Paid') {
+      setBulkDatePaid(formatDateForInput(new Date().toISOString()));
+      setShowBulkDatePaid(true);
+      return;
+    }
+    handleBulkPaymentStatus(status);
+  };
+
+  // Switching to Paid defaults Date Paid to today (only if it's not already
+  // set) so the field isn't left blank; switching away leaves it untouched.
+  const handlePaymentStatusChange = (status) => {
+    setFormPaymentStatus(status);
+    if (status === 'Paid' && !formDatePaid) {
+      setFormDatePaid(formatDateForInput(new Date().toISOString()));
+    }
   };
 
   const closeModal = () => { setShowModal(false); setEditingEntryId(null); };
@@ -577,6 +607,9 @@ const WaterDistribution = () => {
         priceCurrency: formPriceCurrency,
         totalPrice,
         paymentStatus: formPaymentStatus,
+        datePaid: formPaymentStatus === 'Paid'
+          ? convertDateInputToISO(formDatePaid || formatDateForInput(new Date().toISOString()))
+          : null,
         remark: formRemark.trim(),
       };
 
@@ -771,7 +804,7 @@ const WaterDistribution = () => {
                 type="button"
                 className="btn-secondary"
                 disabled={isBulkUpdating}
-                onClick={() => handleBulkPaymentStatus(s)}
+                onClick={() => handleBulkStatusClick(s)}
                 style={{ padding: '4px 10px', fontSize: 12 }}
               >
                 {s}
@@ -779,6 +812,36 @@ const WaterDistribution = () => {
             ))}
           </div>
           <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
+
+          {showBulkDatePaid && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date Paid for all {selectedIds.length} selected:</span>
+              <input
+                type="date"
+                value={bulkDatePaid}
+                onChange={(e) => setBulkDatePaid(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: 12 }}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={isBulkUpdating}
+                onClick={() => handleBulkPaymentStatus('Paid', bulkDatePaid)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={isBulkUpdating}
+                onClick={() => setShowBulkDatePaid(false)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -804,6 +867,7 @@ const WaterDistribution = () => {
                 <th>Unit Price</th>
                 <th>Total Price</th>
                 <th>Status</th>
+                <th>Date Paid</th>
                 <th>Remark</th>
                 <th>Actions</th>
               </tr>
@@ -825,6 +889,9 @@ const WaterDistribution = () => {
                   <td>{formatPrice(toNumber(e.totalPrice), e.priceCurrency)}</td>
                   <td>
                     <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
+                  </td>
+                  <td className="date-cell">
+                    {e.paymentStatus === 'Paid' && e.datePaid ? <span className="date-display">{formatDate(e.datePaid)}</span> : '—'}
                   </td>
                   <td><span className="cell-clip-sm" title={e.remark || '—'}>{e.remark || '—'}</span></td>
                   <td>
@@ -949,13 +1016,20 @@ const WaterDistribution = () => {
 
                 <div className="form-group">
                   <label className="form-label">Payment Status</label>
-                  <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
+                  <select value={formPaymentStatus} onChange={(e) => handlePaymentStatusChange(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Unpaid">Unpaid</option>
                     <option value="Hold">Hold</option>
                     <option value="Paid">Paid</option>
                     <option value="Free">Free</option>
                   </select>
                 </div>
+
+                {formPaymentStatus === 'Paid' && (
+                  <div className="form-group">
+                    <label className="form-label">Date Paid</label>
+                    <input type="date" value={formDatePaid} onChange={(e) => setFormDatePaid(e.target.value)} className="form-input" disabled={isSaving} />
+                  </div>
+                )}
               </div>
 
               {(formCustomerId || (totalPriceTouched && formTotalPrice !== '')) && (

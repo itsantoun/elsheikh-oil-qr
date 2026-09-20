@@ -188,6 +188,16 @@ const OilSoldItems = () => {
       const updates = {};
       writeIds.forEach((id) => {
         updates[`SoldItems/${id}/paymentStatus`] = status;
+        if (status === 'Free') {
+          // Free means nothing is charged: zero the selling price and
+          // recompute profit against the purchase cost.
+          const item = targetItems.find((i) => i.id === id);
+          const m = getItemProfitMetrics(item, { itemCost: 0, totalCost: 0, paymentStatus: 'Free' });
+          updates[`SoldItems/${id}/itemCost`] = 0;
+          updates[`SoldItems/${id}/totalCost`] = 0;
+          updates[`SoldItems/${id}/unitProfit`] = m.profit;
+          updates[`SoldItems/${id}/totalProfit`] = m.totalProfitAmount;
+        }
       });
       await update(ref(database), updates);
       setSelectedIds([]);
@@ -607,7 +617,7 @@ const OilSoldItems = () => {
     // Convert date from local format to ISO string
     const dateToSave = newDate ? new Date(newDate).toISOString() : new Date().toISOString();
     const parsedQuantity = toNumber(newQuantity);
-    const unitSellPrice = toNumber(newSellPrice);
+    const unitSellPrice = newPaymentStatus === 'Free' ? 0 : toNumber(newSellPrice);
     const unitPurchasingPrice = toNumber(newPurchasingPrice);
     const stockLike = isStockLikeStatus(newPaymentStatus);
     const computedTotalCost = stockLike
@@ -1069,7 +1079,7 @@ const OilSoldItems = () => {
 
     // Use whatever the admin edited in the price fields — it may differ from
     // the product's currently stored price.
-    const sellPriceValue = toNumber(missingItemSellPrice);
+    const sellPriceValue = paymentStatusValue === 'Free' ? 0 : toNumber(missingItemSellPrice);
     const purchasingPriceValue = isStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice);
     const dateScannedValue = convertDateInputToISO(missingItemDate);
     const scannedByValue = user?.name || user?.displayName || user?.email || 'Unknown';
@@ -1146,12 +1156,15 @@ const OilSoldItems = () => {
 
   const missingItemQuantityValue = toNumber(missingItemQuantity);
   const missingItemIsStock = isStockLikeStatus(missingItemPaymentStatus);
-  const missingItemSellPriceValue = !selectedProduct ? 0 : toNumber(missingItemSellPrice);
+  const missingItemIsFree = missingItemPaymentStatus === 'Free';
+  const missingItemSellPriceValue = !selectedProduct || missingItemIsFree ? 0 : toNumber(missingItemSellPrice);
   const missingItemPurchasingPriceValue = !selectedProduct
     ? 0
     : (missingItemIsStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice));
+  // Stock is a purchase, so it's saved at purchasing price x quantity —
+  // the summary must show the same figure that gets stored.
   const missingItemTotalCost = missingItemIsStock
-    ? 0
+    ? missingItemPurchasingPriceValue * missingItemQuantityValue
     : missingItemSellPriceValue * missingItemQuantityValue;
   const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
   const canSaveMissingItem = Boolean(
@@ -1614,7 +1627,7 @@ const OilSoldItems = () => {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Sell Price</label>
-                  <input type="number" min="0" step="0.01" value={newSellPrice} onChange={(e) => setNewSellPrice(e.target.value)} className="form-input" />
+                  <input type="number" min="0" step="0.01" value={newPaymentStatus === 'Free' ? 0 : newSellPrice} onChange={(e) => setNewSellPrice(e.target.value)} className="form-input" disabled={newPaymentStatus === 'Free'} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Purchasing Price</label>
@@ -1790,10 +1803,10 @@ const OilSoldItems = () => {
                           type="number"
                           min="0"
                           step="0.01"
-                          value={missingItemSellPrice}
+                          value={missingItemIsFree ? 0 : missingItemSellPrice}
                           onChange={(e) => setMissingItemSellPrice(e.target.value)}
                           className="form-input"
-                          disabled={isSavingMissingItem}
+                          disabled={isSavingMissingItem || missingItemIsFree}
                         />
                       </div>
                     </div>
@@ -1812,9 +1825,11 @@ const OilSoldItems = () => {
                     <div className="missing-item-summary">
                       <span>Unit Purchase: ${missingItemPurchasingPriceValue.toFixed(2)}</span>
                       <span>Total Cost: ${missingItemTotalCost.toFixed(2)}</span>
-                      <span style={{ color: missingItemTotalProfit >= 0 ? '#198754' : '#dc3545' }}>
-                        Total Profit: ${missingItemTotalProfit.toFixed(2)}
-                      </span>
+                      {!missingItemIsStock && (
+                        <span style={{ color: missingItemTotalProfit >= 0 ? '#198754' : '#dc3545' }}>
+                          Total Profit: ${missingItemTotalProfit.toFixed(2)}
+                        </span>
+                      )}
                     </div>
                   </>
                 )}

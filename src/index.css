@@ -752,6 +752,9 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .price-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
 .price-cell.cost { color: var(--text-secondary); }
 .quantity-cell { font-variant-numeric: tabular-nums; font-weight: 500; }
+/* Quantity is always a short number — cap the header/column width instead of
+   letting it size to the "QUANTITY" label like a free-text column would. */
+.data-table th.col-quantity { width: 70px; }
 .date-cell { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
 /* Free-text columns (remark, name, notes...) never wrap either, but are
    capped and ellipsized so one long value can't blow out the whole

@@ -1001,9 +1001,9 @@ const FetchProducts = () => {
                       <span className="sort-icon">{getSortIcon('productType')}</span>
                     </div>
                   </th>
-                  <th className="text-right">Quantity</th>
-                  <th className="text-right">Selling Price</th>
-                  <th className="text-right">Purchasing Price</th>
+                  <th className="text-right col-quantity">Quantity</th>
+                  <th className="text-right">Sell Price</th>
+                  <th className="text-right">Buy Price</th>
                   <th className="text-right">Unit Profit</th>
                   <th className="text-right">Total Profit</th>
                   <th>Actions</th>
@@ -1043,7 +1043,7 @@ const FetchProducts = () => {
                           className="edit-input"
                         />
                       ) : (
-                        <span className="product-name-cell">{product.name}</span>
+                        <span className="product-name-cell cell-clip-sm" title={product.name}>{product.name}</span>
                       )}
                     </td>
                     <td>
@@ -1218,15 +1218,15 @@ const FetchProducts = () => {
             </div>
           </div>
           <div className="table-container">
-            <table className="data-table">
+            <table className="data-table dense">
               <thead>
                 <tr>
                   <th>Barcode</th>
                   <th>Product Name</th>
                   <th>Type</th>
-                  <th className="text-right">Quantity</th>
-                  <th className="text-right">Selling Price</th>
-                  <th className="text-right">Purchasing Price</th>
+                  <th className="text-right col-quantity">Quantity</th>
+                  <th className="text-right">Sell Price</th>
+                  <th className="text-right">Buy Price</th>
                   <th className="text-right">Unit Profit</th>
                   <th className="text-right">Total Profit</th>
                   <th>Hold Date</th>
@@ -1242,7 +1242,7 @@ const FetchProducts = () => {
                       <span className="barcode-cell">{product.id}</span>
                     </td>
                     <td>
-                      <span className="product-name-cell">{product.name}</span>
+                      <span className="product-name-cell cell-clip-sm" title={product.name}>{product.name}</span>
                     </td>
                     <td>
                       <span className="type-cell">{product.productType}</span>
@@ -1276,13 +1276,15 @@ const FetchProducts = () => {
                       <span className="date-cell">{formatDate(product.heldDate)}</span>
                     </td>
                     <td>
-                      <button
-                        onClick={() => handleRestoreProduct(product)}
-                        className="btn-small btn-success"
-                        title="Restore"
-                      >
-                        <IconCornerUpLeft />
-                      </button>
+                      <div className="action-buttons">
+                        <button
+                          onClick={() => handleRestoreProduct(product)}
+                          className="btn-small btn-success"
+                          title="Restore"
+                        >
+                          <IconCornerUpLeft />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )})}

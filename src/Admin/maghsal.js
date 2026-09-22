@@ -176,11 +176,13 @@ const Maghsal = () => {
       let list = [];
       if (snap.exists()) {
         const data = snap.val();
-        list = Object.keys(data).map((k) => ({
-          id: k,
-          name: data[k].name,
-          nameArabic: data[k].nameArabic,
-        }));
+        list = Object.keys(data)
+          .filter((k) => (data[k].clientTypes || []).includes('maghsal'))
+          .map((k) => ({
+            id: k,
+            name: data[k].name,
+            nameArabic: data[k].nameArabic,
+          }));
         list.sort(sortByName);
       }
       setCustomers(list);

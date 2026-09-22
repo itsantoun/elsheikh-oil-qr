@@ -427,11 +427,13 @@ const OilSoldItems = () => {
       let customerList = [];
       if (customersSnapshot.exists()) {
         const customersData = customersSnapshot.val();
-        customerList = Object.keys(customersData).map((key) => ({
-          id: key,
-          name: customersData[key].name,
-          nameArabic: customersData[key].nameArabic,
-        }));
+        customerList = Object.keys(customersData)
+          .filter((key) => (customersData[key].clientTypes || []).includes('oil-filter'))
+          .map((key) => ({
+            id: key,
+            name: customersData[key].name,
+            nameArabic: customersData[key].nameArabic,
+          }));
         customerList.sort((a, b) => sortByName(a, b));
       }
       customersListRef.current = customerList;
@@ -729,11 +731,13 @@ const OilSoldItems = () => {
       let customerList = [];
       if (customersSnapshot.exists()) {
         const customersData = customersSnapshot.val();
-        customerList = Object.keys(customersData).map((key) => ({
-          id: key,
-          name: customersData[key].name,
-          nameArabic: customersData[key].nameArabic,
-        }));
+        customerList = Object.keys(customersData)
+          .filter((key) => (customersData[key].clientTypes || []).includes('oil-filter'))
+          .map((key) => ({
+            id: key,
+            name: customersData[key].name,
+            nameArabic: customersData[key].nameArabic,
+          }));
         customerList.sort((a, b) => sortByName(a, b));
       }
       setCustomers(customerList);

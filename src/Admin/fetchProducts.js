@@ -936,27 +936,27 @@ const FetchProducts = () => {
                   </th>
                   <th 
                     onClick={() => handleSort('name')}
-                    className="sortable-header"
+                    className="sortable-header col-name"
                   >
                     <div className="header-content">
                       Product Name
                       <span className="sort-icon">{getSortIcon('name')}</span>
                     </div>
                   </th>
-                  <th 
+                  <th
                     onClick={() => handleSort('productType')}
-                    className="sortable-header"
+                    className="sortable-header col-type"
                   >
                     <div className="header-content">
                       Type
                       <span className="sort-icon">{getSortIcon('productType')}</span>
                     </div>
                   </th>
-                  <th className="text-right col-quantity">Quantity</th>
-                  <th className="text-right">Sell Price</th>
-                  <th className="text-right">Buy Price</th>
-                  <th className="text-right">Unit Profit</th>
-                  <th className="text-right">Total Profit</th>
+                  <th className="text-right col-quantity">Qty</th>
+                  <th className="text-right col-money">Sell Price</th>
+                  <th className="text-right col-money">Buy Price</th>
+                  <th className="text-right col-money">Unit Profit</th>
+                  <th className="text-right col-money">Total Profit</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -994,7 +994,7 @@ const FetchProducts = () => {
                           className="edit-input"
                         />
                       ) : (
-                        <span className="product-name-cell cell-clip-sm" title={product.name}>{product.name}</span>
+                        <span className="product-name-cell cell-wrap">{product.name}</span>
                       )}
                     </td>
                     <td>
@@ -1032,7 +1032,7 @@ const FetchProducts = () => {
                         <span className="type-cell">{product.productType}</span>
                       )}
                     </td>
-                    <td className="text-right">
+                    <td className="text-right col-quantity">
                       {editingProduct && editingProduct.originalId === product.id ? (
                         <input
                           type="number"
@@ -1173,13 +1173,13 @@ const FetchProducts = () => {
               <thead>
                 <tr>
                   <th>Barcode</th>
-                  <th>Product Name</th>
-                  <th>Type</th>
-                  <th className="text-right col-quantity">Quantity</th>
-                  <th className="text-right">Sell Price</th>
-                  <th className="text-right">Buy Price</th>
-                  <th className="text-right">Unit Profit</th>
-                  <th className="text-right">Total Profit</th>
+                  <th className="col-name">Product Name</th>
+                  <th className="col-type">Type</th>
+                  <th className="text-right col-quantity">Qty</th>
+                  <th className="text-right col-money">Sell Price</th>
+                  <th className="text-right col-money">Buy Price</th>
+                  <th className="text-right col-money">Unit Profit</th>
+                  <th className="text-right col-money">Total Profit</th>
                   <th>Hold Date</th>
                   <th>Actions</th>
                 </tr>
@@ -1193,12 +1193,12 @@ const FetchProducts = () => {
                       <span className="barcode-cell">{product.id}</span>
                     </td>
                     <td>
-                      <span className="product-name-cell cell-clip-sm" title={product.name}>{product.name}</span>
+                      <span className="product-name-cell cell-wrap">{product.name}</span>
                     </td>
                     <td>
                       <span className="type-cell">{product.productType}</span>
                     </td>
-                    <td className="text-right">
+                    <td className="text-right col-quantity">
                       <span className="quantity-cell">{product.quantity}</span>
                     </td>
                     <td className="text-right">

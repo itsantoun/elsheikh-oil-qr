@@ -749,12 +749,29 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   display: inline-block;
 }
 .product-name-cell { font-weight: 500; color: var(--text-heading); }
+/* Wraps onto a second line instead of the ellipsis-truncate .cell-clip*
+   treatment — used where the full product name should always stay visible. */
+.cell-wrap { display: block; white-space: normal; word-break: break-word; line-height: 1.3; }
 .price-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
 .price-cell.cost { color: var(--text-secondary); }
 .quantity-cell { font-variant-numeric: tabular-nums; font-weight: 500; }
 /* Quantity is always a short number — cap the header/column width instead of
    letting it size to the "QUANTITY" label like a free-text column would. */
-.data-table th.col-quantity { width: 70px; }
+.data-table th.col-quantity { width: 34px; }
+.data-table th.col-quantity, .data-table td.col-quantity { padding-left: 4px; padding-right: 4px; }
+/* Type is always one short word ("Oil"/"Filter"/"Maghsal"/"Other") — without
+   a cap, table-layout:auto hands it any leftover width the table has to
+   fill, which reads as a big gap before the next column starts. */
+.data-table th.col-type { width: 90px; }
+/* Money columns (Sell/Buy Price, Unit/Total Profit) hold a short number
+   ("$75.20") but their all-caps header label is what was forcing them
+   wide — let the header wrap to two lines instead so the column itself
+   can stay narrow. */
+.data-table th.col-money { width: 76px; white-space: normal; line-height: 1.25; }
+/* Product Name has no natural cap, so it was either stretching the table
+   or (when clipped) hiding the full name. Give it a fixed width and wrap
+   long names onto a second line instead of either. */
+.data-table th.col-name { width: 150px; }
 .date-cell { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
 /* Free-text columns (remark, name, notes...) never wrap either, but are
    capped and ellipsized so one long value can't blow out the whole

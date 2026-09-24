@@ -868,6 +868,7 @@ const Transactions = () => {
       // Only meaningful (and only shown as editable) while the transaction
       // is still Pending — see handleSave for why.
       itemCost: transaction.itemCost,
+      purchasingPrice: transaction.purchasingPrice,
     });
   };
 
@@ -885,7 +886,18 @@ const Transactions = () => {
       // that's deliberately not supported by this edit flow.
       const priceEdited = !isConfirmed && editedValues.itemCost !== '' && editedValues.itemCost != null;
       const unitSellPrice = priceEdited ? toNumber(editedValues.itemCost) : toNumber(original.itemCost);
-      const priceActuallyChanged = priceEdited && !isSamePrice(unitSellPrice, toNumber(original.itemCost));
+      const sellPriceChanged = priceEdited && !isSamePrice(unitSellPrice, toNumber(original.itemCost));
+
+      // Purchasing Price follows the same before-confirmation-only rule as
+      // Sell Price, for the same reason — see the comment below.
+      const buyPriceEdited = !isConfirmed && editedValues.purchasingPrice !== '' && editedValues.purchasingPrice != null;
+      const unitPurchasePrice = buyPriceEdited ? toNumber(editedValues.purchasingPrice) : toNumber(original.purchasingPrice);
+      const buyPriceChanged = buyPriceEdited && !isSamePrice(unitPurchasePrice, toNumber(original.purchasingPrice));
+
+      // Either price changing means the confirmed batch this transaction
+      // would resolve to (matched on the {itemCost, purchasingPrice} pair)
+      // is no longer the same one — see the block below.
+      const priceActuallyChanged = sellPriceChanged || buyPriceChanged;
 
       const stockLike = isStockLikeStatus(original.paymentStatus);
       const computedTotalCost = stockLike
@@ -895,6 +907,7 @@ const Transactions = () => {
         quantity: parsedQuantity,
         totalCost: computedTotalCost,
         itemCost: unitSellPrice,
+        purchasingPrice: unitPurchasePrice,
       });
 
       const txUpdates = {
@@ -925,6 +938,7 @@ const Transactions = () => {
             // This is what "restocking from empty" means: the new price
             // takes effect right away, everywhere that reads this product.
             rootUpdates[`products/${resolvedKey}/itemCost`] = unitSellPrice;
+            rootUpdates[`products/${resolvedKey}/purchasingPrice`] = unitPurchasePrice;
           }
           // Otherwise: leave the product/batch alone. The existing Confirm
           // flow (handleConfirm) already resolves-or-creates the correct
@@ -1149,6 +1163,7 @@ const Transactions = () => {
       ? getTransactionMetrics(item, {
         quantity: toNumber(editedValues.quantity ?? item.quantity),
         itemCost: toNumber(editedValues.itemCost ?? item.itemCost),
+        purchasingPrice: toNumber(editedValues.purchasingPrice ?? item.purchasingPrice),
       })
       : null;
     const isConfirmedRow = String(item.paymentStatus || '').toLowerCase() === 'confirmed';
@@ -1208,7 +1223,20 @@ const Transactions = () => {
         )}
       </td>
       <td>
-        <span className="cost-display">${rowMetrics.unitPurchasePrice.toFixed(2)}</span>
+        {editing === item.id && !isConfirmedRow ? (
+          <input
+            type="number"
+            step="0.01"
+            value={editedValues.purchasingPrice ?? item.purchasingPrice}
+            onChange={(e) =>
+              setEditedValues({ ...editedValues, purchasingPrice: e.target.value })
+            }
+            className="edit-input"
+            title="Purchasing Price — editable until this transaction is confirmed"
+          />
+        ) : (
+          <span className="cost-display">${rowMetrics.unitPurchasePrice.toFixed(2)}</span>
+        )}
       </td>
       <td>
         <span className="cost-display">${rowMetrics.totalSellPrice.toFixed(2)}</span>

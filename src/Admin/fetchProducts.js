@@ -925,9 +925,9 @@ const FetchProducts = () => {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th 
+                  <th
                     onClick={() => handleSort('id')}
-                    className="sortable-header"
+                    className="sortable-header col-barcode"
                   >
                     <div className="header-content">
                       Barcode
@@ -1176,7 +1176,7 @@ const FetchProducts = () => {
             <table className="data-table dense">
               <thead>
                 <tr>
-                  <th>Barcode</th>
+                  <th className="col-barcode">Barcode</th>
                   <th className="col-name">Product Name</th>
                   <th className="col-type">Type</th>
                   <th className="text-right col-quantity">Qty</th>

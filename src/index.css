@@ -747,7 +747,16 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   padding: 3px 7px;
   border-radius: var(--r-xs);
   display: inline-block;
+  /* Never truncate a barcode — it has to stay fully readable/scannable,
+     unlike free-text columns (.cell-clip/.cell-clip-sm) that are allowed
+     to ellipsize. */
+  white-space: nowrap;
+  max-width: none;
+  overflow: visible;
 }
+/* Reserve enough width up front so a narrow column full of other capped
+   columns (Qty, Type, price columns) doesn't squeeze Barcode down first. */
+.data-table th.col-barcode { min-width: 120px; }
 .product-name-cell { font-weight: 500; color: var(--text-heading); }
 /* Wraps onto a second line instead of the ellipsis-truncate .cell-clip*
    treatment — used where the full product name should always stay visible. */

@@ -90,7 +90,7 @@
 .transactions-container .data-table th:nth-child(1),  /* Date */
 .transactions-container .data-table td:nth-child(1) { width: 11%; }
 .transactions-container .data-table th:nth-child(2),  /* Barcode */
-.transactions-container .data-table td:nth-child(2) { width: 10%; }
+.transactions-container .data-table td:nth-child(2) { width: 13%; }
 .transactions-container .data-table th:nth-child(3),  /* Product */
 .transactions-container .data-table td:nth-child(3) { width: auto; }
 .transactions-container .data-table th:nth-child(4),  /* Quantity */
@@ -99,22 +99,20 @@
 .transactions-container .data-table td:nth-child(5) { width: 8%; text-align: right; }
 .transactions-container .data-table th:nth-child(6),  /* Purchasing Price */
 .transactions-container .data-table td:nth-child(6) { width: 9%; text-align: right; }
-.transactions-container .data-table th:nth-child(7),  /* Total Sell Price */
+.transactions-container .data-table th:nth-child(7),  /* Total Purchasing Price */
 .transactions-container .data-table td:nth-child(7) { width: 9%; text-align: right; }
-.transactions-container .data-table th:nth-child(8),  /* Profit */
-.transactions-container .data-table td:nth-child(8) { width: 8%; text-align: right; }
-.transactions-container .data-table th:nth-child(9),  /* Status */
-.transactions-container .data-table td:nth-child(9) { width: 8%; }
-.transactions-container .data-table th:nth-child(10), /* Actions */
-.transactions-container .data-table td:nth-child(10) { width: 10%; }
+.transactions-container .data-table th:nth-child(8),  /* Total Sell Price */
+.transactions-container .data-table td:nth-child(8) { width: 9%; text-align: right; }
+.transactions-container .data-table th:nth-child(9),  /* Profit */
+.transactions-container .data-table td:nth-child(9) { width: 8%; text-align: right; }
+.transactions-container .data-table th:nth-child(10), /* Status */
+.transactions-container .data-table td:nth-child(10) { width: 8%; }
+.transactions-container .data-table th:nth-child(11), /* Actions */
+.transactions-container .data-table td:nth-child(11) { width: 10%; }
 
-/* Truncate product names that are too long instead of forcing column wide */
-.transactions-container .product-name {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Product name always shows in full — wraps onto a second line instead of
+   being ellipsis-truncated (inherits white-space:normal/word-break from the
+   table's own td rule above). */
 
 /* Compact action buttons row */
 .transactions-container .action-buttons {
@@ -132,13 +130,13 @@
   height: 16px;
 }
 
-/* Shrink the barcode pill so it doesn't dominate */
+/* Barcode always shows in full — wraps instead of being ellipsis-truncated */
 .transactions-container .barcode-display {
   display: inline-block;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-all;
   font-size: 12px;
 }
 

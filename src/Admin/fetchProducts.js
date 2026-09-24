@@ -955,6 +955,7 @@ const FetchProducts = () => {
                   <th className="text-right col-quantity">Qty</th>
                   <th className="text-right col-money">Sell Price</th>
                   <th className="text-right col-money">Buy Price</th>
+                  <th className="text-right col-money">Total Purchasing Price</th>
                   <th className="text-right col-money">Unit Profit</th>
                   <th className="text-right col-money">Total Profit</th>
                   <th>Actions</th>
@@ -1077,6 +1078,9 @@ const FetchProducts = () => {
                       )}
                     </td>
                     <td className="text-right">
+                      <span className="price-cell cost">${metrics.purchaseCost.toFixed(2)}</span>
+                    </td>
+                    <td className="text-right">
                       <span
                         className="price-cell"
                         style={{ color: metrics.unitProfit >= 0 ? '#198754' : '#dc3545', fontWeight: 600 }}
@@ -1178,6 +1182,7 @@ const FetchProducts = () => {
                   <th className="text-right col-quantity">Qty</th>
                   <th className="text-right col-money">Sell Price</th>
                   <th className="text-right col-money">Buy Price</th>
+                  <th className="text-right col-money">Total Purchasing Price</th>
                   <th className="text-right col-money">Unit Profit</th>
                   <th className="text-right col-money">Total Profit</th>
                   <th>Hold Date</th>
@@ -1206,6 +1211,9 @@ const FetchProducts = () => {
                     </td>
                     <td className="text-right">
                       <span className="price-cell cost">${parseFloat(product.purchasingPrice || 0).toFixed(2)}</span>
+                    </td>
+                    <td className="text-right">
+                      <span className="price-cell cost">${metrics.purchaseCost.toFixed(2)}</span>
                     </td>
                     <td className="text-right">
                       <span

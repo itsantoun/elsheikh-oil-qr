@@ -3,7 +3,7 @@ import { database } from '../Auth/firebase';
 import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
-import { IconRefresh, IconX, IconPlus, IconEye, IconEdit, IconTrash } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
@@ -102,9 +102,6 @@ const Maghsal = () => {
   const [formStockPurchasingPrice, setFormStockPurchasingPrice] = useState('');
   const [formStockSellPrice, setFormStockSellPrice] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-
-  // Details modal
-  const [detailsEntry, setDetailsEntry] = useState(null);
 
   // Inline edit (simple fields only)
   // Editing reuses the Add modal; this holds the id of the entry being edited
@@ -1083,7 +1080,7 @@ const Maghsal = () => {
                     <td className="text-right">
                       {Array.isArray(e.consumablesUsed) && e.consumablesUsed[0]
                         ? toNumber(e.consumablesUsed[0].quantity)
-                        : '—'}
+                        : (e.quantity != null ? toNumber(e.quantity) : '—')}
                     </td>
                     <td className="text-right">
                       <span className="price-cell" style={{ fontWeight: 600 }}>
@@ -1095,9 +1092,6 @@ const Maghsal = () => {
                     </td>
                     <td>
                       <div className="action-buttons">
-                        <button className="btn-small btn-secondary" onClick={() => setDetailsEntry(e)} title="View used / sold items, employee & remark">
-                          <IconEye />
-                        </button>
                         <button className="btn-small btn-primary" onClick={() => openEditModal(e)} title="Edit"><IconEdit /></button>
                         <button className="btn-small btn-danger" onClick={() => requestDelete(e.id)} title="Delete"><IconTrash /></button>
                       </div>
@@ -1311,14 +1305,6 @@ const Maghsal = () => {
                 <textarea value={formRemark} onChange={(e) => setFormRemark(e.target.value)} className="form-textarea" rows="2" disabled={isSaving} />
               </div>
 
-              {formPaymentStatus !== 'Stock' && (
-                <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
-                  <span style={{ color: 'var(--brand)' }}>
-                    Total: ${(toNumber(formServicePrice) * toNumber(formQuantity)).toFixed(2)}
-                    {' '}({toNumber(formQuantity)} × ${toNumber(formServicePrice).toFixed(2)})
-                  </span>
-                </div>
-              )}
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
               {missingFieldMessages.length > 0 && (
@@ -1334,43 +1320,6 @@ const Maghsal = () => {
                 </button>
                 <button className="btn-secondary" onClick={closeAddModal} disabled={isSaving}>Close</button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Details modal */}
-      {detailsEntry && (
-        <div className="modal-overlay" onClick={() => setDetailsEntry(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Used Item Details</h3>
-              <button className="modal-close" onClick={() => setDetailsEntry(null)}><IconX /></button>
-            </div>
-            <div className="modal-content">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s-3)' }}>
-                <div><strong>Customer:</strong> {detailsEntry.customerName || '—'}</div>
-                <div><strong>Date:</strong> {formatDateTime(detailsEntry.date)}</div>
-                <div><strong>Service:</strong> {detailsEntry.serviceCategory || '—'}</div>
-                <div><strong>Product:</strong> {detailsEntry.category || '—'}</div>
-                <div><strong>Quantity:</strong> {Array.isArray(detailsEntry.consumablesUsed) && detailsEntry.consumablesUsed[0] ? toNumber(detailsEntry.consumablesUsed[0].quantity) : '—'}</div>
-                <div><strong>Status:</strong> {detailsEntry.paymentStatus || '—'}</div>
-                <div><strong>Employee:</strong> {detailsEntry.employee || '—'}</div>
-              </div>
-
-              <div className="missing-item-summary" style={{ marginTop: 'var(--s-4)' }}>
-                <span style={{ color: 'var(--brand)' }}>Charges: ${entryTotals(detailsEntry).servicePrice.toFixed(2)}</span>
-              </div>
-
-              {detailsEntry.remark && (
-                <div>
-                  <h4 style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Remark</h4>
-                  <p style={{ fontSize: 13 }}>{detailsEntry.remark}</p>
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setDetailsEntry(null)}>Close</button>
             </div>
           </div>
         </div>

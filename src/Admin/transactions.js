@@ -1151,6 +1151,7 @@ const Transactions = () => {
                 <th>Quantity</th>
                 <th>Sell Price</th>
                 <th>Purchasing Price</th>
+                <th>Total Purchasing Price</th>
                 <th>Total Sell Price</th>
                 <th>Profit</th>
                 <th>Status</th>
@@ -1237,6 +1238,9 @@ const Transactions = () => {
         ) : (
           <span className="cost-display">${rowMetrics.unitPurchasePrice.toFixed(2)}</span>
         )}
+      </td>
+      <td>
+        <span className="cost-display">${rowMetrics.purchaseCost.toFixed(2)}</span>
       </td>
       <td>
         <span className="cost-display">${rowMetrics.totalSellPrice.toFixed(2)}</span>

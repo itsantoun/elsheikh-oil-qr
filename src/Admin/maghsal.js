@@ -6,7 +6,7 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
-import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
+import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
 
 const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
 
@@ -282,6 +282,14 @@ const Maghsal = () => {
   // batch that still has stock (same rule as automatic FIFO elsewhere).
   const formCategoryDefaultBatch = useMemo(
     () => pickFifoBatch(formCategoryBatches, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId }),
+    [formCategoryBatches, entries, stockCheckedAtByProductId],
+  );
+
+  // Batches actually offered in the Price dropdown — a sold-through old
+  // price is dropped automatically instead of cluttering the list with
+  // "0 left" options.
+  const formCategorySelectableBatches = useMemo(
+    () => filterSelectableBatches(formCategoryBatches, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId }),
     [formCategoryBatches, entries, stockCheckedAtByProductId],
   );
 
@@ -1157,7 +1165,7 @@ const Maghsal = () => {
                   </div>
                 )}
 
-                {formPaymentStatus !== 'Stock' && formCategory && formCategoryBatches.length > 1 && (
+                {formPaymentStatus !== 'Stock' && formCategory && formCategorySelectableBatches.length > 1 && (
                   <div className="form-group">
                     <label className="form-label">Price</label>
                     <select
@@ -1166,7 +1174,7 @@ const Maghsal = () => {
                       className="form-select"
                       disabled={isSaving}
                     >
-                      {formCategoryBatches.map((b) => (
+                      {formCategorySelectableBatches.map((b) => (
                         <option key={b.id} value={b.id}>
                           ${toNumber(b.itemCost).toFixed(2)} — {computeBatchRemaining(b, { maghsalEntries: entries, checkedAtByProductId: stockCheckedAtByProductId })} left
                           {b.id === formCategoryDefaultBatch?.id ? ' (default)' : ''}

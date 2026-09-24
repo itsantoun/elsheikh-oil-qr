@@ -10,6 +10,7 @@ import {
   IconEdit, IconSave, IconTrash,
 } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { getBatchCode, getBatchGroupKey } from '../utils/productBatches';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
 
@@ -728,7 +729,21 @@ const RemainingProducts = () => {
       scanCoolRef.current = setTimeout(() => { scanCoolRef.current = null; }, 2500);
 
       const barcode = result.getText();
-      const found = products.find(p => p.id === barcode);
+      // Match on the physical `barcode` field (falling back to `id` only for
+      // legacy records that never had one) — matching on `id` alone missed
+      // every price-duplicate batch, since a new batch gets a fresh
+      // Firebase-generated id that isn't the barcode anymore.
+      const anchor = products.find(p => p.id === barcode || getBatchCode(p) === barcode);
+      let found = anchor;
+      if (anchor) {
+        const groupKey = getBatchGroupKey(anchor);
+        const siblings = products
+          .filter(p => getBatchGroupKey(p) === groupKey)
+          .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+        // FIFO: the oldest sibling that still has stock, or the newest one
+        // if every batch is exhausted (still lets a count be recorded).
+        found = siblings.find((p) => getExpectedRemaining(p) > 0) || siblings[siblings.length - 1] || anchor;
+      }
       if (found) {
         setScannerPaused(true);
         setScannedProduct(found);
@@ -745,7 +760,7 @@ const RemainingProducts = () => {
       if (scanCoolRef.current) { clearTimeout(scanCoolRef.current); scanCoolRef.current = null; }
       if (codeReaderRef.current) { codeReaderRef.current.reset(); codeReaderRef.current = null; }
     };
-  }, [scannerOpen, scannerPaused, products]);
+  }, [scannerOpen, scannerPaused, products, getExpectedRemaining]);
 
   useEffect(() => {
     if (!scannerOpen) {
@@ -1025,7 +1040,7 @@ const RemainingProducts = () => {
                   const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                   return (
                     <tr key={product.id} className={isPending ? 'row-warning' : ''}>
-                      <td title={product.id}><span className="barcode-cell">{product.id}</span></td>
+                      <td title={getBatchCode(product)}><span className="barcode-cell">{getBatchCode(product)}</span></td>
                       <td title={product.name}>
                         <span className="product-name-cell">{product.name}</span>
                         {' '}
@@ -1200,7 +1215,7 @@ const RemainingProducts = () => {
                     const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
                     return (
                       <tr key={product.id} className={isPending ? 'row-warning' : 'row-info'}>
-                        <td title={product.id}><span className="barcode-cell">{product.id}</span></td>
+                        <td title={getBatchCode(product)}><span className="barcode-cell">{getBatchCode(product)}</span></td>
                         <td title={product.name}>
                         <span className="product-name-cell">{product.name}</span>
                         {' '}
@@ -1712,7 +1727,7 @@ const RemainingProducts = () => {
               <tbody>
                 {filteredArchivedProducts.map((product) => (
                   <tr key={product.id}>
-                    <td><span className="barcode-cell">{product.id}</span></td>
+                    <td><span className="barcode-cell">{getBatchCode(product)}</span></td>
                     <td><span className="product-name-cell">{product.name || 'Unnamed'}</span></td>
                     <td><span className="type-cell">{product.productType || 'General'}</span></td>
                     <td className="text-right"><span className="quantity-cell">{product.quantity ?? 0}</span></td>

@@ -10,7 +10,7 @@ import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash, IconEye, IconEyeOff 
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
-import { findSiblingBatches, pickFifoBatch, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
+import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
 import {
   addReceiptHeader,
   createReceiptDoc,
@@ -992,6 +992,14 @@ const OilSoldItems = () => {
     [missingItemBatches, soldItems, stockCheckedAtByProductId],
   );
 
+  // Batches actually offered in the Price dropdown — a sold-through old
+  // price is dropped automatically instead of cluttering the list with
+  // "0 left" options.
+  const missingItemSelectableBatches = useMemo(
+    () => filterSelectableBatches(missingItemBatches, { soldItems, checkedAtByProductId: stockCheckedAtByProductId }),
+    [missingItemBatches, soldItems, stockCheckedAtByProductId],
+  );
+
   const selectedProduct = (missingItemBatches.find((b) => b.id === missingItemBatchId))
     || missingItemDefaultBatch
     || null;
@@ -1690,7 +1698,7 @@ const OilSoldItems = () => {
                   </select>
                 </div>
 
-                {missingItemGroupId && missingItemBatches.length > 1 && (
+                {missingItemGroupId && missingItemSelectableBatches.length > 1 && (
                   <div className="form-group">
                     <label className="form-label">Price</label>
                     <select
@@ -1699,7 +1707,7 @@ const OilSoldItems = () => {
                       className="form-select"
                       disabled={isSavingMissingItem}
                     >
-                      {missingItemBatches.map((b) => (
+                      {missingItemSelectableBatches.map((b) => (
                         <option key={b.id} value={b.id}>
                           ${toNumber(b.itemCost).toFixed(2)} — {computeBatchRemaining(b, { soldItems, checkedAtByProductId: stockCheckedAtByProductId })} left
                           {b.id === missingItemDefaultBatch?.id ? ' (default)' : ''}

@@ -5,6 +5,7 @@ import '../CSS/admin.css';
 import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAlertTriangle, IconPackage, IconPause, IconEdit, IconTrash, IconArrowUpDown, IconCornerUpLeft } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { getBatchCode } from '../utils/productBatches';
 
 const FetchProducts = () => {
   const [confirm, confirmDialog] = useConfirmDialog();
@@ -981,7 +982,7 @@ const FetchProducts = () => {
                           className="edit-input"
                         />
                       ) : (
-                        <span className="barcode-cell">{product.id}</span>
+                        <span className="barcode-cell">{getBatchCode(product)}</span>
                       )}
                     </td>
                     <td>
@@ -1195,7 +1196,7 @@ const FetchProducts = () => {
                   return (
                   <tr key={product.id}>
                     <td>
-                      <span className="barcode-cell">{product.id}</span>
+                      <span className="barcode-cell">{getBatchCode(product)}</span>
                     </td>
                     <td>
                       <span className="product-name-cell cell-wrap">{product.name}</span>

@@ -106,6 +106,17 @@ export const pickFifoBatch = (siblingBatches, movementSource = {}) => {
   return sorted.find((batch) => computeBatchRemaining(batch, movementSource) > 0) || sorted[sorted.length - 1];
 };
 
+// Batches with 0 remaining stock (typically the old-priced batch after a
+// restock at a new price has fully sold through) are dropped from a
+// selection dropdown so they don't clutter it — no manual Hold needed, and
+// one reappears on its own if it's ever restocked at that same price again.
+// Falls back to the full list if that would leave nothing selectable.
+export const filterSelectableBatches = (siblingBatches, movementSource = {}) => {
+  if (!Array.isArray(siblingBatches) || siblingBatches.length === 0) return [];
+  const withStock = siblingBatches.filter((batch) => computeBatchRemaining(batch, movementSource) > 0);
+  return withStock.length > 0 ? withStock : siblingBatches;
+};
+
 // Finds the sibling batch already priced at {itemCost, purchasingPrice}, or
 // creates a new one linked to rootId. New batches start at quantity 0 — no
 // physical stock has arrived yet, it only gains quantity via a confirmed

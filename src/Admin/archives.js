@@ -3,6 +3,7 @@ import { ref, get } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
+import { getBatchCode } from '../utils/productBatches';
 import { IconRefresh } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 
@@ -293,7 +294,7 @@ const Archives = () => {
               <tbody>
                 {filteredProducts.map((product) => (
                   <tr key={product.id}>
-                    <td><span className="barcode-cell">{product.id}</span></td>
+                    <td><span className="barcode-cell">{getBatchCode(product)}</span></td>
                     <td><span className="product-name-cell">{product.name || 'Unnamed'}</span></td>
                     <td><span className="type-cell">{product.productType || 'General'}</span></td>
                     <td className="text-right"><span className="quantity-cell">{product.quantity ?? 0}</span></td>

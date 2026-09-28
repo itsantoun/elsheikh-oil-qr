@@ -78,6 +78,7 @@ const OilSoldItems = () => {
   const [newSellPrice, setNewSellPrice] = useState('');
   const [newPurchasingPrice, setNewPurchasingPrice] = useState('');
   const [newPaymentStatus, setNewPaymentStatus] = useState('');
+  const [newDatePaid, setNewDatePaid] = useState('');
   const [newCustomer, setNewCustomer] = useState('');
   const [newProductType, setNewProductType] = useState('');
   const [newQuantity, setNewQuantity] = useState('');
@@ -140,7 +141,12 @@ const OilSoldItems = () => {
 
   const clearSelection = () => setSelectedIds([]);
 
-  const handleBulkPaymentStatus = async (status) => {
+  // Clicking "Paid" opens this inline picker instead of applying immediately,
+  // so one Date Paid can be applied to every selected item at once.
+  const [showBulkDatePaid, setShowBulkDatePaid] = useState(false);
+  const [bulkDatePaid, setBulkDatePaid] = useState('');
+
+  const handleBulkPaymentStatus = async (status, datePaid = null) => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     // Lock the bulk buttons immediately — not just once the write starts —
     // so clicking a second status while this confirmation popup is still
@@ -188,6 +194,9 @@ const OilSoldItems = () => {
       const updates = {};
       writeIds.forEach((id) => {
         updates[`SoldItems/${id}/paymentStatus`] = status;
+        if (status === 'Paid') {
+          updates[`SoldItems/${id}/datePaid`] = convertDateInputToISO(datePaid || formatDateForInput(new Date().toISOString()));
+        }
         if (status === 'Free') {
           // Free means nothing is charged: zero the selling price and
           // recompute profit against the purchase cost.
@@ -201,6 +210,7 @@ const OilSoldItems = () => {
       });
       await update(ref(database), updates);
       setSelectedIds([]);
+      setShowBulkDatePaid(false);
       setSuccessMessage(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'item' : 'items'} as ${status}.`);
       setTimeout(() => setSuccessMessage(null), 4000);
 
@@ -233,6 +243,7 @@ const OilSoldItems = () => {
   const [missingItemDate, setMissingItemDate] = useState('');
   const [missingItemQuantity, setMissingItemQuantity] = useState('1');
   const [missingItemPaymentStatus, setMissingItemPaymentStatus] = useState('Unpaid');
+  const [missingItemDatePaid, setMissingItemDatePaid] = useState('');
   // Editable restock prices — only used/shown when Payment Status is 'Stock',
   // seeded from the selected product but overridable so a restock at a new
   // price can be logged accurately (mirrors maghsal.js's stock-in form).
@@ -604,6 +615,7 @@ const OilSoldItems = () => {
     setNewSellPrice(metrics.unitSellPrice);
     setNewPurchasingPrice(metrics.unitPurchasePrice);
     setNewPaymentStatus(item.paymentStatus || 'Paid');
+    setNewDatePaid(item.datePaid ? formatDateForInput(item.datePaid) : '');
     setNewCustomer(item.customerName || '');
     setNewProductType(item.name || '');
     setNewQuantity(item.quantity || 0);
@@ -633,9 +645,15 @@ const OilSoldItems = () => {
       purchasingPrice: unitPurchasingPrice,
     });
     
+    // Date Paid only applies while the item is Paid; any other status clears it.
+    const datePaidToSave = newPaymentStatus === 'Paid'
+      ? convertDateInputToISO(newDatePaid || formatDateForInput(new Date().toISOString()))
+      : null;
+
     const itemRef = ref(database, `SoldItems/${editingItem.id}`);
     try {
       await update(itemRef, {
+        datePaid: datePaidToSave,
         remark: newRemark,
         totalCost: computedTotalCost,
         itemCost: unitSellPrice,
@@ -653,6 +671,7 @@ const OilSoldItems = () => {
         item.id === editingItem.id
           ? {
               ...item,
+              datePaid: datePaidToSave,
               remark: newRemark,
               totalCost: computedTotalCost,
               itemCost: unitSellPrice,
@@ -1014,6 +1033,7 @@ const OilSoldItems = () => {
     setMissingItemDate(getTodayDateForInput());
     setMissingItemQuantity('1');
     setMissingItemPaymentStatus('Unpaid');
+    setMissingItemDatePaid('');
     setMissingItemPurchasingPrice('');
     setMissingItemSellPrice('');
     setMissingItemRemark('');
@@ -1141,6 +1161,9 @@ const OilSoldItems = () => {
           customerName: customerNameForStorage,
           quantity: quantityValue,
           paymentStatus: paymentStatusValue,
+          ...(paymentStatusValue === 'Paid' && {
+            datePaid: convertDateInputToISO(missingItemDatePaid || formatDateForInput(new Date().toISOString())),
+          }),
           itemCost: sellPriceValue,
           purchasingPrice: purchasingPriceValue,
           totalCost: totalCostValue,
@@ -1481,7 +1504,14 @@ const OilSoldItems = () => {
                 type="button"
                 className="btn-secondary"
                 disabled={isBulkUpdating}
-                onClick={() => handleBulkPaymentStatus(s)}
+                onClick={() => {
+                  if (s === 'Paid') {
+                    setBulkDatePaid(getTodayDateForInput());
+                    setShowBulkDatePaid(true);
+                    return;
+                  }
+                  handleBulkPaymentStatus(s);
+                }}
                 style={{ padding: '4px 10px', fontSize: 12 }}
               >
                 {s}
@@ -1489,6 +1519,36 @@ const OilSoldItems = () => {
             ))}
           </div>
           <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
+
+          {showBulkDatePaid && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date Paid for all {selectedIds.length} selected:</span>
+              <input
+                type="date"
+                value={bulkDatePaid}
+                onChange={(e) => setBulkDatePaid(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: 12 }}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={isBulkUpdating}
+                onClick={() => handleBulkPaymentStatus('Paid', bulkDatePaid)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={isBulkUpdating}
+                onClick={() => setShowBulkDatePaid(false)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1520,6 +1580,7 @@ const OilSoldItems = () => {
                 <th>Total Cost</th>
                 <th>Profit</th>
                 <th>Payment Status</th>
+                <th>Date Paid</th>
                 <th>Actions</th>
                 <th>Check</th>
               </tr>
@@ -1578,6 +1639,9 @@ const OilSoldItems = () => {
                         </button>
                       )}
                     </div>
+                  </td>
+                  <td className="date-cell">
+                    {item.paymentStatus === 'Paid' && item.datePaid ? <span className="date-display">{formatDate(item.datePaid)}</span> : '—'}
                   </td>
                   <td>
                     <div className="action-buttons">
@@ -1647,7 +1711,14 @@ const OilSoldItems = () => {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Payment Status</label>
-                  <select value={newPaymentStatus} onChange={(e) => setNewPaymentStatus(e.target.value)} className="form-select">
+                  <select
+                    value={newPaymentStatus}
+                    onChange={(e) => {
+                      setNewPaymentStatus(e.target.value);
+                      if (e.target.value === 'Paid' && !newDatePaid) setNewDatePaid(getTodayDateForInput());
+                    }}
+                    className="form-select"
+                  >
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
                     <option value="Hold">Hold</option>
@@ -1655,6 +1726,12 @@ const OilSoldItems = () => {
                     <option value="Stock">Stock</option>
                   </select>
                 </div>
+                {newPaymentStatus === 'Paid' && (
+                  <div className="form-group">
+                    <label className="form-label">Date Paid</label>
+                    <input type="date" value={newDatePaid} onChange={(e) => setNewDatePaid(e.target.value)} className="form-input" />
+                  </div>
+                )}
               </div>
               <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
                 <label className="form-label">Remark</label>
@@ -1782,7 +1859,10 @@ const OilSoldItems = () => {
                         <label className="form-label">Payment Status</label>
                         <select
                           value={missingItemPaymentStatus}
-                          onChange={(e) => setMissingItemPaymentStatus(e.target.value)}
+                          onChange={(e) => {
+                            setMissingItemPaymentStatus(e.target.value);
+                            if (e.target.value === 'Paid' && !missingItemDatePaid) setMissingItemDatePaid(getTodayDateForInput());
+                          }}
                           className="form-select"
                           disabled={isSavingMissingItem}
                         >
@@ -1793,6 +1873,19 @@ const OilSoldItems = () => {
                           <option value="Stock">Stock</option>
                         </select>
                       </div>
+
+                      {missingItemPaymentStatus === 'Paid' && (
+                        <div className="form-group">
+                          <label className="form-label">Date Paid</label>
+                          <input
+                            type="date"
+                            value={missingItemDatePaid}
+                            onChange={(e) => setMissingItemDatePaid(e.target.value)}
+                            className="form-input"
+                            disabled={isSavingMissingItem}
+                          />
+                        </div>
+                      )}
 
                       {missingItemIsStock && (
                         <div className="form-group">

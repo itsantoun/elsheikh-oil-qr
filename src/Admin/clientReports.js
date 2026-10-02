@@ -5,7 +5,7 @@ import { database } from '../Auth/firebase';
 import { ref, onValue, get, push, remove } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
-import { saveBlobToExportFolder } from '../utils/exportFolder';
+import { saveBlobToExportFolder, ensureExportFolderPermission } from '../utils/exportFolder';
 import {
   createReceiptDoc,
   addReceiptHeader,
@@ -512,7 +512,16 @@ const ClientReports = () => {
 
   // ── PDF export (A5 landscape — shared receipt theme), grouped into sections ────
   // Shared builder — used for both the live statement and a saved history snapshot.
+  const reportSaveResult = (result) => {
+    if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${result.filename}"`);
+    else if (result.error) flash(`Couldn't save to the export folder (${result.error}) — downloaded instead.`, 'error');
+  };
+
   const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, totalQuantity = 0, recordCount: count, customerName, rangeLabel: range, filename }) => {
+    // Ask for folder permission before building the PDF — a long statement can
+    // take long enough that the click's user activation expires, and the
+    // browser then refuses the permission prompt and falls back to Downloads.
+    await ensureExportFolderPermission();
     // A4 (not the default A5 receipt size) — client statements can run long
     // across several sections/date ranges and need the extra room so rows
     // don't awkwardly overflow onto another page more than necessary.
@@ -614,7 +623,7 @@ const ClientReports = () => {
 
     const blob = doc.output('blob');
     const result = await saveBlobToExportFolder(blob, filename);
-    if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
+    reportSaveResult(result);
   };
 
   const exportPDF = async () => {
@@ -683,7 +692,7 @@ const ClientReports = () => {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const filename = `${fileLabel()}.csv`;
     const result = await saveBlobToExportFolder(blob, filename);
-    if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
+    reportSaveResult(result);
   };
 
   // ── Quick range presets ───────────────────────────────────────────────────────

@@ -113,23 +113,56 @@ const downloadBlob = (blob, filename) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+// getFileHandle() is stricter than a plain download: it rejects names with
+// control characters, invisible bidi marks (common in pasted Arabic names),
+// path/reserved characters, or leading/trailing dots and spaces.
+const sanitizeFilename = (name) => {
+  const cleaned = String(name || '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/g, '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/^[.\s]+|[.\s]+$/g, '');
+  return cleaned || 'export';
+};
+
+// Request folder permission up front, while the click's user activation is
+// still fresh. Browsers refuse requestPermission() without it, so callers that
+// do slow work (e.g. building a large PDF) before saving should call this first.
+export const ensureExportFolderPermission = async () => {
+  if (!isFileSystemAccessSupported()) return false;
+  try {
+    const handle = await getSavedExportFolder();
+    return handle ? await ensureWritePermission(handle) : false;
+  } catch (err) {
+    console.warn('Requesting export folder permission failed:', err);
+    return false;
+  }
+};
+
 // Save a Blob to the chosen folder if one is configured & permission still valid.
-// Falls back to a normal browser download otherwise. Returns the strategy used.
+// Falls back to a normal browser download otherwise. Returns the strategy used,
+// plus `error` when a folder was configured but saving into it failed.
 export const saveBlobToExportFolder = async (blob, filename) => {
+  const safeFilename = sanitizeFilename(filename);
+  let error = null;
   if (isFileSystemAccessSupported()) {
     try {
       const handle = await getSavedExportFolder();
-      if (handle && (await ensureWritePermission(handle))) {
-        const fileHandle = await handle.getFileHandle(filename, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return { strategy: 'folder', folderName: handle.name, filename };
+      if (handle) {
+        if (await ensureWritePermission(handle)) {
+          const fileHandle = await handle.getFileHandle(safeFilename, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return { strategy: 'folder', folderName: handle.name, filename: safeFilename };
+        }
+        error = 'Permission to the export folder was not granted';
       }
     } catch (err) {
       console.warn('Saving to chosen export folder failed, falling back to download:', err);
+      error = err?.message || String(err);
     }
   }
-  downloadBlob(blob, filename);
-  return { strategy: 'download', filename };
+  downloadBlob(blob, safeFilename);
+  return { strategy: 'download', filename: safeFilename, error };
 };

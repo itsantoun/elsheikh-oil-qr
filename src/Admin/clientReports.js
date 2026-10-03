@@ -99,6 +99,10 @@ const sanitizeCSVCell = (value) => {
   return /^[=+\-@]/.test(flattened) ? `'${flattened}` : flattened;
 };
 
+// Sections whose quantities share a unit and are summed in the statement.
+const QTY_SUM_SECTIONS = ['Water Filling', 'Water Distribution'];
+const sectionQuantity = (g) => g.rows.reduce((a, r) => a + toNumber(r.quantity), 0);
+
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
 
 // Locale-aware, case-insensitive name compare (handles Arabic + Latin).
@@ -552,23 +556,37 @@ const ClientReports = () => {
       });
 
       groupTotalIndexes.add(body.length);
-      body.push([
-        { content: `${g.section} Total`, colSpan: 5, styles: { halign: 'right' } },
-        { content: money(g.subtotal) },
-      ]);
+      body.push(QTY_SUM_SECTIONS.includes(g.section)
+        ? [
+          { content: `${g.section} Total`, colSpan: 2, styles: { halign: 'right' } },
+          { content: String(sectionQuantity(g)), styles: { halign: 'right' } },
+          { content: '', colSpan: 2 },
+          { content: money(g.subtotal) },
+        ]
+        : [
+          { content: `${g.section} Total`, colSpan: 5, styles: { halign: 'right' } },
+          { content: money(g.subtotal) },
+        ]);
     });
 
-    // Total Quantity row — the dollar Grand Total is drawn separately below
-    // via drawTotalsBlock, so this row only carries the quantity total
-    // (under the Quantity column) to avoid showing the dollar figure twice.
-    const grandTotalIndex = body.length;
-    body.push([
-      { content: 'Water Filling Qty', colSpan: 2, styles: { halign: 'right' } },
-      { content: String(totalQuantity), styles: { halign: 'right' } },
-      '',
-      '',
-      '',
-    ]);
+    // Quantity rows — one per water section present. The dollar Grand Total
+    // is drawn separately below via drawTotalsBlock, so these rows only carry
+    // the quantity (under the Quantity column) to avoid showing it twice.
+    // Water Filling uses the stored totalQuantity so older saved reports
+    // print exactly what they were frozen with.
+    const qtyRowIndexes = new Set();
+    QTY_SUM_SECTIONS.forEach((name) => {
+      const g = sections.find((s) => s.section === name);
+      if (!g) return;
+      qtyRowIndexes.add(body.length);
+      body.push([
+        { content: `${name} Qty`, colSpan: 2, styles: { halign: 'right' } },
+        { content: String(name === 'Water Filling' ? totalQuantity : sectionQuantity(g)), styles: { halign: 'right' } },
+        '',
+        '',
+        '',
+      ]);
+    });
 
     autoTable(doc, {
       ...receiptTableOptions({
@@ -596,7 +614,7 @@ const ClientReports = () => {
         5: { halign: 'right', cellWidth: 48 },
       },
       didParseCell: (data) => {
-        if (data.section === 'body' && data.row.index === grandTotalIndex) {
+        if (data.section === 'body' && qtyRowIndexes.has(data.row.index)) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fontSize = density.fontSize;
@@ -682,7 +700,10 @@ const ClientReports = () => {
     });
     rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
     rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
-    rows.push(['Water Filling Qty', '', '', statement.totalQuantity, '', '']);
+    QTY_SUM_SECTIONS.forEach((name) => {
+      const g = statement.sections.find((s) => s.section === name);
+      if (g) rows.push([`${name} Qty`, '', '', sectionQuantity(g), '', '']);
+    });
     rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
@@ -854,6 +875,15 @@ const ClientReports = () => {
                     <td></td>
                     <td></td>
                   </tr>
+                  {statement.sections.some((g) => g.section === 'Water Distribution') && (
+                    <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
+                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Distribution Qty</td>
+                      <td className="text-right" style={{ fontWeight: 800 }}>{sectionQuantity(statement.sections.find((g) => g.section === 'Water Distribution'))}</td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -970,6 +1000,15 @@ const ClientReports = () => {
                       <td></td>
                       <td></td>
                     </tr>
+                    {viewedEntry.sections.some((g) => g.section === 'Water Distribution') && (
+                      <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
+                        <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Distribution Qty</td>
+                        <td className="text-right" style={{ fontWeight: 800 }}>{sectionQuantity(viewedEntry.sections.find((g) => g.section === 'Water Distribution'))}</td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

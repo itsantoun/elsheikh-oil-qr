@@ -5,6 +5,7 @@ import { database } from '../Auth/firebase';
 import { ref, onValue } from 'firebase/database';
 import '../CSS/soldItems.css';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
+import { printPdfDoc } from '../utils/printPdf';
 
 const toNumber = (v) => {
   const n = parseFloat(v);
@@ -65,7 +66,6 @@ const REPORT_TYPES = [
   { value: 'period',   label: 'Period Summary',   description: 'Day / week / month totals' },
   { value: 'customer', label: 'Per-Customer',     description: 'Statement for a single customer' },
   { value: 'category', label: 'Per-Category',     description: 'Breakdown by service category' },
-  { value: 'employee', label: 'Employee Performance', description: 'Entries grouped by employee' },
 ];
 
 const sanitizeCSVCell = (value) => {
@@ -178,22 +178,6 @@ const MaghsalReports = () => {
     return [...m.entries()].map(([k, v]) => ({ category: k, ...v })).sort((a, b) => b.total - a.total);
   }, [inRange]);
 
-  const employeeStats = useMemo(() => {
-    const m = new Map();
-    for (const e of inRange) {
-      const emp = e.employee || 'Unknown';
-      const t = entryTotal(e);
-      const prev = m.get(emp) || { count: 0, total: 0, paid: 0, unpaid: 0 };
-      m.set(emp, {
-        count: prev.count + 1,
-        total: prev.total + t,
-        paid: prev.paid + (e.paymentStatus === 'Paid' ? t : 0),
-        unpaid: prev.unpaid + (e.paymentStatus === 'Unpaid' ? t : 0),
-      });
-    }
-    return [...m.entries()].map(([k, v]) => ({ employee: k, ...v })).sort((a, b) => b.total - a.total);
-  }, [inRange]);
-
   // ── Export builders ────────────────────────────────────────────────────
   const fileLabel = () => {
     const safe = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
@@ -233,9 +217,6 @@ const MaghsalReports = () => {
     } else if (reportType === 'category') {
       headers = ['Category', 'Entries', 'Service', 'Goods', 'Total'];
       rows = categoryBreakdown.map((c) => [c.category, c.count, `$${c.service.toFixed(2)}`, `$${c.goods.toFixed(2)}`, `$${c.total.toFixed(2)}`]);
-    } else if (reportType === 'employee') {
-      headers = ['Employee', 'Entries', 'Total', 'Paid', 'Unpaid'];
-      rows = employeeStats.map((e) => [e.employee, e.count, `$${e.total.toFixed(2)}`, `$${e.paid.toFixed(2)}`, `$${e.unpaid.toFixed(2)}`]);
     }
 
     const csv = '﻿' +
@@ -248,14 +229,14 @@ const MaghsalReports = () => {
     if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
   };
 
-  const exportPDF = async () => {
+  // `print: true` sends the same PDF to the printer instead of saving it.
+  const exportPDF = async ({ print = false } = {}) => {
     const doc = new jsPDF();
     doc.setFontSize(14);
     const titles = {
       period: 'Maghsal — Period Summary',
       customer: `Maghsal — Statement for ${customerFilter || 'All Customers'}`,
       category: 'Maghsal — Category Breakdown',
-      employee: 'Maghsal — Employee Performance',
     };
     doc.text(titles[reportType] || 'Maghsal Report', 14, 15);
     doc.setFontSize(10);
@@ -314,15 +295,9 @@ const MaghsalReports = () => {
         headStyles: { fillColor: [41, 128, 185] },
         columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
       });
-    } else if (reportType === 'employee') {
-      head = [['Employee', 'Entries', 'Total', 'Paid', 'Unpaid']];
-      body = employeeStats.map((e) => [e.employee, String(e.count), `$${e.total.toFixed(2)}`, `$${e.paid.toFixed(2)}`, `$${e.unpaid.toFixed(2)}`]);
-      autoTable(doc, {
-        head, body, startY: 28, styles: { fontSize: 10 },
-        headStyles: { fillColor: [41, 128, 185] },
-        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
-      });
     }
+
+    if (print) { printPdfDoc(doc); return; }
 
     const filename = `${fileLabel()}.pdf`;
     const blob = doc.output('blob');
@@ -350,11 +325,12 @@ const MaghsalReports = () => {
       <div className="page-shell-header">
         <div className="page-shell-header-left">
           <h1 className="page-shell-header-title">Maghsal Reports</h1>
-          <p className="page-shell-header-subtitle">Period, customer, category, and employee summaries with exports.</p>
+          <p className="page-shell-header-subtitle">Period, customer and category summaries with exports.</p>
         </div>
         <div className="page-shell-header-actions">
           <button className="btn-secondary" onClick={exportCSV}>Export CSV</button>
-          <button className="btn-primary" onClick={exportPDF}>Export PDF</button>
+          <button className="btn-secondary" onClick={() => exportPDF({ print: true })}>Print</button>
+          <button className="btn-primary" onClick={() => exportPDF()}>Export PDF</button>
         </div>
       </div>
 
@@ -543,43 +519,6 @@ const MaghsalReports = () => {
                       <td className="text-right">${formatCurrency(c.service)}</td>
                       <td className="text-right">${formatCurrency(c.goods)}</td>
                       <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(c.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {reportType === 'employee' && (
-        <div className="ui-card">
-          <div className="ui-card-header">
-            <h2 className="ui-card-title">Employee Performance</h2>
-            <span className="ui-card-subtle">{employeeStats.length} employee(s)</span>
-          </div>
-          {employeeStats.length === 0 ? (
-            <div className="empty-state-card">No entries in range.</div>
-          ) : (
-            <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th className="text-right">Entries</th>
-                    <th className="text-right">Total</th>
-                    <th className="text-right">Paid</th>
-                    <th className="text-right">Unpaid</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {employeeStats.map((e) => (
-                    <tr key={e.employee}>
-                      <td>{e.employee}</td>
-                      <td className="text-right">{e.count}</td>
-                      <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(e.total)}</td>
-                      <td className="text-right" style={{ color: 'var(--green)' }}>${formatCurrency(e.paid)}</td>
-                      <td className="text-right" style={{ color: 'var(--red)' }}>${formatCurrency(e.unpaid)}</td>
                     </tr>
                   ))}
                 </tbody>

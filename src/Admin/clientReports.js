@@ -6,6 +6,7 @@ import { ref, onValue, get, push, remove } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { saveBlobToExportFolder, ensureExportFolderPermission } from '../utils/exportFolder';
+import { printPdfBlob } from '../utils/printPdf';
 import {
   createReceiptDoc,
   addReceiptHeader,
@@ -521,11 +522,12 @@ const ClientReports = () => {
     else if (result.error) flash(`Couldn't save to the export folder (${result.error}) — downloaded instead.`, 'error');
   };
 
-  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, totalQuantity = 0, recordCount: count, customerName, rangeLabel: range, filename }) => {
+  // `print: true` sends the same PDF to the printer instead of saving it.
+  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, totalQuantity = 0, recordCount: count, customerName, rangeLabel: range, filename, print = false }) => {
     // Ask for folder permission before building the PDF — a long statement can
     // take long enough that the click's user activation expires, and the
     // browser then refuses the permission prompt and falls back to Downloads.
-    await ensureExportFolderPermission();
+    if (!print) await ensureExportFolderPermission();
     // A4 (not the default A5 receipt size) — client statements can run long
     // across several sections/date ranges and need the extra room so rows
     // don't awkwardly overflow onto another page more than necessary.
@@ -640,11 +642,12 @@ const ClientReports = () => {
     });
 
     const blob = doc.output('blob');
+    if (print) { printPdfBlob(blob); return; }
     const result = await saveBlobToExportFolder(blob, filename);
     reportSaveResult(result);
   };
 
-  const exportPDF = async () => {
+  const exportPDF = async ({ print = false } = {}) => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     await buildAndSaveStatementPDF({
@@ -657,6 +660,7 @@ const ClientReports = () => {
       customerName: selectedCustomer.name,
       rangeLabel: rangeLabel(),
       filename: `${fileLabel()}.pdf`,
+      print,
     });
   };
 
@@ -670,7 +674,7 @@ const ClientReports = () => {
           .reduce((a, r) => a + toNumber(r.quantity), 0)
   );
 
-  const exportHistoryPDF = async (entry) => {
+  const exportHistoryPDF = async (entry, { print = false } = {}) => {
     if (!entry) return;
     const parts = ['Client_Report', safeName(entry.customerName), entry.dateFrom || entry.dateTo ? `${entry.dateFrom || 'start'}_to_${entry.dateTo || 'now'}` : 'all_time'];
     await buildAndSaveStatementPDF({
@@ -683,6 +687,7 @@ const ClientReports = () => {
       customerName: entry.customerName,
       rangeLabel: entry.rangeLabel,
       filename: `${parts.join('_')}.pdf`,
+      print,
     });
   };
 
@@ -736,7 +741,8 @@ const ClientReports = () => {
         </div>
         <div className="page-shell-header-actions">
           <button className="btn-secondary" onClick={exportCSV}>Export CSV</button>
-          <button className="btn-secondary" onClick={exportPDF}>Export PDF</button>
+          <button className="btn-secondary" onClick={() => exportPDF()}>Export PDF</button>
+          <button className="btn-secondary" onClick={() => exportPDF({ print: true })}>Print</button>
           <button className="btn-primary" onClick={generateReport}>Generate Report</button>
         </div>
       </div>
@@ -868,13 +874,15 @@ const ClientReports = () => {
                       </tr>
                     </React.Fragment>
                   ))}
-                  <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
-                    <td className="text-right" style={{ fontWeight: 800 }}>{statement.totalQuantity}</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
+                  {statement.sections.some((g) => g.section === 'Water Filling') && (
+                    <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
+                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
+                      <td className="text-right" style={{ fontWeight: 800 }}>{statement.totalQuantity}</td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                  )}
                   {statement.sections.some((g) => g.section === 'Water Distribution') && (
                     <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
                       <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Distribution Qty</td>
@@ -993,13 +1001,15 @@ const ClientReports = () => {
                         </tr>
                       </React.Fragment>
                     ))}
-                    <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
-                      <td className="text-right" style={{ fontWeight: 800 }}>{entryTotalQuantity(viewedEntry)}</td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                    </tr>
+                    {viewedEntry.sections.some((g) => g.section === 'Water Filling') && (
+                      <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
+                        <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
+                        <td className="text-right" style={{ fontWeight: 800 }}>{entryTotalQuantity(viewedEntry)}</td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                      </tr>
+                    )}
                     {viewedEntry.sections.some((g) => g.section === 'Water Distribution') && (
                       <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
                         <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Distribution Qty</td>
@@ -1019,6 +1029,7 @@ const ClientReports = () => {
             </div>
             <div className="modal-footer">
               <button className="btn-primary" onClick={() => exportHistoryPDF(viewedEntry)}>Export PDF</button>
+              <button className="btn-secondary" onClick={() => exportHistoryPDF(viewedEntry, { print: true })}>Print</button>
               <button className="btn-secondary" onClick={backToLiveView}>Close</button>
             </div>
           </div>

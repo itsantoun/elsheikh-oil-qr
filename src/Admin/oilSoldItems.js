@@ -6,10 +6,11 @@ import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import Barcode from 'react-barcode';
-import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash, IconEye, IconEyeOff } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
+import { printPdfDoc } from '../utils/printPdf';
 import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
 import {
   addReceiptHeader,
@@ -84,18 +85,6 @@ const OilSoldItems = () => {
   const [newQuantity, setNewQuantity] = useState('');
 
   const [confirm, confirmDialog] = useConfirmDialog();
-
-  // Employee names are hidden by default — a per-browser preference (not a
-  // security boundary, just keeps names out of view unless deliberately
-  // shown), persisted so it doesn't reset every visit.
-  const [showEmployeeNames, setShowEmployeeNames] = useState(() => (
-    localStorage.getItem('oilSoldItemsShowEmployeeNames') === 'true'
-  ));
-  useEffect(() => {
-    try {
-      localStorage.setItem('oilSoldItemsShowEmployeeNames', String(showEmployeeNames));
-    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
-  }, [showEmployeeNames]);
 
   const [checkedItems, setCheckedItems] = useState(() => {
     const saved = localStorage.getItem('checkedSoldItems');
@@ -828,8 +817,9 @@ const OilSoldItems = () => {
     return `${clientPart}_${datePart}.${extension}`;
   };
 
-  // Export to PDF (client view)
-  const exportToCSVClient = async () => {
+  // Export to PDF (client view). `print: true` sends the same PDF to the
+  // printer instead of saving it.
+  const exportToCSVClient = async ({ print = false } = {}) => {
     if (filteredItems.length === 0) {
       setErrorMessage("No data to export.");
       setTimeout(() => setErrorMessage(null), 3000);
@@ -891,6 +881,8 @@ const OilSoldItems = () => {
       compact: density.totalsCompact,
     });
 
+    if (print) { printPdfDoc(doc); return; }
+
     const filename = buildExportFilename('pdf');
     const pdfBlob = doc.output('blob');
     const result = await saveBlobToExportFolder(pdfBlob, filename);
@@ -910,7 +902,7 @@ const OilSoldItems = () => {
 
     const headers = [
       "Date", "Customer", "Product Type", "Quantity Sold", "Price",
-      "Item Cost", "Purchase Price", "Unit Profit", "Total Profit", "Employee", "Remarks", "Total Cost", "Payment Status"
+      "Item Cost", "Purchase Price", "Unit Profit", "Total Profit", "Remarks", "Total Cost", "Payment Status"
     ];
 
     const rows = filteredItems.map((item) => {
@@ -925,7 +917,6 @@ const OilSoldItems = () => {
         metrics.unitPurchasePrice.toFixed(2),
         metrics.profit.toFixed(2),
         metrics.totalProfitAmount.toFixed(2),
-        item.scannedBy || "N/A",
         item.remark || "N/A",
         metrics.revenue.toFixed(2),
         item.paymentStatus || "Paid",
@@ -1262,16 +1253,15 @@ const OilSoldItems = () => {
                 >
                   Client Export (PDF)
                 </button>
+                <button
+                  style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { exportToCSVClient({ print: true }); setShowExportDropdown(false); }}
+                >
+                  Print Client Receipt
+                </button>
               </div>
             )}
           </div>
-          <button
-            className="btn-secondary"
-            onClick={() => setShowEmployeeNames((prev) => !prev)}
-            title={showEmployeeNames ? 'Hide employee names' : 'Show employee names'}
-          >
-            {showEmployeeNames ? <IconEyeOff /> : <IconEye />} {showEmployeeNames ? 'Hide' : 'Show'} Employee Names
-          </button>
           <button className="btn-primary" onClick={openMissingItemsModal}>
             <IconPlus /> Add Sold Item
           </button>
@@ -1575,7 +1565,6 @@ const OilSoldItems = () => {
                 <th>Quantity</th>
                 <th>Sell Price</th>
                 <th>Purchasing Price</th>
-                <th>Employee</th>
                 <th>Remarks</th>
                 <th>Total Cost</th>
                 <th>Profit</th>
@@ -1602,7 +1591,6 @@ const OilSoldItems = () => {
                   <td>{item.quantity || 0}</td>
                   <td>{`$${rowMetrics.unitSellPrice.toFixed(2)}`}</td>
                   <td>{`$${rowMetrics.unitPurchasePrice.toFixed(2)}`}</td>
-                  <td>{showEmployeeNames ? (item.scannedBy || 'N/A') : '••••••'}</td>
                   <td><span className="cell-clip-sm" title={item.remark || 'N/A'}>{item.remark || 'N/A'}</span></td>
                   <td>{`$${rowMetrics.revenue.toFixed(2)}`}</td>
                   <td>

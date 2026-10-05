@@ -523,7 +523,7 @@ const ClientReports = () => {
   };
 
   // `print: true` sends the same PDF to the printer instead of saving it.
-  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, totalQuantity = 0, recordCount: count, customerName, rangeLabel: range, filename, print = false }) => {
+  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, recordCount: count, customerName, rangeLabel: range, filename, print = false }) => {
     // Ask for folder permission before building the PDF — a long statement can
     // take long enough that the click's user activation expires, and the
     // browser then refuses the permission prompt and falls back to Downloads.
@@ -571,25 +571,6 @@ const ClientReports = () => {
         ]);
     });
 
-    // Quantity rows — one per water section present. The dollar Grand Total
-    // is drawn separately below via drawTotalsBlock, so these rows only carry
-    // the quantity (under the Quantity column) to avoid showing it twice.
-    // Water Filling uses the stored totalQuantity so older saved reports
-    // print exactly what they were frozen with.
-    const qtyRowIndexes = new Set();
-    QTY_SUM_SECTIONS.forEach((name) => {
-      const g = sections.find((s) => s.section === name);
-      if (!g) return;
-      qtyRowIndexes.add(body.length);
-      body.push([
-        { content: `${name} Qty`, colSpan: 2, styles: { halign: 'right' } },
-        { content: String(name === 'Water Filling' ? totalQuantity : sectionQuantity(g)), styles: { halign: 'right' } },
-        '',
-        '',
-        '',
-      ]);
-    });
-
     autoTable(doc, {
       ...receiptTableOptions({
         head: ['Date', 'Item', 'Quantity', 'Price per unit', 'Status', 'Total'],
@@ -616,11 +597,7 @@ const ClientReports = () => {
         5: { halign: 'right', cellWidth: 48 },
       },
       didParseCell: (data) => {
-        if (data.section === 'body' && qtyRowIndexes.has(data.row.index)) {
-          data.cell.styles.fillColor = GROUP_FILL;
-          data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fontSize = density.fontSize;
-        } else if (data.section === 'body' && (groupHeaderIndexes.has(data.row.index) || groupTotalIndexes.has(data.row.index))) {
+        if (data.section === 'body' && (groupHeaderIndexes.has(data.row.index) || groupTotalIndexes.has(data.row.index))) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
           if (data.column.index === 5) data.cell.styles.halign = 'right';
@@ -705,10 +682,6 @@ const ClientReports = () => {
     });
     rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
     rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
-    QTY_SUM_SECTIONS.forEach((name) => {
-      const g = statement.sections.find((s) => s.section === name);
-      if (g) rows.push([`${name} Qty`, '', '', sectionQuantity(g), '', '']);
-    });
     rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
@@ -874,24 +847,6 @@ const ClientReports = () => {
                       </tr>
                     </React.Fragment>
                   ))}
-                  {statement.sections.some((g) => g.section === 'Water Filling') && (
-                    <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
-                      <td className="text-right" style={{ fontWeight: 800 }}>{statement.totalQuantity}</td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                    </tr>
-                  )}
-                  {statement.sections.some((g) => g.section === 'Water Distribution') && (
-                    <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                      <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Distribution Qty</td>
-                      <td className="text-right" style={{ fontWeight: 800 }}>{sectionQuantity(statement.sections.find((g) => g.section === 'Water Distribution'))}</td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -1001,24 +956,6 @@ const ClientReports = () => {
                         </tr>
                       </React.Fragment>
                     ))}
-                    {viewedEntry.sections.some((g) => g.section === 'Water Filling') && (
-                      <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                        <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Filling Qty</td>
-                        <td className="text-right" style={{ fontWeight: 800 }}>{entryTotalQuantity(viewedEntry)}</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                      </tr>
-                    )}
-                    {viewedEntry.sections.some((g) => g.section === 'Water Distribution') && (
-                      <tr style={{ background: 'var(--brand-light, #e0ecff)' }}>
-                        <td colSpan={2} style={{ textAlign: 'right', fontWeight: 800 }}>Water Distribution Qty</td>
-                        <td className="text-right" style={{ fontWeight: 800 }}>{sectionQuantity(viewedEntry.sections.find((g) => g.section === 'Water Distribution'))}</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -1047,7 +984,7 @@ const ClientReports = () => {
               <p>
                 Client: <strong>{pendingSnapshot.customerName}</strong><br />
                 Type: {pendingSnapshot.typeFilter} · Range: {pendingSnapshot.rangeLabel}<br />
-                {pendingSnapshot.recordCount} record(s) · Water Filling Qty: {pendingSnapshot.totalQuantity} · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
+                {pendingSnapshot.recordCount} record(s) · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
               </p>
               <p>Confirming will save a snapshot to Report History so you can find it again later without regenerating it.</p>
             </div>

@@ -270,9 +270,12 @@ const WaterDistribution = () => {
   // Clicking "Paid" opens this inline picker instead of applying immediately,
   // so one Date Paid can be applied to every selected entry at once.
   const [showBulkDatePaid, setShowBulkDatePaid] = useState(false);
+  const [bulkRemark, setBulkRemark] = useState('');
   const [bulkDatePaid, setBulkDatePaid] = useState(() => formatDateForInput(new Date().toISOString()));
 
-  const handleBulkPaymentStatus = async (status, datePaid = null) => {
+  // `remark` (optional, Mark as Paid only) is added to every selected record's
+  // remark — appended after any existing remark so nothing is lost.
+  const handleBulkPaymentStatus = async (status, datePaid = null, remark = '') => {
     if (selectedIds.length === 0 || isBulkUpdating) return;
     // Lock the bulk buttons immediately — not just once the write starts —
     // so clicking a second status while this confirmation popup is still
@@ -322,12 +325,18 @@ const WaterDistribution = () => {
         updates[`waterDistributionEntries/${id}/paymentStatus`] = status;
         if (status === 'Paid') {
           updates[`waterDistributionEntries/${id}/datePaid`] = convertDateInputToISO(datePaid || formatDateForInput(new Date().toISOString()));
+          const newRemark = String(remark || '').trim();
+          if (newRemark) {
+            const existing = String(targetEntries.find((r) => r.id === id)?.remark || '').trim();
+            updates[`waterDistributionEntries/${id}/remark`] = existing ? `${existing} | ${newRemark}` : newRemark;
+          }
         }
       });
       await update(ref(database), updates);
       flash(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
       setShowBulkDatePaid(false);
+      setBulkRemark('');
 
       // Firebase's update() is atomic — it either applies to every path or
       // throws — but verify anyway so a mismatch is surfaced immediately
@@ -421,6 +430,7 @@ const WaterDistribution = () => {
   const handleBulkStatusClick = (status) => {
     if (status === 'Paid') {
       setBulkDatePaid(formatDateForInput(new Date().toISOString()));
+      setBulkRemark('');
       setShowBulkDatePaid(true);
       return;
     }
@@ -757,11 +767,18 @@ const WaterDistribution = () => {
                 onChange={(e) => setBulkDatePaid(e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 12 }}
               />
+              <input
+                type="text"
+                value={bulkRemark}
+                onChange={(e) => setBulkRemark(e.target.value)}
+                placeholder="Remark (optional)"
+                style={{ padding: '4px 8px', fontSize: 12, minWidth: 200 }}
+              />
               <button
                 type="button"
                 className="btn-primary"
                 disabled={isBulkUpdating}
-                onClick={() => handleBulkPaymentStatus('Paid', bulkDatePaid)}
+                onClick={() => handleBulkPaymentStatus('Paid', bulkDatePaid, bulkRemark)}
                 style={{ padding: '4px 10px', fontSize: 12 }}
               >
                 Apply

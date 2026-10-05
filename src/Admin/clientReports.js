@@ -46,6 +46,17 @@ const isoToDisplay = (iso) => {
   return `${d}-${m}-${y}`;
 };
 
+// Month key (YYYY-MM, local time) and its label, e.g. "October 2026".
+const monthKeyOf = (d) => {
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+const monthLabelOf = (key) => {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+};
+
 const isStockLikeStatus = (status) => String(status || '').toLowerCase().startsWith('stock');
 
 // Mirrors fetchProducts.js: derive the broad type (oil / filter / maghsal / other).
@@ -100,8 +111,7 @@ const sanitizeCSVCell = (value) => {
   return /^[=+\-@]/.test(flattened) ? `'${flattened}` : flattened;
 };
 
-// Sections whose quantities share a unit and are summed in the statement.
-const QTY_SUM_SECTIONS = ['Water Filling', 'Water Distribution'];
+// Every section's total row shows the summed quantity of its line items.
 const sectionQuantity = (g) => g.rows.reduce((a, r) => a + toNumber(r.quantity), 0);
 
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
@@ -125,10 +135,16 @@ const ClientReports = () => {
   const [customers, setCustomers] = useState([]);
   const [reportHistory, setReportHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  // Report History shows one month at a time (by generated date) — the
+  // current month by default.
+  const [historyMonth, setHistoryMonth] = useState(() => monthKeyOf(new Date()));
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [customerId, setCustomerId] = useState('');
+  // The statement only lists months until one is picked — its transactions
+  // are shown (and exported/printed/generated) only for the selected month.
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
   // this list is included.
@@ -316,9 +332,9 @@ const ClientReports = () => {
 
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
   const statement = useMemo(() => {
-    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
+    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0, months: [] };
 
-    const records = [];
+    const allRecords = [];
 
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
 
@@ -327,7 +343,7 @@ const ClientReports = () => {
       if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
-      records.push({
+      allRecords.push({
         key: `m-${e.id}`,
         date: e.date,
         section: 'Maghsal',
@@ -348,7 +364,7 @@ const ClientReports = () => {
       const totalUSD = e.premiumCurrency === 'LBP'
         ? convertPrice(toNumber(e.totalPremium), 'LBP', exchangeRate)
         : toNumber(e.totalPremium);
-      records.push({
+      allRecords.push({
         key: `w-${e.id}`,
         date: e.date,
         section: 'Water Filling',
@@ -369,7 +385,7 @@ const ClientReports = () => {
       const totalUSD = e.priceCurrency === 'LBP'
         ? convertPrice(toNumber(e.totalPrice), 'LBP', exchangeRate)
         : toNumber(e.totalPrice);
-      records.push({
+      allRecords.push({
         key: `wd-${e.id}`,
         date: e.date,
         section: 'Water Distribution',
@@ -387,7 +403,7 @@ const ClientReports = () => {
       if (!matchesTypeFilter(section)) return;
       if (!matchesStatusFilter(it.paymentStatus)) return;
       const { quantity, revenue } = getItemRevenue(it);
-      records.push({
+      allRecords.push({
         key: `o-${it.id}`,
         date: it.dateScanned,
         section,
@@ -397,6 +413,21 @@ const ClientReports = () => {
         status: it.paymentStatus || 'N/A',
       });
     });
+
+    // Months with activity (newest first) — the statement lists these and
+    // only shows the transactions of the one the user picks.
+    const monthMap = new Map();
+    allRecords.forEach((r) => {
+      const key = monthKeyOf(r.date);
+      if (!key) return;
+      const m = monthMap.get(key) || { key, count: 0, total: 0 };
+      m.count += 1;
+      m.total += r.total;
+      monthMap.set(key, m);
+    });
+    const months = [...monthMap.values()].sort((a, b) => b.key.localeCompare(a.key));
+
+    const records = selectedMonth ? allRecords.filter((r) => monthKeyOf(r.date) === selectedMonth) : [];
 
     const map = new Map();
     records.forEach((r) => {
@@ -422,8 +453,8 @@ const ClientReports = () => {
       else if (r.status === 'Unpaid') unpaid += r.total;
     });
 
-    return { sections, paid, unpaid, grandTotal, totalQuantity };
-  }, [selectedCustomer, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { sections, paid, unpaid, grandTotal, totalQuantity, months };
+  }, [selectedMonth, selectedCustomer, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -432,6 +463,7 @@ const ClientReports = () => {
 
   // ── Range label for headers / filenames ───────────────────────────────────────
   const rangeLabel = () => {
+    if (selectedMonth) return monthLabelOf(selectedMonth);
     if (dateFrom && dateTo) return `From ${isoToDisplay(dateFrom)} to ${isoToDisplay(dateTo)}`;
     if (dateFrom) return `From ${isoToDisplay(dateFrom)}`;
     if (dateTo) return `Up to ${isoToDisplay(dateTo)}`;
@@ -441,11 +473,23 @@ const ClientReports = () => {
   const fileLabel = () => {
     const parts = ['Client_Report'];
     if (selectedCustomer) parts.push(safeName(selectedCustomer.name));
-    parts.push(dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'now'}` : 'all_time');
+    if (selectedMonth) parts.push(selectedMonth);
+    else parts.push(dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'now'}` : 'all_time');
     return parts.join('_');
   };
 
   // ── Report History (frozen snapshots) ─────────────────────────────────────────
+  const historyMonths = useMemo(() => {
+    const set = new Set([monthKeyOf(new Date()), historyMonth]);
+    reportHistory.forEach((h) => { const k = monthKeyOf(h.generatedAt); if (k) set.add(k); });
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [reportHistory, historyMonth]);
+
+  const visibleHistory = useMemo(
+    () => reportHistory.filter((h) => monthKeyOf(h.generatedAt) === historyMonth),
+    [reportHistory, historyMonth]
+  );
+
   const viewedEntry = useMemo(
     () => reportHistory.find((h) => h.id === viewingHistoryId) || null,
     [reportHistory, viewingHistoryId]
@@ -453,6 +497,7 @@ const ClientReports = () => {
 
   const generateReport = () => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
+    if (!selectedMonth) { flash('Select a month first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     setViewingHistoryId(null);
     setPendingSnapshot({
@@ -558,17 +603,12 @@ const ClientReports = () => {
       });
 
       groupTotalIndexes.add(body.length);
-      body.push(QTY_SUM_SECTIONS.includes(g.section)
-        ? [
-          { content: `${g.section} Total`, colSpan: 2, styles: { halign: 'right' } },
-          { content: String(sectionQuantity(g)), styles: { halign: 'right' } },
-          { content: '', colSpan: 2 },
-          { content: money(g.subtotal) },
-        ]
-        : [
-          { content: `${g.section} Total`, colSpan: 5, styles: { halign: 'right' } },
-          { content: money(g.subtotal) },
-        ]);
+      body.push([
+        { content: `${g.section} Total`, colSpan: 2, styles: { halign: 'right' } },
+        { content: String(sectionQuantity(g)), styles: { halign: 'right' } },
+        { content: '', colSpan: 2 },
+        { content: money(g.subtotal) },
+      ]);
     });
 
     autoTable(doc, {
@@ -626,6 +666,7 @@ const ClientReports = () => {
 
   const exportPDF = async ({ print = false } = {}) => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
+    if (!selectedMonth) { flash('Select a month first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     await buildAndSaveStatementPDF({
       sections: statement.sections,
@@ -671,13 +712,14 @@ const ClientReports = () => {
   // ── CSV export ────────────────────────────────────────────────────────────────
   const exportCSV = async () => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
+    if (!selectedMonth) { flash('Select a month first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
 
     const headers = ['Date', 'Type', 'Item', 'Quantity', 'Status', 'Total'];
     const rows = [];
     statement.sections.forEach((g) => {
       g.rows.forEach((r) => rows.push([formatDate(r.date), g.section, r.item, r.quantity || '', r.status, r.total.toFixed(2)]));
-      rows.push(['', `${g.section} Subtotal`, '', '', '', g.subtotal.toFixed(2)]);
+      rows.push(['', `${g.section} Subtotal`, '', sectionQuantity(g), '', g.subtotal.toFixed(2)]);
       rows.push([]);
     });
     rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
@@ -731,7 +773,7 @@ const ClientReports = () => {
         <div className="filters-grid">
           <div className="filter-group">
             <label>Client</label>
-            <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+            <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setSelectedMonth(''); }}>
               <option value="">Select client…</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -802,13 +844,32 @@ const ClientReports = () => {
           <h2 className="ui-card-title">
             Statement {selectedCustomer ? `— ${selectedCustomer.name}` : ''}
           </h2>
-          <span className="ui-card-subtle">{recordCount} record(s) · {rangeLabel()}</span>
+          {selectedMonth && <span className="ui-card-subtle">{recordCount} record(s) · {rangeLabel()}</span>}
         </div>
 
         {!selectedCustomer ? (
           <div className="empty-state-card">Select a client to view their statement.</div>
-        ) : recordCount === 0 ? (
+        ) : statement.months.length === 0 ? (
           <div className="empty-state-card">No activity for this client in the selected range.</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--s-3)' }}>
+            {statement.months.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                className={m.key === selectedMonth ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setSelectedMonth(m.key === selectedMonth ? '' : m.key)}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '8px 14px' }}
+              >
+                <span style={{ fontWeight: 700 }}>{monthLabelOf(m.key)}</span>
+                <span style={{ fontSize: 12, opacity: 0.85 }}>{m.count} record(s) · ${formatCurrency(m.total)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedCustomer && statement.months.length > 0 && (recordCount === 0 ? (
+          <div className="empty-state-card">Select a month to view its transactions.</div>
         ) : (
           <>
             <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
@@ -842,7 +903,9 @@ const ClientReports = () => {
                         </tr>
                       ))}
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                        <td colSpan={2} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                        <td className="text-right" style={{ fontWeight: 700 }}>{sectionQuantity(g)}</td>
+                        <td colSpan={2}></td>
                         <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
                       </tr>
                     </React.Fragment>
@@ -854,21 +917,24 @@ const ClientReports = () => {
               <span style={{ color: 'var(--brand)', fontWeight: 800, fontSize: 26 }}>Grand Total: ${formatCurrency(statement.grandTotal)}</span>
             </div>
           </>
-        )}
+        ))}
       </div>
 
       {/* Report History — frozen snapshots saved via Generate Report */}
       <div className="ui-card">
         <div className="ui-card-header">
           <h2 className="ui-card-title">Report History</h2>
-          <span className="ui-card-subtle">{reportHistory.length} saved report(s)</span>
+          <span className="ui-card-subtle">{visibleHistory.length} saved report(s)</span>
+          <select value={historyMonth} onChange={(e) => setHistoryMonth(e.target.value)} style={{ padding: '6px 10px' }}>
+            {historyMonths.map((k) => <option key={k} value={k}>{monthLabelOf(k)}</option>)}
+          </select>
           <button className="btn-secondary" onClick={fetchReportHistory} disabled={isLoadingHistory}>
             {isLoadingHistory ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
-        {reportHistory.length === 0 ? (
-          <div className="empty-state-card">No reports generated yet. Use "Generate Report" above to save one.</div>
+        {visibleHistory.length === 0 ? (
+          <div className="empty-state-card">No reports generated in {monthLabelOf(historyMonth)}.</div>
         ) : (
           <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
             <table className="data-table">
@@ -884,7 +950,7 @@ const ClientReports = () => {
                 </tr>
               </thead>
               <tbody>
-                {reportHistory.map((h) => (
+                {visibleHistory.map((h) => (
                   <tr key={h.id} style={h.id === viewingHistoryId ? { background: 'var(--surface-2, #e9f0fa)' } : undefined}>
                     <td>{formatDate(h.generatedAt)}</td>
                     <td>{h.customerName}</td>
@@ -951,7 +1017,9 @@ const ClientReports = () => {
                           </tr>
                         ))}
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                          <td colSpan={2} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                          <td className="text-right" style={{ fontWeight: 700 }}>{sectionQuantity(g)}</td>
+                          <td colSpan={2}></td>
                           <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
                         </tr>
                       </React.Fragment>

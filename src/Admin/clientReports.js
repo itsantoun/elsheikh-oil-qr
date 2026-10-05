@@ -142,9 +142,6 @@ const ClientReports = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [customerId, setCustomerId] = useState('');
-  // The statement only lists months until one is picked — its transactions
-  // are shown (and exported/printed/generated) only for the selected month.
-  const [selectedMonth, setSelectedMonth] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
   // this list is included.
@@ -332,9 +329,9 @@ const ClientReports = () => {
 
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
   const statement = useMemo(() => {
-    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0, months: [] };
+    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
 
-    const allRecords = [];
+    const records = [];
 
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
 
@@ -343,7 +340,7 @@ const ClientReports = () => {
       if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
-      allRecords.push({
+      records.push({
         key: `m-${e.id}`,
         date: e.date,
         section: 'Maghsal',
@@ -364,7 +361,7 @@ const ClientReports = () => {
       const totalUSD = e.premiumCurrency === 'LBP'
         ? convertPrice(toNumber(e.totalPremium), 'LBP', exchangeRate)
         : toNumber(e.totalPremium);
-      allRecords.push({
+      records.push({
         key: `w-${e.id}`,
         date: e.date,
         section: 'Water Filling',
@@ -385,7 +382,7 @@ const ClientReports = () => {
       const totalUSD = e.priceCurrency === 'LBP'
         ? convertPrice(toNumber(e.totalPrice), 'LBP', exchangeRate)
         : toNumber(e.totalPrice);
-      allRecords.push({
+      records.push({
         key: `wd-${e.id}`,
         date: e.date,
         section: 'Water Distribution',
@@ -403,7 +400,7 @@ const ClientReports = () => {
       if (!matchesTypeFilter(section)) return;
       if (!matchesStatusFilter(it.paymentStatus)) return;
       const { quantity, revenue } = getItemRevenue(it);
-      allRecords.push({
+      records.push({
         key: `o-${it.id}`,
         date: it.dateScanned,
         section,
@@ -413,21 +410,6 @@ const ClientReports = () => {
         status: it.paymentStatus || 'N/A',
       });
     });
-
-    // Months with activity (newest first) — the statement lists these and
-    // only shows the transactions of the one the user picks.
-    const monthMap = new Map();
-    allRecords.forEach((r) => {
-      const key = monthKeyOf(r.date);
-      if (!key) return;
-      const m = monthMap.get(key) || { key, count: 0, total: 0 };
-      m.count += 1;
-      m.total += r.total;
-      monthMap.set(key, m);
-    });
-    const months = [...monthMap.values()].sort((a, b) => b.key.localeCompare(a.key));
-
-    const records = selectedMonth ? allRecords.filter((r) => monthKeyOf(r.date) === selectedMonth) : [];
 
     const map = new Map();
     records.forEach((r) => {
@@ -453,8 +435,8 @@ const ClientReports = () => {
       else if (r.status === 'Unpaid') unpaid += r.total;
     });
 
-    return { sections, paid, unpaid, grandTotal, totalQuantity, months };
-  }, [selectedMonth, selectedCustomer, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { sections, paid, unpaid, grandTotal, totalQuantity };
+  }, [selectedCustomer, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -463,7 +445,6 @@ const ClientReports = () => {
 
   // ── Range label for headers / filenames ───────────────────────────────────────
   const rangeLabel = () => {
-    if (selectedMonth) return monthLabelOf(selectedMonth);
     if (dateFrom && dateTo) return `From ${isoToDisplay(dateFrom)} to ${isoToDisplay(dateTo)}`;
     if (dateFrom) return `From ${isoToDisplay(dateFrom)}`;
     if (dateTo) return `Up to ${isoToDisplay(dateTo)}`;
@@ -473,8 +454,7 @@ const ClientReports = () => {
   const fileLabel = () => {
     const parts = ['Client_Report'];
     if (selectedCustomer) parts.push(safeName(selectedCustomer.name));
-    if (selectedMonth) parts.push(selectedMonth);
-    else parts.push(dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'now'}` : 'all_time');
+    parts.push(dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'now'}` : 'all_time');
     return parts.join('_');
   };
 
@@ -497,7 +477,6 @@ const ClientReports = () => {
 
   const generateReport = () => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
-    if (!selectedMonth) { flash('Select a month first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     setViewingHistoryId(null);
     setPendingSnapshot({
@@ -666,7 +645,6 @@ const ClientReports = () => {
 
   const exportPDF = async ({ print = false } = {}) => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
-    if (!selectedMonth) { flash('Select a month first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
     await buildAndSaveStatementPDF({
       sections: statement.sections,
@@ -712,7 +690,6 @@ const ClientReports = () => {
   // ── CSV export ────────────────────────────────────────────────────────────────
   const exportCSV = async () => {
     if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
-    if (!selectedMonth) { flash('Select a month first.', 'error'); return; }
     if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
 
     const headers = ['Date', 'Type', 'Item', 'Quantity', 'Status', 'Total'];
@@ -773,7 +750,7 @@ const ClientReports = () => {
         <div className="filters-grid">
           <div className="filter-group">
             <label>Client</label>
-            <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setSelectedMonth(''); }}>
+            <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
               <option value="">Select client…</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -844,32 +821,13 @@ const ClientReports = () => {
           <h2 className="ui-card-title">
             Statement {selectedCustomer ? `— ${selectedCustomer.name}` : ''}
           </h2>
-          {selectedMonth && <span className="ui-card-subtle">{recordCount} record(s) · {rangeLabel()}</span>}
+          <span className="ui-card-subtle">{recordCount} record(s) · {rangeLabel()}</span>
         </div>
 
         {!selectedCustomer ? (
           <div className="empty-state-card">Select a client to view their statement.</div>
-        ) : statement.months.length === 0 ? (
+        ) : recordCount === 0 ? (
           <div className="empty-state-card">No activity for this client in the selected range.</div>
-        ) : (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--s-3)' }}>
-            {statement.months.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                className={m.key === selectedMonth ? 'btn-primary' : 'btn-secondary'}
-                onClick={() => setSelectedMonth(m.key === selectedMonth ? '' : m.key)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '8px 14px' }}
-              >
-                <span style={{ fontWeight: 700 }}>{monthLabelOf(m.key)}</span>
-                <span style={{ fontSize: 12, opacity: 0.85 }}>{m.count} record(s) · ${formatCurrency(m.total)}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {selectedCustomer && statement.months.length > 0 && (recordCount === 0 ? (
-          <div className="empty-state-card">Select a month to view its transactions.</div>
         ) : (
           <>
             <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
@@ -917,7 +875,7 @@ const ClientReports = () => {
               <span style={{ color: 'var(--brand)', fontWeight: 800, fontSize: 26 }}>Grand Total: ${formatCurrency(statement.grandTotal)}</span>
             </div>
           </>
-        ))}
+        )}
       </div>
 
       {/* Report History — frozen snapshots saved via Generate Report */}

@@ -452,7 +452,7 @@ const ClientReports = () => {
   };
 
   const fileLabel = () => {
-    const parts = ['Client_Report'];
+    const parts = [];
     if (selectedCustomer) parts.push(safeName(selectedCustomer.name));
     parts.push(dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'now'}` : 'all_time');
     return parts.join('_');
@@ -672,7 +672,7 @@ const ClientReports = () => {
 
   const exportHistoryPDF = async (entry, { print = false } = {}) => {
     if (!entry) return;
-    const parts = ['Client_Report', safeName(entry.customerName), entry.dateFrom || entry.dateTo ? `${entry.dateFrom || 'start'}_to_${entry.dateTo || 'now'}` : 'all_time'];
+    const parts = [safeName(entry.customerName), entry.dateFrom || entry.dateTo ? `${entry.dateFrom || 'start'}_to_${entry.dateTo || 'now'}` : 'all_time'];
     await buildAndSaveStatementPDF({
       sections: entry.sections,
       paid: entry.paid,

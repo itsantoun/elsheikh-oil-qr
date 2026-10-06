@@ -135,8 +135,8 @@ const ClientReports = () => {
   const [customers, setCustomers] = useState([]);
   const [reportHistory, setReportHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  // Report History shows one month at a time (by generated date) — the
-  // current month by default.
+  // Report History shows one month at a time (by the report's From date) —
+  // the current month by default.
   const [historyMonth, setHistoryMonth] = useState(() => monthKeyOf(new Date()));
 
   const [dateFrom, setDateFrom] = useState('');
@@ -459,14 +459,18 @@ const ClientReports = () => {
   };
 
   // ── Report History (frozen snapshots) ─────────────────────────────────────────
+  // A report belongs to the month of its From date (YYYY-MM-DD, sliced to avoid
+  // UTC parsing shifts); "All time" reports with no From fall back to generated date.
+  const historyMonthOf = (h) => (h.dateFrom ? h.dateFrom.slice(0, 7) : monthKeyOf(h.generatedAt));
+
   const historyMonths = useMemo(() => {
     const set = new Set([monthKeyOf(new Date()), historyMonth]);
-    reportHistory.forEach((h) => { const k = monthKeyOf(h.generatedAt); if (k) set.add(k); });
+    reportHistory.forEach((h) => { const k = historyMonthOf(h); if (k) set.add(k); });
     return [...set].sort((a, b) => b.localeCompare(a));
   }, [reportHistory, historyMonth]);
 
   const visibleHistory = useMemo(
-    () => reportHistory.filter((h) => monthKeyOf(h.generatedAt) === historyMonth),
+    () => reportHistory.filter((h) => historyMonthOf(h) === historyMonth),
     [reportHistory, historyMonth]
   );
 
@@ -889,7 +893,7 @@ const ClientReports = () => {
         </div>
 
         {visibleHistory.length === 0 ? (
-          <div className="empty-state-card">No reports generated in {monthLabelOf(historyMonth)}.</div>
+          <div className="empty-state-card">No reports from {monthLabelOf(historyMonth)}.</div>
         ) : (
           <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
             <table className="data-table">

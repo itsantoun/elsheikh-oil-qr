@@ -52,8 +52,8 @@ export const addReceiptHeader = async (doc, {
   showCompanyInfo = true,
   showReceiptNo = true,
   showDateRangeLabel = true,
-  // Slim header for statements that don't show the logo/company info: title
-  // and issued date on one band, then "Bill To: <client>" and the date range
+  // Slim header for statements that don't show the logo/company info: the
+  // title on one band, then "Bill To: <client>" and the date range
   // on a single line right below it.
   compact = false,
 } = {}) => {
@@ -85,22 +85,21 @@ export const addReceiptHeader = async (doc, {
     };
 
     doc.setFillColor(...SOFT_BG);
-    doc.roundedRect(margin, 6, pageWidth - margin * 2, 13, 2.5, 2.5, 'F');
+    doc.roundedRect(margin, 6, pageWidth - margin * 2, 11, 2.5, 2.5, 'F');
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(...BRAND_BLUE);
-    doc.text(subtitle ? `${title} — ${subtitle}` : title, left, 14.8);
-    labelValue('Issued', formatIssuedAt(issuedAt), right, 14.8, true);
+    doc.text(subtitle ? `${title} — ${subtitle}` : title, left, 13.8);
 
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(margin, 21, pageWidth - margin * 2, 9, 2, 2, 'F');
+    doc.roundedRect(margin, 19, pageWidth - margin * 2, 8, 2, 2, 'F');
     doc.setDrawColor(...BORDER);
     doc.setLineWidth(0.25);
-    doc.roundedRect(margin, 21, pageWidth - margin * 2, 9, 2, 2, 'S');
-    labelValue('Bill To', client || 'All Clients', left, 26.8);
-    labelValue('Period', dateRange || '-', right, 26.8, true);
+    doc.roundedRect(margin, 19, pageWidth - margin * 2, 8, 2, 2, 'S');
+    labelValue('Bill To', client || 'All Clients', left, 24.3);
+    labelValue('Period', dateRange || '-', right, 24.3, true);
 
-    return 33;
+    return 30;
   }
 
   doc.setFillColor(...SOFT_BG);

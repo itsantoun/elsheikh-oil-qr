@@ -562,10 +562,7 @@ const ClientReports = () => {
       // subtitle: 'Statement by Type',
       client: customerName,
       dateRange: range,
-      showLogo: false,
-      showCompanyInfo: false,
-      showReceiptNo: false,
-      showDateRangeLabel: false,
+      compact: true,
     });
 
     const body = [];

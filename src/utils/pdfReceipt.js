@@ -52,9 +52,56 @@ export const addReceiptHeader = async (doc, {
   showCompanyInfo = true,
   showReceiptNo = true,
   showDateRangeLabel = true,
+  // Slim header for statements that don't show the logo/company info: title
+  // and issued date on one band, then "Bill To: <client>" and the date range
+  // on a single line right below it.
+  compact = false,
 } = {}) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 10;
+
+  if (compact) {
+    const right = pageWidth - margin - 4;
+    const left = margin + 4;
+
+    // Draws "Label: value" starting at x (or ending at x when alignRight).
+    const labelValue = (label, value, x, y, alignRight = false) => {
+      doc.setFontSize(8.5);
+      doc.setFont(undefined, 'normal');
+      const labelText = `${label}:`;
+      const labelW = doc.getTextWidth(labelText) + 1.5;
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(9.5);
+      const valueW = doc.getTextWidth(value);
+      const startX = alignRight ? x - labelW - valueW : x;
+      doc.setFontSize(8.5);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...TEXT_MUTED);
+      doc.text(labelText, startX, y);
+      doc.setFontSize(9.5);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...TEXT_DARK);
+      doc.text(value, startX + labelW, y);
+    };
+
+    doc.setFillColor(...SOFT_BG);
+    doc.roundedRect(margin, 6, pageWidth - margin * 2, 13, 2.5, 2.5, 'F');
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(...BRAND_BLUE);
+    doc.text(subtitle ? `${title} — ${subtitle}` : title, left, 14.8);
+    labelValue('Issued', formatIssuedAt(issuedAt), right, 14.8, true);
+
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(margin, 21, pageWidth - margin * 2, 9, 2, 2, 'F');
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(margin, 21, pageWidth - margin * 2, 9, 2, 2, 'S');
+    labelValue('Bill To', client || 'All Clients', left, 26.8);
+    labelValue('Period', dateRange || '-', right, 26.8, true);
+
+    return 33;
+  }
 
   doc.setFillColor(...SOFT_BG);
   doc.roundedRect(margin, 6, pageWidth - margin * 2, 35, 3, 3, 'F');

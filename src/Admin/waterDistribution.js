@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, update, onValue, push } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
@@ -7,6 +7,7 @@ import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icon
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { getEmployeeDisplayName } from './employees';
 
 const DISTRIBUTION_TYPES = [
   { value: 'water-distribution', label: 'Water Distribution' },
@@ -31,10 +32,12 @@ const WaterDistribution = () => {
   const { user } = useContext(UserContext);
   const [entries, setEntries] = useState([]);
   const [entriesLoaded, setEntriesLoaded] = useState(false);
+  const [employees, setEmployees] = useState([]);
   const [customers, setCustomers] = useState([]);
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
   // this list is included.
@@ -73,6 +76,7 @@ const WaterDistribution = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [formCustomerId, setFormCustomerId] = useState('');
+  const [formEmployeeId, setFormEmployeeId] = useState('');
   // Which service this entry is: 'water-distribution' or
   // 'pickup-water-distribution' — mirrors the customer's client-type tags
   // and picks up that tag's own pricing (see handleCustomerChange).
@@ -144,6 +148,7 @@ const WaterDistribution = () => {
   // ── Fetch ────────────────────────────────────────
   useEffect(() => {
     const customersRef = ref(database, 'customers');
+    const employeesRef = ref(database, 'employees');
     const entriesRef = ref(database, 'waterDistributionEntries');
 
     const unsubCustomers = onValue(customersRef, (snap) => {
@@ -170,6 +175,16 @@ const WaterDistribution = () => {
       setCustomers(list);
     });
 
+    const unsubEmployees = onValue(employeesRef, (snap) => {
+      let list = [];
+      if (snap.exists()) {
+        const data = snap.val();
+        list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '', nickname: data[k].nickname || '' }));
+        list.sort((a, b) => getEmployeeDisplayName(a).localeCompare(getEmployeeDisplayName(b)));
+      }
+      setEmployees(list);
+    });
+
     const unsubEntries = onValue(entriesRef, (snap) => {
       if (!snap.exists()) { setEntries([]); setEntriesLoaded(true); return; }
       const data = snap.val();
@@ -178,7 +193,7 @@ const WaterDistribution = () => {
       setEntriesLoaded(true);
     });
 
-    return () => { unsubCustomers(); unsubEntries(); };
+    return () => { unsubCustomers(); unsubEmployees(); unsubEntries(); };
   }, []);
 
   // Total Price = Unit Price * Quantity, recalculated whenever unit price or
@@ -211,6 +226,20 @@ const WaterDistribution = () => {
       : customer.waterDistributionPricing;
   };
 
+  // Resolved live against the current Employees list (rather than the raw
+  // string saved on the entry) so this always reflects their current
+  // nickname — falls back to blank if the entry has no employee or that
+  // employee was since removed.
+  const entryEmployeeName = useCallback((entry) => {
+    const assigned = employees.find((emp) => emp.id === entry.employeeId);
+    return assigned ? getEmployeeDisplayName(assigned) : '';
+  }, [employees]);
+
+  const employeeOptions = useMemo(
+    () => employees.map((e) => getEmployeeDisplayName(e)).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [employees]
+  );
+
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
     let result = entries;
@@ -221,6 +250,10 @@ const WaterDistribution = () => {
         (e.customerName || '').toLowerCase().includes(cf) ||
         (e.customerNameArabic || '').toLowerCase().includes(cf)
       );
+    }
+
+    if (employeeFilter) {
+      result = result.filter((e) => entryEmployeeName(e) === employeeFilter);
     }
 
     if (typeFilter !== 'All') {
@@ -244,17 +277,17 @@ const WaterDistribution = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, entryEmployeeName, customerFilter, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
-  // Drop any selected ids that were actually deleted from Firebase — pruning
-  // against `entries` (not `filtered`), so a filter that merely hides a
-  // selected row doesn't permanently drop it from the selection. Skipped
-  // until entries have loaded at least once, so a page refresh doesn't wipe
-  // a restored (localStorage) selection against a still-empty list.
-  useEffect(() => {
-    if (!entriesLoaded) return;
-    setSelectedIds((prev) => prev.filter((id) => entries.some((e) => e.id === id)));
-  }, [entries, entriesLoaded]);
+  // The saved selection is never pruned automatically — a refresh can deliver
+  // entries in more than one snapshot, and pruning against an early one wiped
+  // restored check marks. Ids whose entry no longer exists are just ignored
+  // for counts and bulk actions (and dropped when deleted from this page).
+  const liveSelectedIds = useMemo(() => {
+    if (!entriesLoaded) return selectedIds;
+    const ids = new Set(entries.map((e) => e.id));
+    return selectedIds.filter((id) => ids.has(id));
+  }, [selectedIds, entries, entriesLoaded]);
 
   const toggleSelected = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -276,14 +309,14 @@ const WaterDistribution = () => {
   // `remark` (optional, Mark as Paid only) is added to every selected record's
   // remark — appended after any existing remark so nothing is lost.
   const handleBulkPaymentStatus = async (status, datePaid = null, remark = '') => {
-    if (selectedIds.length === 0 || isBulkUpdating) return;
+    if (liveSelectedIds.length === 0 || isBulkUpdating) return;
     // Lock the bulk buttons immediately — not just once the write starts —
     // so clicking a second status while this confirmation popup is still
     // open can't open a second popup that silently replaces this one.
     setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against below.
-    const targetIds = [...selectedIds];
+    const targetIds = [...liveSelectedIds];
 
     // Show exactly which entries are about to change before committing —
     // so a stale/mismatched selection is caught here instead of discovered
@@ -374,6 +407,7 @@ const WaterDistribution = () => {
 
   const clearAllFilters = () => {
     setCustomerFilter('');
+    setEmployeeFilter('');
     setTypeFilter('All');
     setPaymentStatusFilters([]);
     setDateFromFilter('');
@@ -393,6 +427,7 @@ const WaterDistribution = () => {
   const openAddModal = () => {
     setEditingEntryId(null);
     setFormCustomerId('');
+    setFormEmployeeId('');
     setFormDistributionType('');
     setFormDate(formatDateForInput(new Date().toISOString()));
     setFormQuantity('1');
@@ -409,6 +444,7 @@ const WaterDistribution = () => {
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
     setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
+    setFormEmployeeId(entry.employeeId || employees.find((e) => e.name === entry.employeeName)?.id || '');
     setFormDistributionType(entry.distributionType || '');
     setFormDate(formatDateForInput(entry.date));
     setFormQuantity(String(toNumber(entry.quantity)));
@@ -467,6 +503,10 @@ const WaterDistribution = () => {
     setFormTotalPrice(recalcTotalPrice(newUnitPrice, formQuantity));
   };
 
+  const handleEmployeeChange = (employeeId) => {
+    setFormEmployeeId(employeeId);
+  };
+
   // Changing Type re-applies that type's price for the current customer —
   // a genuinely different type means a genuinely different price.
   const handleDistributionTypeChange = (type) => {
@@ -503,6 +543,8 @@ const WaterDistribution = () => {
   // fix quantity/price) without being forced to backfill it first.
   const customerRequired = !editingEntryId;
 
+  // Employee is always optional — adding or editing an entry never requires
+  // picking one.
   const canSave = Boolean(
     (formCustomerId || !customerRequired) &&
     formDistributionType &&
@@ -536,6 +578,16 @@ const WaterDistribution = () => {
       flash('Select a customer.', 'error');
       return;
     }
+    // Employee is optional — only validate it if the user actually picked one.
+    let selectedEmployee = null;
+    if (formEmployeeId) {
+      selectedEmployee = employees.find((e) => e.id === formEmployeeId);
+      if (!selectedEmployee) {
+        flash('Selected employee is no longer available.', 'error');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const quantity = toNumber(formQuantity);
@@ -554,6 +606,10 @@ const WaterDistribution = () => {
           customerName: selectedCustomer.name || '',
           customerNameArabic: selectedCustomer.nameArabic || '',
         } : {}),
+        // Omitted (not cleared) when left unset — Firebase's update() only
+        // touches keys present here, so this preserves whatever the entry
+        // already had for employee.
+        ...(selectedEmployee ? { employeeId: selectedEmployee.id, employeeName: selectedEmployee.name || '' } : {}),
         distributionType: formDistributionType,
         date: convertDateInputToISO(formDate),
         quantity,
@@ -597,6 +653,7 @@ const WaterDistribution = () => {
     if (!confirmed) return;
     try {
       await update(ref(database), { [`waterDistributionEntries/${id}`]: null });
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
       flash('Entry deleted.');
     } catch (err) {
       console.error(err);
@@ -675,6 +732,14 @@ const WaterDistribution = () => {
           </div>
 
           <div className="filter-group">
+            <label>Employee</label>
+            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
+              <option value="">All Employees</option>
+              {employeeOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+
+          <div className="filter-group">
             <label>Type</label>
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="All">All Types</option>
@@ -722,11 +787,12 @@ const WaterDistribution = () => {
       </div>
 
       {/* Active filter tags */}
-      {(customerFilter || typeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
+      {(customerFilter || employeeFilter || typeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
+            {employeeFilter && <span className="filter-tag">Employee: {employeeFilter}<button onClick={() => setEmployeeFilter('')}><IconX /></button></span>}
             {typeFilter !== 'All' && <span className="filter-tag">Type: {getDistributionTypeLabel(typeFilter)}<button onClick={() => setTypeFilter('All')}><IconX /></button></span>}
             {paymentStatusFilters.map((s) => (
               <span key={s} className="filter-tag">Status: {s}<button onClick={() => togglePaymentStatusFilter(s)}><IconX /></button></span>
@@ -738,10 +804,10 @@ const WaterDistribution = () => {
       )}
 
       {/* Bulk actions */}
-      {selectedIds.length > 0 && (
+      {liveSelectedIds.length > 0 && (
         <div className="filters-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <strong>{selectedIds.length} selected</strong>
+            <strong>{liveSelectedIds.length} selected</strong>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set payment status:</span>
             {['Paid', 'Unpaid', 'Hold', 'Free'].map((s) => (
               <button
@@ -760,7 +826,7 @@ const WaterDistribution = () => {
 
           {showBulkDatePaid && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date Paid for all {selectedIds.length} selected:</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date Paid for all {liveSelectedIds.length} selected:</span>
               <input
                 type="date"
                 value={bulkDatePaid}
@@ -813,6 +879,7 @@ const WaterDistribution = () => {
                 </th>
                 <th>Date</th>
                 <th>Customer</th>
+                <th>Employee</th>
                 <th>Type</th>
                 <th className="text-right">Quantity</th>
                 <th>Unit Price</th>
@@ -833,6 +900,7 @@ const WaterDistribution = () => {
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
                   <td><span className="cell-clip-sm" title={e.customerName || 'N/A'}>{e.customerName || 'N/A'}</span></td>
+                  <td><span className="cell-clip-sm" title={entryEmployeeName(e) || '—'}>{entryEmployeeName(e) || '—'}</span></td>
                   <td>{getDistributionTypeLabel(e.distributionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td>{formatPrice(toNumber(e.unitPrice), e.priceCurrency)}</td>
@@ -883,6 +951,17 @@ const WaterDistribution = () => {
                   </select>
                   {customers.length === 0 && (
                     <p className="form-hint">No customers are tagged for Water Distribution or Pickup Distribution yet. Add it from <strong>Customers</strong>.</p>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Employee</label>
+                  <select value={formEmployeeId} onChange={(e) => handleEmployeeChange(e.target.value)} className="form-select" disabled={isSaving}>
+                    <option value="">Select Employee</option>
+                    {employees.map((e) => <option key={e.id} value={e.id}>{getEmployeeDisplayName(e)}</option>)}
+                  </select>
+                  {employees.length === 0 && (
+                    <p className="form-hint">No employees found. Add one from <strong>Employees</strong>.</p>
                   )}
                 </div>
 

@@ -73,16 +73,9 @@ const OilSoldItems = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
-  const [editingItem, setEditingItem] = useState(null);
-  const [newDate, setNewDate] = useState('');
-  const [newRemark, setNewRemark] = useState('');
-  const [newSellPrice, setNewSellPrice] = useState('');
-  const [newPurchasingPrice, setNewPurchasingPrice] = useState('');
-  const [newPaymentStatus, setNewPaymentStatus] = useState('');
-  const [newDatePaid, setNewDatePaid] = useState('');
-  const [newCustomer, setNewCustomer] = useState('');
-  const [newProductType, setNewProductType] = useState('');
-  const [newQuantity, setNewQuantity] = useState('');
+  // Editing reuses the Add Missing Item modal (same as Maghsal / Water
+  // Distribution); this holds the id of the SoldItem being edited.
+  const [editingItemId, setEditingItemId] = useState(null);
 
   const [confirm, confirmDialog] = useConfirmDialog();
 
@@ -604,98 +597,6 @@ const OilSoldItems = () => {
     setCheckedItems([]);
   };
 
-  // Edit functions
-  const handleEdit = (item) => {
-    if (!item || !item.id) return;
-    const metrics = getItemProfitMetrics(item);
-    setEditingItem(item);
-    setNewRemark(item.remark || '');
-    setNewSellPrice(metrics.unitSellPrice);
-    setNewPurchasingPrice(metrics.unitPurchasePrice);
-    setNewPaymentStatus(item.paymentStatus || 'Paid');
-    setNewDatePaid(item.datePaid ? formatDateForInput(item.datePaid) : '');
-    setNewCustomer(item.customerName || '');
-    setNewProductType(item.name || '');
-    setNewQuantity(item.quantity || 0);
-    // Convert date to YYYY-MM-DDTHH:mm format for datetime-local input
-    const dateObj = new Date(item.dateScanned);
-    const formattedDate = dateObj.toISOString().slice(0, 16);
-    setNewDate(formattedDate);
-  };
-
-  const saveEditedItem = async () => {
-    if (!editingItem) return;
-    
-    // Convert date from local format to ISO string
-    const dateToSave = newDate ? new Date(newDate).toISOString() : new Date().toISOString();
-    const parsedQuantity = toNumber(newQuantity);
-    const unitSellPrice = newPaymentStatus === 'Free' ? 0 : toNumber(newSellPrice);
-    const unitPurchasingPrice = toNumber(newPurchasingPrice);
-    const stockLike = isStockLikeStatus(newPaymentStatus);
-    const computedTotalCost = stockLike
-      ? 0
-      : unitSellPrice * parsedQuantity;
-    const profitMetrics = getItemProfitMetrics(editingItem, {
-      quantity: parsedQuantity,
-      totalCost: computedTotalCost,
-      paymentStatus: newPaymentStatus,
-      itemCost: unitSellPrice,
-      purchasingPrice: unitPurchasingPrice,
-    });
-    
-    // Date Paid only applies while the item is Paid; any other status clears it.
-    const datePaidToSave = newPaymentStatus === 'Paid'
-      ? convertDateInputToISO(newDatePaid || formatDateForInput(new Date().toISOString()))
-      : null;
-
-    const itemRef = ref(database, `SoldItems/${editingItem.id}`);
-    try {
-      await update(itemRef, {
-        datePaid: datePaidToSave,
-        remark: newRemark,
-        totalCost: computedTotalCost,
-        itemCost: unitSellPrice,
-        paymentStatus: newPaymentStatus,
-        customerName: newCustomer,
-        name: newProductType,
-        quantity: parsedQuantity,
-        dateScanned: dateToSave,
-        purchasingPrice: unitPurchasingPrice,
-        unitProfit: profitMetrics.profit,
-        totalProfit: profitMetrics.totalProfitAmount,
-      });
-      
-      const updatedItems = soldItems.map((item) =>
-        item.id === editingItem.id
-          ? {
-              ...item,
-              datePaid: datePaidToSave,
-              remark: newRemark,
-              totalCost: computedTotalCost,
-              itemCost: unitSellPrice,
-              paymentStatus: newPaymentStatus,
-              customerName: newCustomer,
-              name: newProductType,
-              quantity: parsedQuantity,
-              dateScanned: dateToSave,
-              purchasingPrice: unitPurchasingPrice,
-              unitProfit: profitMetrics.profit,
-              totalProfit: profitMetrics.totalProfitAmount,
-            }
-          : item
-      );
-      
-      const sortedItems = sortItemsByDate(updatedItems);
-      setSoldItems(sortedItems);
-      setFilteredItems(sortedItems);
-      setEditingItem(null);
-    } catch (error) {
-      console.error('Error updating item:', error);
-      setErrorMessage('Failed to update item.');
-      setTimeout(() => setErrorMessage(null), 3000);
-    }
-  };
-
   // Delete functions
   const handleDelete = async (itemId) => {
     try {
@@ -1019,6 +920,12 @@ const OilSoldItems = () => {
     [missingItemBatches, soldItems, stockCheckedAtByProductId],
   );
 
+  // When editing, the item's own batch stays in the Price list even if it has
+  // since sold out.
+  const editPriceBatches = (editingItemId && missingItemBatchId && !missingItemSelectableBatches.some((b) => b.id === missingItemBatchId))
+    ? missingItemBatches.filter((b) => b.id === missingItemBatchId || missingItemSelectableBatches.includes(b))
+    : missingItemSelectableBatches;
+
   const selectedProduct = (missingItemBatches.find((b) => b.id === missingItemBatchId))
     || missingItemDefaultBatch
     || null;
@@ -1027,6 +934,7 @@ const OilSoldItems = () => {
     : null;
 
   const resetMissingItemForm = () => {
+    setEditingItemId(null);
     setMissingItemGroupId('');
     setMissingItemBatchId('');
     setMissingItemCustomerId('');
@@ -1073,7 +981,105 @@ const OilSoldItems = () => {
     setMissingItemSellPrice(batch ? String(toNumber(batch.itemCost)) : '');
   };
 
+  // ── Edit (reuses the Add Missing Item modal) ──────────────────
+  const editingItem = editingItemId ? soldItems.find((i) => i.id === editingItemId) || null : null;
+
+  const handleEdit = (item) => {
+    if (!item || !item.id) return;
+    const metrics = getItemProfitMetrics(item);
+    const linkedProduct = products.find((p) => p.id === item.productId)
+      || products.find((p) => p.id === item.barcode || p.barcode === item.barcode)
+      || null;
+    setEditingItemId(item.id);
+    setMissingItemGroupId(linkedProduct ? getBatchGroupKey(linkedProduct) : '');
+    setMissingItemBatchId(linkedProduct ? linkedProduct.id : '');
+    setMissingItemCustomerId(customers.find((c) => c.name === item.customerName || c.nameArabic === item.customerName)?.id || '');
+    setMissingItemDate(formatDateForInput(item.dateScanned) || getTodayDateForInput());
+    setMissingItemQuantity(String(toNumber(item.quantity)));
+    setMissingItemPaymentStatus(item.paymentStatus || 'Paid');
+    setMissingItemDatePaid(item.datePaid ? formatDateForInput(item.datePaid) : '');
+    setMissingItemPurchasingPrice(String(metrics.unitPurchasePrice));
+    setMissingItemSellPrice(String(metrics.unitSellPrice));
+    setMissingItemRemark(item.remark || '');
+    setShowMissingItemsModal(true);
+  };
+
+  // Update an existing SoldItem from the modal form. A product that can no
+  // longer be found (deleted) keeps the item's saved product details, and an
+  // unmatched customer name is kept as-is rather than forcing a re-pick.
+  const saveEditedItem = async () => {
+    if (!editingItem) return;
+    const quantityValue = toNumber(missingItemQuantity);
+    if (quantityValue <= 0) {
+      setErrorMessage('Quantity must be greater than 0.');
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
+
+    const paymentStatusValue = missingItemPaymentStatus || 'Paid';
+    const selectedCustomer = customers.find((c) => c.id === missingItemCustomerId) || null;
+    const customerNameValue = selectedCustomer
+      ? (selectedCustomer.name || selectedCustomer.nameArabic || 'Unknown')
+      : (editingItem.customerName || '');
+    const unitSellPrice = paymentStatusValue === 'Free' ? 0 : toNumber(missingItemSellPrice);
+    const unitPurchasingPrice = toNumber(missingItemPurchasingPrice);
+    const totalCostValue = isStockLikeStatus(paymentStatusValue) ? 0 : unitSellPrice * quantityValue;
+    const profitMetrics = getItemProfitMetrics(editingItem, {
+      ...(selectedProduct ? { barcode: selectedProduct.barcode || selectedProduct.id, productId: selectedProduct.id } : {}),
+      quantity: quantityValue,
+      totalCost: totalCostValue,
+      paymentStatus: paymentStatusValue,
+      itemCost: unitSellPrice,
+      purchasingPrice: unitPurchasingPrice,
+    });
+    // Keep the original time of day unless the date itself was changed.
+    const dateScannedValue = formatDateForInput(editingItem.dateScanned) === missingItemDate
+      ? editingItem.dateScanned
+      : convertDateInputToISO(missingItemDate);
+
+    const changes = {
+      ...(selectedProduct ? {
+        barcode: selectedProduct.barcode || selectedProduct.id,
+        productId: selectedProduct.id,
+        name: selectedProduct.name || 'Unknown Product',
+        category: selectedProduct.category || 'Unknown',
+      } : {}),
+      customerName: customerNameValue,
+      dateScanned: dateScannedValue,
+      quantity: quantityValue,
+      paymentStatus: paymentStatusValue,
+      // Date Paid only applies while the item is Paid; any other status clears it.
+      datePaid: paymentStatusValue === 'Paid'
+        ? convertDateInputToISO(missingItemDatePaid || formatDateForInput(new Date().toISOString()))
+        : null,
+      itemCost: unitSellPrice,
+      purchasingPrice: unitPurchasingPrice,
+      totalCost: totalCostValue,
+      unitProfit: profitMetrics.profit,
+      totalProfit: profitMetrics.totalProfitAmount,
+      remark: missingItemRemark,
+    };
+
+    setIsSavingMissingItem(true);
+    try {
+      await update(ref(database, `SoldItems/${editingItem.id}`), changes);
+      const updatedItems = sortItemsByDate(soldItems.map((item) => (
+        item.id === editingItem.id ? { ...item, ...changes } : item
+      )));
+      setSoldItems(updatedItems);
+      setFilteredItems(updatedItems);
+      closeMissingItemsModal();
+    } catch (error) {
+      console.error('Error updating item:', error);
+      setErrorMessage('Failed to update item.');
+      setTimeout(() => setErrorMessage(null), 3000);
+    } finally {
+      setIsSavingMissingItem(false);
+    }
+  };
+
   const saveMissingItem = async () => {
+    if (editingItem) { await saveEditedItem(); return; }
     if (!selectedProduct) {
       setErrorMessage('Please select a product.');
       setTimeout(() => setErrorMessage(null), 3000);
@@ -1193,18 +1199,22 @@ const OilSoldItems = () => {
   const missingItemIsStock = isStockLikeStatus(missingItemPaymentStatus);
   const missingItemIsFree = missingItemPaymentStatus === 'Free';
   const missingItemSellPriceValue = !selectedProduct || missingItemIsFree ? 0 : toNumber(missingItemSellPrice);
-  const missingItemPurchasingPriceValue = !selectedProduct
-    ? 0
-    : (missingItemIsStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice));
+  // Editing always uses the Purchasing Price field (it's editable there);
+  // adding only uses it for Stock.
+  const missingItemPurchasingPriceValue = editingItem
+    ? toNumber(missingItemPurchasingPrice)
+    : (!selectedProduct
+      ? 0
+      : (missingItemIsStock ? toNumber(missingItemPurchasingPrice) : toNumber(selectedProduct.purchasingPrice)));
   // Stock is a purchase, so it's saved at purchasing price x quantity —
   // the summary must show the same figure that gets stored.
   const missingItemTotalCost = missingItemIsStock
-    ? missingItemPurchasingPriceValue * missingItemQuantityValue
+    ? (editingItem ? 0 : missingItemPurchasingPriceValue * missingItemQuantityValue)
     : missingItemSellPriceValue * missingItemQuantityValue;
   const missingItemTotalProfit = (missingItemSellPriceValue - missingItemPurchasingPriceValue) * missingItemQuantityValue;
   const canSaveMissingItem = Boolean(
-    selectedProduct &&
-    (isStockLikeStatus(missingItemPaymentStatus) || missingItemCustomerId) &&
+    (selectedProduct || editingItem) &&
+    (isStockLikeStatus(missingItemPaymentStatus) || missingItemCustomerId || editingItem?.customerName) &&
     missingItemDate &&
     missingItemQuantityValue > 0 &&
     !isSavingMissingItem
@@ -1213,8 +1223,8 @@ const OilSoldItems = () => {
   // Surfaced near the Save button so a disabled Save isn't silently
   // confusing.
   const missingItemFieldMessages = [
-    !selectedProduct && 'Select a Product',
-    !isStockLikeStatus(missingItemPaymentStatus) && !missingItemCustomerId && 'Select a Customer',
+    !selectedProduct && !editingItem && 'Select a Product',
+    !isStockLikeStatus(missingItemPaymentStatus) && !missingItemCustomerId && !editingItem?.customerName && 'Select a Customer',
     !missingItemDate && 'Select a Date',
     missingItemQuantityValue <= 0 && 'Enter a Quantity greater than 0',
   ].filter(Boolean);
@@ -1677,86 +1687,12 @@ const OilSoldItems = () => {
         )}
       </div>
 
-      {/* Edit Item Modal */}
-      {editingItem && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: 560 }}>
-            <div className="modal-header">
-              <h3 className="modal-title">Edit Sold Item</h3>
-              <button className="modal-close" onClick={() => setEditingItem(null)}><IconX /></button>
-            </div>
-            <div className="modal-content">
-              <div className="missing-item-form-grid">
-                <div className="form-group">
-                  <label className="form-label">Date</label>
-                  <input type="datetime-local" value={newDate || ''} onChange={(e) => setNewDate(e.target.value)} className="form-input" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Customer</label>
-                  <select value={newCustomer} onChange={(e) => setNewCustomer(e.target.value)} className="form-select">
-                    <option value="">Select Customer</option>
-                    {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Product</label>
-                  <input type="text" value={newProductType} onChange={(e) => setNewProductType(e.target.value)} className="form-input" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Quantity</label>
-                  <input type="number" min="0" value={newQuantity} onChange={(e) => setNewQuantity(e.target.value)} className="form-input" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Sell Price</label>
-                  <input type="number" min="0" step="0.01" value={newPaymentStatus === 'Free' ? 0 : newSellPrice} onChange={(e) => setNewSellPrice(e.target.value)} className="form-input" disabled={newPaymentStatus === 'Free'} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Purchasing Price</label>
-                  <input type="number" min="0" step="0.01" value={newPurchasingPrice} onChange={(e) => setNewPurchasingPrice(e.target.value)} className="form-input" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Payment Status</label>
-                  <select
-                    value={newPaymentStatus}
-                    onChange={(e) => {
-                      setNewPaymentStatus(e.target.value);
-                      if (e.target.value === 'Paid' && !newDatePaid) setNewDatePaid(getTodayDateForInput());
-                    }}
-                    className="form-select"
-                  >
-                    <option value="Paid">Paid</option>
-                    <option value="Unpaid">Unpaid</option>
-                    <option value="Hold">Hold</option>
-                    <option value="Free">Free</option>
-                    <option value="Stock">Stock</option>
-                  </select>
-                </div>
-                {newPaymentStatus === 'Paid' && (
-                  <div className="form-group">
-                    <label className="form-label">Date Paid</label>
-                    <input type="date" value={newDatePaid} onChange={(e) => setNewDatePaid(e.target.value)} className="form-input" />
-                  </div>
-                )}
-              </div>
-              <div className="form-group" style={{ marginTop: 'var(--s-3)' }}>
-                <label className="form-label">Remark</label>
-                <input type="text" value={newRemark} onChange={(e) => setNewRemark(e.target.value)} className="form-input" />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-primary" onClick={saveEditedItem}>Update Item</button>
-              <button className="btn-secondary" onClick={() => setEditingItem(null)}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Missing Items Modal */}
       {showMissingItemsModal && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 720 }}>
             <div className="modal-header">
-              <h3>Add Missing Item</h3>
+              <h3>{editingItem ? 'Edit Sold Item' : 'Add Missing Item'}</h3>
               <button className="modal-close" onClick={closeMissingItemsModal}>
                 <IconX />
               </button>
@@ -1771,7 +1707,11 @@ const OilSoldItems = () => {
                     className="product-select"
                     disabled={isSavingMissingItem}
                   >
-                    <option value="">Select a Product</option>
+                    <option value="">{editingItem && !missingItemGroupId ? (editingItem.name || 'Unknown Product') : 'Select a Product'}</option>
+                    {/* An edited item's product may be held, so not in the list — keep it selectable. */}
+                    {missingItemGroupId && !missingItemGroups.some((p) => p.id === missingItemGroupId) && selectedProduct && (
+                      <option value={missingItemGroupId}>{selectedProduct.name} - {selectedProduct.barcode || selectedProduct.id}</option>
+                    )}
                     {missingItemGroups.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} - {p.barcode} · stock {p.quantity}
@@ -1780,7 +1720,7 @@ const OilSoldItems = () => {
                   </select>
                 </div>
 
-                {missingItemGroupId && missingItemSelectableBatches.length > 1 && (
+                {missingItemGroupId && editPriceBatches.length > 1 && (
                   <div className="form-group">
                     <label className="form-label">Price</label>
                     <select
@@ -1789,7 +1729,7 @@ const OilSoldItems = () => {
                       className="form-select"
                       disabled={isSavingMissingItem}
                     >
-                      {missingItemSelectableBatches.map((b) => (
+                      {editPriceBatches.map((b) => (
                         <option key={b.id} value={b.id}>
                           ${toNumber(b.itemCost).toFixed(2)} — {computeBatchRemaining(b, { soldItems, checkedAtByProductId: stockCheckedAtByProductId })} left
                           {b.id === missingItemDefaultBatch?.id ? ' (default)' : ''}
@@ -1799,8 +1739,9 @@ const OilSoldItems = () => {
                   </div>
                 )}
 
-                {selectedProduct && (
+                {(selectedProduct || editingItem) && (
                   <>
+                    {selectedProduct && (
                     <div className="barcode-section">
                       <h4>{selectedProduct.name}</h4>
                       <div className="barcode-container">
@@ -1817,6 +1758,7 @@ const OilSoldItems = () => {
                         {selectedProductRemaining} left at ${toNumber(selectedProduct.itemCost).toFixed(2)}
                       </p>
                     </div>
+                    )}
 
                     <div className="missing-item-form-grid">
                       <div className="form-group">
@@ -1892,7 +1834,7 @@ const OilSoldItems = () => {
                         </div>
                       )}
 
-                      {missingItemIsStock && (
+                      {(missingItemIsStock || editingItem) && (
                         <div className="form-group">
                           <label className="form-label">Purchasing Price</label>
                           <input
@@ -1953,7 +1895,7 @@ const OilSoldItems = () => {
               )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn-primary" onClick={saveMissingItem} disabled={!canSaveMissingItem}>
-                  {isSavingMissingItem ? 'Saving...' : 'Save Missing Item'}
+                  {isSavingMissingItem ? 'Saving...' : (editingItem ? 'Update Item' : 'Save Missing Item')}
                 </button>
                 <button className="btn-secondary" onClick={closeMissingItemsModal} disabled={isSavingMissingItem}>
                   Close

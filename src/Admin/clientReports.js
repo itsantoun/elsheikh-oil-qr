@@ -284,14 +284,27 @@ const ClientReports = () => {
     [customers, customerId]
   );
 
+  // Employees deleted from the Employees list still have records saved under
+  // their id and name — keep them reportable, marked "(Removed)".
+  const reportEmployees = useMemo(() => {
+    const list = employees.map((e) => ({ id: e.id, label: getEmployeeDisplayName(e) }));
+    const known = new Set(list.map((e) => e.id));
+    [...waterDistributionEntries, ...waterFillingEntries].forEach((r) => {
+      if (!r.employeeId || known.has(r.employeeId)) return;
+      known.add(r.employeeId);
+      list.push({ id: r.employeeId, label: `${r.employeeName || 'Unknown'} (Removed)` });
+    });
+    return list.sort((a, b) => compareNames(a.label, b.label));
+  }, [employees, waterDistributionEntries, waterFillingEntries]);
+
   const selectedEmployee = useMemo(
-    () => employees.find((e) => e.id === employeeId) || null,
-    [employees, employeeId]
+    () => reportEmployees.find((e) => e.id === employeeId) || null,
+    [reportEmployees, employeeId]
   );
 
   // Whoever the report is about — the client, or the employee.
   const subjectName = isEmployeeReport
-    ? (selectedEmployee ? getEmployeeDisplayName(selectedEmployee) : '')
+    ? (selectedEmployee ? selectedEmployee.label : '')
     : (selectedCustomer?.name || '');
   const hasSubject = isEmployeeReport ? Boolean(selectedEmployee) : Boolean(selectedCustomer);
   const subjectWord = isEmployeeReport ? 'employee' : 'client';
@@ -823,7 +836,7 @@ const ClientReports = () => {
               <label>Employee</label>
               <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
                 <option value="">Select employee…</option>
-                {employees.map((e) => <option key={e.id} value={e.id}>{getEmployeeDisplayName(e)}</option>)}
+                {reportEmployees.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
               </select>
             </div>
           ) : (

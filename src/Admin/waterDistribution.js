@@ -228,17 +228,28 @@ const WaterDistribution = () => {
 
   // Resolved live against the current Employees list (rather than the raw
   // string saved on the entry) so this always reflects their current
-  // nickname — falls back to blank if the entry has no employee or that
-  // employee was since removed.
+  // nickname. If that employee was since deleted, the name saved on the
+  // entry is shown, marked "(Removed)".
   const entryEmployeeName = useCallback((entry) => {
     const assigned = employees.find((emp) => emp.id === entry.employeeId);
-    return assigned ? getEmployeeDisplayName(assigned) : '';
+    if (assigned) return getEmployeeDisplayName(assigned);
+    return entry.employeeName ? `${entry.employeeName} (Removed)` : '';
   }, [employees]);
 
-  const employeeOptions = useMemo(
-    () => employees.map((e) => getEmployeeDisplayName(e)).filter(Boolean).sort((a, b) => a.localeCompare(b)),
-    [employees]
-  );
+  const employeeOptions = useMemo(() => {
+    const names = new Set(employees.map((e) => getEmployeeDisplayName(e)).filter(Boolean));
+    entries.forEach((e) => { const n = entryEmployeeName(e); if (n) names.add(n); });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [employees, entries, entryEmployeeName]);
+
+  // The entry open in the Edit modal — its employee may since have been
+  // deleted, in which case they stay selectable (marked Removed) and saving
+  // leaves them assigned.
+  const editingEntry = editingEntryId ? entries.find((e) => e.id === editingEntryId) || null : null;
+  const removedFormEmployee = editingEntry && editingEntry.employeeId && formEmployeeId === editingEntry.employeeId
+    && !employees.some((e) => e.id === formEmployeeId)
+    ? { id: editingEntry.employeeId, label: entryEmployeeName(editingEntry) || 'Unknown (Removed)' }
+    : null;
 
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
@@ -582,7 +593,7 @@ const WaterDistribution = () => {
     let selectedEmployee = null;
     if (formEmployeeId) {
       selectedEmployee = employees.find((e) => e.id === formEmployeeId);
-      if (!selectedEmployee) {
+      if (!selectedEmployee && !removedFormEmployee) {
         flash('Selected employee is no longer available.', 'error');
         return;
       }
@@ -958,6 +969,7 @@ const WaterDistribution = () => {
                   <label className="form-label">Employee</label>
                   <select value={formEmployeeId} onChange={(e) => handleEmployeeChange(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="">Select Employee</option>
+                    {removedFormEmployee && <option value={removedFormEmployee.id}>{removedFormEmployee.label}</option>}
                     {employees.map((e) => <option key={e.id} value={e.id}>{getEmployeeDisplayName(e)}</option>)}
                   </select>
                   {employees.length === 0 && (

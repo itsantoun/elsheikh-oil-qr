@@ -19,6 +19,7 @@ import {
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, convertPrice } from '../utils/exchangeRate';
 import { IconEye, IconTrash } from '../utils/icons';
+import { getEmployeeDisplayName } from './employees';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -122,6 +123,11 @@ const compareNames = (a, b) =>
 
 const GROUP_FILL = [233, 240, 250];
 
+// Services whose records are assigned to an employee (Employees list), and so
+// can be reported per employee. Water Filling only qualifies through older
+// entries saved while it still had an Employee field.
+const EMPLOYEE_SERVICES = ['Water Distribution', 'Water Filling'];
+
 // ── Component ──────────────────────────────────────────────────────────────────
 const ClientReports = () => {
   const { user } = useContext(UserContext);
@@ -142,6 +148,12 @@ const ClientReports = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [customerId, setCustomerId] = useState('');
+  // 'client' = per-client statement; 'employee' = everything one employee did
+  // for the employee-tracked services (e.g. Adel's Water Distribution).
+  const [reportFor, setReportFor] = useState('client');
+  const [employeeId, setEmployeeId] = useState('');
+  const [employees, setEmployees] = useState([]);
+  const isEmployeeReport = reportFor === 'employee';
   const [typeFilter, setTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
   // this list is included.
@@ -167,6 +179,14 @@ const ClientReports = () => {
     const waterDistributionRef = ref(database, 'waterDistributionEntries');
     const soldRef = ref(database, 'SoldItems');
     const productsRef = ref(database, 'products');
+    const employeesRef = ref(database, 'employees');
+
+    const unsubE = onValue(employeesRef, (snap) => {
+      const data = snap.exists() ? snap.val() : {};
+      const list = Object.keys(data).map((k) => ({ id: k, name: data[k].name || '', nickname: data[k].nickname || '' }));
+      list.sort((a, b) => compareNames(getEmployeeDisplayName(a), getEmployeeDisplayName(b)));
+      setEmployees(list);
+    });
 
     const unsubC = onValue(customersRef, (snap) => {
       const data = snap.exists() ? snap.val() : {};
@@ -217,7 +237,7 @@ const ClientReports = () => {
       });
     });
 
-    return () => { unsubC(); unsubM(); unsubW(); unsubWD(); unsubP(); unsubS(); };
+    return () => { unsubC(); unsubE(); unsubM(); unsubW(); unsubWD(); unsubP(); unsubS(); };
   }, []);
 
   const applyHistorySnapshot = (snap) => {
@@ -264,6 +284,23 @@ const ClientReports = () => {
     [customers, customerId]
   );
 
+  const selectedEmployee = useMemo(
+    () => employees.find((e) => e.id === employeeId) || null,
+    [employees, employeeId]
+  );
+
+  // Whoever the report is about — the client, or the employee.
+  const subjectName = isEmployeeReport
+    ? (selectedEmployee ? getEmployeeDisplayName(selectedEmployee) : '')
+    : (selectedCustomer?.name || '');
+  const hasSubject = isEmployeeReport ? Boolean(selectedEmployee) : Boolean(selectedCustomer);
+  const subjectWord = isEmployeeReport ? 'employee' : 'client';
+
+  const switchReportFor = (value) => {
+    setReportFor(value);
+    setTypeFilter('All');
+  };
+
   // ── Date range bounds (blank => unbounded) ────────────────────────────────────
   const bounds = useMemo(() => ({
     fromMs: dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : -Infinity,
@@ -289,11 +326,15 @@ const ClientReports = () => {
   // "Spartan 650ml") — the statement below still shows their real names as
   // section headers, this is only about keeping the filter list clean.
   const availableTypes = useMemo(() => {
+    if (isEmployeeReport) {
+      return EMPLOYEE_SERVICES.filter((t) => t === 'Water Distribution'
+        || (t === 'Water Filling' && waterFillingEntries.some((e) => e.employeeId)));
+    }
     const set = new Set(['Oil', 'Filter', 'Maghsal', 'Water Filling', 'Water Distribution']);
     const hasOther = products.some((p) => normalizeScope(p.scope, p.productType) === 'other');
     if (hasOther) set.add('Other');
     return [...set].sort((a, b) => sectionRank(a) - sectionRank(b) || a.localeCompare(b));
-  }, [products]);
+  }, [products, isEmployeeReport, waterFillingEntries]);
 
   // Determine the section title (Oil / Filter / Maghsal / custom) for a sold item.
   const sectionForSoldItem = (item) => {
@@ -329,13 +370,19 @@ const ClientReports = () => {
 
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
   const statement = useMemo(() => {
-    if (!selectedCustomer) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
+    if (!(isEmployeeReport ? selectedEmployee : selectedCustomer)) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
 
     const records = [];
+    // Client report: the client's records. Employee report: records assigned
+    // to that employee — the Item column then names the client served.
+    const matchesSubject = (e) => (isEmployeeReport
+      ? e.employeeId === selectedEmployee.id
+      : matchesSelectedCustomer(e.customerName, e.customerNameArabic));
 
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
 
     maghsalEntries.forEach((e) => {
+      if (isEmployeeReport) return;
       if (typeFilter !== 'All' && typeFilter !== 'Maghsal') return;
       if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
       if (!inRange(e.date)) return;
@@ -353,7 +400,7 @@ const ClientReports = () => {
 
     waterFillingEntries.forEach((e) => {
       if (typeFilter !== 'All' && typeFilter !== 'Water Filling') return;
-      if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
+      if (!matchesSubject(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
       // Statement totals are USD-denominated — convert LBP premiums so they
@@ -365,7 +412,7 @@ const ClientReports = () => {
         key: `w-${e.id}`,
         date: e.date,
         section: 'Water Filling',
-        item: waterFillingItemLabel(e.transactionType),
+        item: isEmployeeReport ? (e.customerName || 'N/A') : waterFillingItemLabel(e.transactionType),
         quantity: toNumber(e.quantity),
         total: totalUSD,
         status: e.paymentStatus || 'N/A',
@@ -374,7 +421,7 @@ const ClientReports = () => {
 
     waterDistributionEntries.forEach((e) => {
       if (typeFilter !== 'All' && typeFilter !== 'Water Distribution') return;
-      if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
+      if (!matchesSubject(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
       // Statement totals are USD-denominated — convert LBP prices so they
@@ -386,7 +433,7 @@ const ClientReports = () => {
         key: `wd-${e.id}`,
         date: e.date,
         section: 'Water Distribution',
-        item: e.truckType || 'Water Distribution',
+        item: isEmployeeReport ? (e.customerName || 'N/A') : (e.truckType || 'Water Distribution'),
         quantity: toNumber(e.quantity),
         total: totalUSD,
         status: e.paymentStatus || 'N/A',
@@ -394,6 +441,7 @@ const ClientReports = () => {
     });
 
     soldItems.forEach((it) => {
+      if (isEmployeeReport) return;
       if (!matchesSelectedCustomer(it.customerName, it.customerName)) return;
       if (!inRange(it.dateScanned)) return;
       const section = sectionForSoldItem(it);
@@ -436,7 +484,7 @@ const ClientReports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal, totalQuantity };
-  }, [selectedCustomer, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, selectedEmployee, isEmployeeReport, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -453,7 +501,7 @@ const ClientReports = () => {
 
   const fileLabel = () => {
     const parts = [];
-    if (selectedCustomer) parts.push(safeName(selectedCustomer.name));
+    if (hasSubject) parts.push(safeName(subjectName));
     parts.push(dateFrom || dateTo ? `${dateFrom || 'start'}_to_${dateTo || 'now'}` : 'all_time');
     return parts.join('_');
   };
@@ -480,13 +528,21 @@ const ClientReports = () => {
   );
 
   const generateReport = () => {
-    if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
-    if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
+    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee' : 'a client'} first.`, 'error'); return; }
+    if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
     setViewingHistoryId(null);
     setPendingSnapshot({
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.name,
-      customerNameArabic: selectedCustomer.nameArabic || '',
+      reportFor,
+      // customerName holds whoever the report is about (client or employee),
+      // so history, view and PDF read it the same way for both kinds.
+      ...(isEmployeeReport ? {
+        employeeId: selectedEmployee.id,
+        customerName: subjectName,
+      } : {
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        customerNameArabic: selectedCustomer.nameArabic || '',
+      }),
       typeFilter,
       dateFrom,
       dateTo,
@@ -551,7 +607,9 @@ const ClientReports = () => {
   };
 
   // `print: true` sends the same PDF to the printer instead of saving it.
-  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, recordCount: count, customerName, rangeLabel: range, filename, print = false }) => {
+  const buildAndSaveStatementPDF = async ({ sections, paid, unpaid, grandTotal, recordCount: count, customerName, rangeLabel: range, filename, forEmployee = false, print = false }) => {
+    const title = forEmployee ? 'EMPLOYEE REPORT' : 'CLIENT REPORT';
+    const clientLabel = forEmployee ? 'Employee' : 'Bill To';
     // Ask for folder permission before building the PDF — a long statement can
     // take long enough that the click's user activation expires, and the
     // browser then refuses the permission prompt and falls back to Downloads.
@@ -562,7 +620,8 @@ const ClientReports = () => {
     const doc = createReceiptDoc(jsPDF, { format: 'a4' });
     const density = getReceiptDensity(count + sections.length, 1.4);
     const startY = await addReceiptHeader(doc, {
-      title: 'CLIENT REPORT',
+      title,
+      clientLabel,
       // subtitle: 'Statement by Type',
       client: customerName,
       dateRange: range,
@@ -593,7 +652,7 @@ const ClientReports = () => {
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', 'Item', 'Quantity', 'Price per unit', 'Status', 'Total'],
+        head: ['Date', forEmployee ? 'Client' : 'Item', 'Quantity', 'Price per unit', 'Status', 'Total'],
         body,
         startY,
         rightAlignedColumns: [2, 3, 5],
@@ -604,7 +663,7 @@ const ClientReports = () => {
         topMargin: 22,
         onPageDraw: (data) => {
           const pageNumber = data.doc.internal.getCurrentPageInfo().pageNumber;
-          if (pageNumber > 1) drawContinuationHeader(data.doc, { client: customerName });
+          if (pageNumber > 1) drawContinuationHeader(data.doc, { title, client: customerName, clientLabel: forEmployee ? 'Employee' : 'Client' });
         },
       }),
       // Column widths scaled up from the A5 default to use A4's extra width.
@@ -645,8 +704,8 @@ const ClientReports = () => {
   };
 
   const exportPDF = async ({ print = false } = {}) => {
-    if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
-    if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
+    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee' : 'a client'} first.`, 'error'); return; }
+    if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
     await buildAndSaveStatementPDF({
       sections: statement.sections,
       paid: statement.paid,
@@ -654,9 +713,10 @@ const ClientReports = () => {
       grandTotal: statement.grandTotal,
       totalQuantity: statement.totalQuantity,
       recordCount,
-      customerName: selectedCustomer.name,
+      customerName: subjectName,
       rangeLabel: rangeLabel(),
       filename: `${fileLabel()}.pdf`,
+      forEmployee: isEmployeeReport,
       print,
     });
   };
@@ -684,16 +744,17 @@ const ClientReports = () => {
       customerName: entry.customerName,
       rangeLabel: entry.rangeLabel,
       filename: `${parts.join('_')}.pdf`,
+      forEmployee: entry.reportFor === 'employee',
       print,
     });
   };
 
   // ── CSV export ────────────────────────────────────────────────────────────────
   const exportCSV = async () => {
-    if (!selectedCustomer) { flash('Select a client first.', 'error'); return; }
-    if (recordCount === 0) { flash('No activity for this client in range.', 'error'); return; }
+    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee' : 'a client'} first.`, 'error'); return; }
+    if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
 
-    const headers = ['Date', 'Type', 'Item', 'Quantity', 'Status', 'Total'];
+    const headers = ['Date', 'Type', isEmployeeReport ? 'Client' : 'Item', 'Quantity', 'Status', 'Total'];
     const rows = [];
     statement.sections.forEach((g) => {
       g.rows.forEach((r) => rows.push([formatDate(r.date), g.section, r.item, r.quantity || '', r.status, r.total.toFixed(2)]));
@@ -729,7 +790,7 @@ const ClientReports = () => {
         <div className="page-shell-header-left">
           <h1 className="page-shell-header-title">Reports</h1>
           <p className="page-shell-header-subtitle">
-            Per-client statement grouped by type — Oil, Filter, Maghsal, Water Filling and more.
+            Per-client statement grouped by type — Oil, Filter, Maghsal, Water Filling and more — or per-employee for Water Distribution.
           </p>
         </div>
         <div className="page-shell-header-actions">
@@ -750,19 +811,37 @@ const ClientReports = () => {
 
         <div className="filters-grid">
           <div className="filter-group">
-            <label>Client</label>
-            <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">Select client…</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}{c.nameArabic ? ` — ${c.nameArabic}` : ''}
-                </option>
-              ))}
-            </select>
+            <label>Report For</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" className={!isEmployeeReport ? 'btn-primary' : 'btn-secondary'} onClick={() => switchReportFor('client')}>Client</button>
+              <button type="button" className={isEmployeeReport ? 'btn-primary' : 'btn-secondary'} onClick={() => switchReportFor('employee')}>Employee</button>
+            </div>
           </div>
 
+          {isEmployeeReport ? (
+            <div className="filter-group">
+              <label>Employee</label>
+              <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+                <option value="">Select employee…</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{getEmployeeDisplayName(e)}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div className="filter-group">
+              <label>Client</label>
+              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                <option value="">Select client…</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.nameArabic ? ` — ${c.nameArabic}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="filter-group">
-            <label>Type</label>
+            <label>{isEmployeeReport ? 'Service' : 'Type'}</label>
             <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="All">All</option>
               {availableTypes.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -820,15 +899,15 @@ const ClientReports = () => {
       <div className="ui-card">
         <div className="ui-card-header">
           <h2 className="ui-card-title">
-            Statement {selectedCustomer ? `— ${selectedCustomer.name}` : ''}
+            Statement {hasSubject ? `— ${subjectName}` : ''}
           </h2>
           <span className="ui-card-subtle">{recordCount} record(s) · {rangeLabel()}</span>
         </div>
 
-        {!selectedCustomer ? (
-          <div className="empty-state-card">Select a client to view their statement.</div>
+        {!hasSubject ? (
+          <div className="empty-state-card">Select {isEmployeeReport ? 'an employee' : 'a client'} to view their statement.</div>
         ) : recordCount === 0 ? (
-          <div className="empty-state-card">No activity for this client in the selected range.</div>
+          <div className="empty-state-card">No activity for this {subjectWord} in the selected range.</div>
         ) : (
           <>
             <div className="table-container" style={{ boxShadow: 'none', border: 'none' }}>
@@ -836,7 +915,7 @@ const ClientReports = () => {
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Item</th>
+                    <th>{isEmployeeReport ? 'Client' : 'Item'}</th>
                     <th className="text-right">Quantity</th>
                     <th className="text-right">Price per unit</th>
                     <th>Status</th>
@@ -900,7 +979,7 @@ const ClientReports = () => {
               <thead>
                 <tr>
                   <th>Generated</th>
-                  <th>Client</th>
+                  <th>Client / Employee</th>
                   <th>Type</th>
                   <th>Range</th>
                   <th className="text-right">Total</th>
@@ -912,7 +991,7 @@ const ClientReports = () => {
                 {visibleHistory.map((h) => (
                   <tr key={h.id} style={h.id === viewingHistoryId ? { background: 'var(--surface-2, #e9f0fa)' } : undefined}>
                     <td>{formatDate(h.generatedAt)}</td>
-                    <td>{h.customerName}</td>
+                    <td>{h.customerName}{h.reportFor === 'employee' && <span className="ui-card-subtle"> (Employee)</span>}</td>
                     <td>{h.typeFilter}</td>
                     <td>{h.rangeLabel}</td>
                     <td className="text-right">${formatCurrency(h.grandTotal)}</td>
@@ -936,7 +1015,7 @@ const ClientReports = () => {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: '820px' }}>
             <div className="modal-header">
-              <h3 className="modal-title">Saved Report — {viewedEntry.customerName}</h3>
+              <h3 className="modal-title">Saved {viewedEntry.reportFor === 'employee' ? 'Employee ' : ''}Report — {viewedEntry.customerName}</h3>
               <button className="modal-close" onClick={backToLiveView}>×</button>
             </div>
             <div className="modal-content">
@@ -950,7 +1029,7 @@ const ClientReports = () => {
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Item</th>
+                      <th>{viewedEntry.reportFor === 'employee' ? 'Client' : 'Item'}</th>
                       <th className="text-right">Quantity</th>
                       <th className="text-right">Price per unit</th>
                       <th>Status</th>
@@ -1009,7 +1088,7 @@ const ClientReports = () => {
             </div>
             <div className="modal-content">
               <p>
-                Client: <strong>{pendingSnapshot.customerName}</strong><br />
+                {pendingSnapshot.reportFor === 'employee' ? 'Employee' : 'Client'}: <strong>{pendingSnapshot.customerName}</strong><br />
                 Type: {pendingSnapshot.typeFilter} · Range: {pendingSnapshot.rangeLabel}<br />
                 {pendingSnapshot.recordCount} record(s) · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
               </p>

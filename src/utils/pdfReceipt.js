@@ -44,6 +44,9 @@ export const addReceiptHeader = async (doc, {
   subtitle = '',
   receiptNo = '',
   client = '',
+  // Label before `client` in the compact header (e.g. 'Employee' for an
+  // employee report).
+  clientLabel = 'Bill To',
   dateRange = '',
   issuedAt = new Date(),
   showLogo = true,
@@ -96,7 +99,7 @@ export const addReceiptHeader = async (doc, {
     doc.setDrawColor(...BORDER);
     doc.setLineWidth(0.25);
     doc.roundedRect(margin, 19, pageWidth - margin * 2, 8, 2, 2, 'S');
-    labelValue('Bill To', client || 'All Clients', left, 24.3);
+    labelValue(clientLabel, client || 'All Clients', left, 24.3);
     labelValue('Period', dateRange || '-', right, 24.3, true);
 
     return 30;
@@ -323,7 +326,7 @@ const drawTotalLine = (doc, label, value, x, y, width) => {
 // `addReceiptHeader` branded header) — a slim band naming the client and
 // noting the page number, so a multi-page report is still identifiable
 // after being separated from page 1.
-export const drawContinuationHeader = (doc, { title = 'CLIENT REPORT', client = '' } = {}) => {
+export const drawContinuationHeader = (doc, { title = 'CLIENT REPORT', client = '', clientLabel = 'Client' } = {}) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 10;
   const bandH = 12;
@@ -341,7 +344,7 @@ export const drawContinuationHeader = (doc, { title = 'CLIENT REPORT', client = 
   doc.setFontSize(9.5);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(...TEXT_DARK);
-  doc.text(`Client: ${client || 'All Clients'}`, pageWidth - margin - 4, 6 + bandH / 2 + 1.5, { align: 'right' });
+  doc.text(`${clientLabel}: ${client || 'All Clients'}`, pageWidth - margin - 4, 6 + bandH / 2 + 1.5, { align: 'right' });
 };
 
 export const drawPageFooter = (doc) => {

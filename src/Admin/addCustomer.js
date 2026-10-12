@@ -287,6 +287,36 @@ const AddCustomer = () => {
     setExpandedCustomer(customer.id);
   };
 
+  // Records save the customer's name as text and every page matches on it,
+  // so a rename must carry over to their existing records — otherwise old
+  // sales/entries stay under the old name and drop out of this customer's
+  // reports. A record that has a customerId only follows that id (two
+  // customers can share a name); older ones without it match on the old
+  // English or Arabic name.
+  const RENAME_COLLECTIONS = ['SoldItems', 'maghsalEntries', 'waterFillingEntries', 'waterDistributionEntries'];
+  const buildRenameUpdates = async (id, oldCustomer, newName, newNameArabic) => {
+    const oldNames = [oldCustomer.name, oldCustomer.nameArabic].map((n) => String(n || '').trim()).filter(Boolean);
+    const updates = {};
+    const snaps = await Promise.all(RENAME_COLLECTIONS.map((c) => get(ref(database, c))));
+    snaps.forEach((snap, i) => {
+      if (!snap.exists()) return;
+      const data = snap.val();
+      Object.keys(data).forEach((key) => {
+        const rec = data[key] || {};
+        const belongs = rec.customerId
+          ? rec.customerId === id
+          : oldNames.includes(String(rec.customerName || '').trim());
+        if (!belongs) return;
+        const path = `${RENAME_COLLECTIONS[i]}/${key}`;
+        if (rec.customerName !== newName) updates[`${path}/customerName`] = newName;
+        if ('customerNameArabic' in rec && rec.customerNameArabic !== newNameArabic) {
+          updates[`${path}/customerNameArabic`] = newNameArabic;
+        }
+      });
+    });
+    return updates;
+  };
+
   const handleEditCustomer = async (id) => {
     if (!editData.name.trim()) {
       setErrorMessage('Customer name is required.');
@@ -308,7 +338,17 @@ const AddCustomer = () => {
         waterDistributionPricing: buildWaterDistributionPricingPayload(editData),
         pickupWaterDistributionPricing: buildPickupWaterDistributionPricingPayload(editData),
       };
-      await update(ref(database, `customers/${id}`), customerData);
+      const oldCustomer = customers.find(c => c.id === id) || {};
+      const renamed = (oldCustomer.name || '') !== customerData.name
+        || (oldCustomer.nameArabic || '') !== customerData.nameArabic;
+      // Customer and their records are written in one atomic update, so a
+      // rename never leaves records half-moved.
+      const renameUpdates = renamed
+        ? await buildRenameUpdates(id, oldCustomer, customerData.name, customerData.nameArabic)
+        : {};
+      const customerUpdates = {};
+      Object.keys(customerData).forEach((k) => { customerUpdates[`customers/${id}/${k}`] = customerData[k]; });
+      await update(ref(database), { ...customerUpdates, ...renameUpdates });
 
       setCustomers(prev => {
         const updated = prev.map(c =>
@@ -318,7 +358,10 @@ const AddCustomer = () => {
       });
 
       setEditingCustomer(null);
-      setSuccessMessage('Customer updated successfully!');
+      const movedCount = new Set(Object.keys(renameUpdates).map((k) => k.split('/').slice(0, 2).join('/'))).size;
+      setSuccessMessage(movedCount > 0
+        ? `Customer updated — renamed on ${movedCount} existing record${movedCount === 1 ? '' : 's'}.`
+        : 'Customer updated successfully!');
     } catch (error) {
       console.error('Error editing customer:', error);
       setErrorMessage('Failed to update customer.');

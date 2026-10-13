@@ -378,6 +378,13 @@ const WaterDistribution = () => {
       const updates = {};
       writeIds.forEach((id) => {
         updates[`waterDistributionEntries/${id}/paymentStatus`] = status;
+        // Free totals 0; an entry leaving Free gets Unit Price × Quantity back.
+        const entry = targetEntries.find((r) => r.id === id);
+        if (status === 'Free') {
+          updates[`waterDistributionEntries/${id}/totalPrice`] = 0;
+        } else if (entry?.paymentStatus === 'Free') {
+          updates[`waterDistributionEntries/${id}/totalPrice`] = toNumber(entry.unitPrice) * toNumber(entry.quantity);
+        }
         if (status === 'Paid') {
           updates[`waterDistributionEntries/${id}/datePaid`] = convertDateInputToISO(datePaid || formatDateForInput(new Date().toISOString()));
           const newRemark = String(remark || '').trim();
@@ -497,12 +504,21 @@ const WaterDistribution = () => {
 
   // Switching to Paid defaults Date Paid to today (only if it's not already
   // set) so the field isn't left blank; switching away leaves it untouched.
+  // Free always totals 0; leaving Free goes back to Unit Price × Quantity.
   const handlePaymentStatusChange = (status) => {
     setFormPaymentStatus(status);
     if (status === 'Paid' && !formDatePaid) {
       setFormDatePaid(formatDateForInput(new Date().toISOString()));
     }
+    if (status === 'Free') {
+      setFormTotalPrice('0');
+    } else if (formPaymentStatus === 'Free') {
+      setTotalPriceTouched(false);
+      setFormTotalPrice(recalcTotalPrice(formUnitPrice, formQuantity));
+    }
   };
+  // Total for the current price/quantity — 0 while the entry is Free.
+  const autoTotalPrice = (unitPrice, quantity) => (formPaymentStatus === 'Free' ? '0' : recalcTotalPrice(unitPrice, quantity));
 
   const closeModal = () => { setShowModal(false); setEditingEntryId(null); };
 
@@ -522,7 +538,7 @@ const WaterDistribution = () => {
     setFormUnitPrice(newUnitPrice);
     setFormPriceCurrency(pricing?.currency || 'USD');
     setTotalPriceTouched(false);
-    setFormTotalPrice(recalcTotalPrice(newUnitPrice, formQuantity));
+    setFormTotalPrice(autoTotalPrice(newUnitPrice, formQuantity));
   };
 
   const handleEmployeeChange = (employeeId) => {
@@ -538,20 +554,20 @@ const WaterDistribution = () => {
     setFormUnitPrice(newUnitPrice);
     setFormPriceCurrency(pricing?.currency || 'USD');
     setTotalPriceTouched(false);
-    setFormTotalPrice(recalcTotalPrice(newUnitPrice, formQuantity));
+    setFormTotalPrice(autoTotalPrice(newUnitPrice, formQuantity));
   };
 
   const handleUnitPriceChange = (value) => {
     setFormUnitPrice(value);
     if (!totalPriceTouched) {
-      setFormTotalPrice(recalcTotalPrice(value, formQuantity));
+      setFormTotalPrice(autoTotalPrice(value, formQuantity));
     }
   };
 
   const handleQuantityChange = (value) => {
     setFormQuantity(value);
     if (!totalPriceTouched) {
-      setFormTotalPrice(recalcTotalPrice(formUnitPrice, value));
+      setFormTotalPrice(autoTotalPrice(formUnitPrice, value));
     }
   };
 
@@ -617,7 +633,8 @@ const WaterDistribution = () => {
       // Total Price is user-editable — save what's in the field (defaulting
       // to Unit Price × Quantity if it was left blank) rather than forcing
       // the calculated value.
-      const totalPrice = formTotalPrice !== '' ? toNumber(formTotalPrice) : unitPrice * quantity;
+      const totalPrice = formPaymentStatus === 'Free' ? 0
+        : (formTotalPrice !== '' ? toNumber(formTotalPrice) : unitPrice * quantity);
 
       const payload = {
         // Omitted (not cleared) when left unset on an old entry — Firebase's

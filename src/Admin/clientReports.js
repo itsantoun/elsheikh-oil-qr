@@ -114,6 +114,8 @@ const sanitizeCSVCell = (value) => {
 };
 
 // Every section's total row shows the summed quantity of its line items.
+// A comment split into its parts ("Mark as Paid" appends with " | ").
+const remarkParts = (remark) => String(remark || '').split('|').map((p) => p.trim()).filter(Boolean);
 const sectionQuantity = (g) => g.rows.reduce((a, r) => a + toNumber(r.quantity), 0);
 
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
@@ -164,7 +166,7 @@ const ClientReports = () => {
       prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
     ));
   };
-  // Text the record's comment (remark) must contain — blank = no filter.
+  // A Water Distribution comment picked from the dropdown — blank = no filter.
   const [commentFilter, setCommentFilter] = useState('');
   const [message, setMessage] = useState(null);
   const [messageKind, setMessageKind] = useState('success');
@@ -335,6 +337,30 @@ const ClientReports = () => {
   const matchesSelectedCustomer = (rec) => Boolean(selectedCustomer)
     && recordCustomerId(rec, customerIndex) === selectedCustomer.id;
 
+  // Water Distribution comments of the selected client (or employee), for
+  // the Comment dropdown. "Mark as Paid" appends to a comment with " | ", so
+  // each part is offered on its own.
+  const commentOptions = useMemo(() => {
+    if (!(isEmployeeReport ? selectedEmployee : selectedCustomer)) return [];
+    const seen = new Map();
+    waterDistributionEntries.forEach((e) => {
+      const mine = isEmployeeReport ? e.employeeId === selectedEmployee.id : matchesSelectedCustomer(e);
+      if (!mine) return;
+      remarkParts(e.remark).forEach((part) => {
+        const key = part.toLowerCase();
+        const cur = seen.get(key) || { label: part, count: 0 };
+        cur.count += 1;
+        seen.set(key, cur);
+      });
+    });
+    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [waterDistributionEntries, isEmployeeReport, selectedEmployee, selectedCustomer, customerIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A picked comment only makes sense for the client/employee it came from.
+  useEffect(() => { setCommentFilter(''); }, [customerId, employeeId, reportFor]);
+  const showCommentFilter = (typeFilter === 'All' || typeFilter === 'Water Distribution') && commentOptions.length > 0;
+  useEffect(() => { if (!showCommentFilter) setCommentFilter(''); }, [showCommentFilter]);
+
   // Available type options for the filter. Miscellaneous ("other" scope)
   // products are grouped under a single "Other" entry here instead of one
   // dropdown option per individual product name/type (e.g. "Spartan",
@@ -395,9 +421,11 @@ const ClientReports = () => {
       : matchesSelectedCustomer(e));
 
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
-    // Oil/Filter sales have no comment, so they drop out while this is set.
+    // The comment filter is for Water Distribution: while a comment is
+    // picked, only Water Distribution entries carrying it are shown.
     const commentTerm = commentFilter.trim().toLowerCase();
-    const matchesCommentFilter = (remark) => !commentTerm || String(remark || '').toLowerCase().includes(commentTerm);
+    const matchesCommentFilter = (remark) => !commentTerm
+      || remarkParts(remark).some((part) => part.toLowerCase() === commentTerm);
 
     maghsalEntries.forEach((e) => {
       if (isEmployeeReport) return;
@@ -405,7 +433,7 @@ const ClientReports = () => {
       if (!matchesSelectedCustomer(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
-      if (!matchesCommentFilter(e.remark)) return;
+      if (commentTerm) return;
       records.push({
         key: `m-${e.id}`,
         date: e.date,
@@ -422,7 +450,7 @@ const ClientReports = () => {
       if (!matchesSubject(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
-      if (!matchesCommentFilter(e.remark)) return;
+      if (commentTerm) return;
       // Statement totals are USD-denominated — convert LBP premiums so they
       // aggregate correctly alongside Oil/Filter/Maghsal totals.
       const totalUSD = e.premiumCurrency === 'LBP'
@@ -468,7 +496,7 @@ const ClientReports = () => {
       const section = sectionForSoldItem(it);
       if (!matchesTypeFilter(section)) return;
       if (!matchesStatusFilter(it.paymentStatus)) return;
-      if (!matchesCommentFilter(it.remark)) return;
+      if (commentTerm) return;
       const { quantity, revenue } = getItemRevenue(it);
       records.push({
         key: `o-${it.id}`,
@@ -898,15 +926,17 @@ const ClientReports = () => {
             </div>
           </div>
 
-          <div className="filter-group">
-            <label>Comment</label>
-            <input
-              type="text"
-              value={commentFilter}
-              onChange={(e) => setCommentFilter(e.target.value)}
-              placeholder="Comment contains…"
-            />
-          </div>
+          {showCommentFilter && (
+            <div className="filter-group">
+              <label>Water Distribution Comment</label>
+              <select value={commentFilter} onChange={(e) => setCommentFilter(e.target.value)}>
+                <option value="">All Comments</option>
+                {commentOptions.map((o) => (
+                  <option key={o.label} value={o.label}>{o.label} ({o.count})</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="filter-group">
             <label>From</label>

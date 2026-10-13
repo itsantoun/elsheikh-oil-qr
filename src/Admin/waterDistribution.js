@@ -492,10 +492,79 @@ const WaterDistribution = () => {
     setShowModal(true);
   };
 
+  // ── Bulk comment ───────────────────────
+  // 'add' appends after any existing comment with " | " (same as Mark as
+  // Paid's remark, so nothing is lost); 'replace' overwrites it — an empty
+  // comment with 'replace' clears it.
+  const [showBulkComment, setShowBulkComment] = useState(false);
+  const [bulkComment, setBulkComment] = useState('');
+  const [bulkCommentMode, setBulkCommentMode] = useState('add');
+  // Comments already in use, offered as suggestions so the same wording is
+  // reused (the Client Reports comment dropdown groups by exact text).
+  const commentSuggestions = useMemo(() => {
+    const seen = new Map();
+    entries.forEach((e) => String(e.remark || '').split('|').map((p) => p.trim()).filter(Boolean)
+      .forEach((p) => { if (!seen.has(p.toLowerCase())) seen.set(p.toLowerCase(), p); }));
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [entries]);
+
+  const handleBulkComment = async () => {
+    const text = bulkComment.trim();
+    if (liveSelectedIds.length === 0 || isBulkUpdating) return;
+    if (!text && bulkCommentMode === 'add') { flash('Type a comment to add.', 'error'); return; }
+    setIsBulkUpdating(true);
+    const targetIds = [...liveSelectedIds].filter((id) => filtered.some((r) => r.id === id));
+    const targetEntries = targetIds.map((id) => entries.find((e) => e.id === id)).filter(Boolean);
+    if (targetEntries.length === 0) { setIsBulkUpdating(false); return; }
+    const newRemark = (e) => {
+      const existing = String(e.remark || '').trim();
+      if (bulkCommentMode === 'replace') return text;
+      return existing ? `${existing} | ${text}` : text;
+    };
+    const action = bulkCommentMode === 'replace' ? (text ? 'Replace the comment on' : 'Clear the comment on') : 'Add a comment to';
+    const confirmed = await confirm({
+      title: `${action} ${targetEntries.length} ${targetEntries.length === 1 ? 'entry' : 'entries'}?`,
+      message: (
+        <div>
+          <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
+            {targetEntries.map((e) => (
+              <div key={e.id} style={{ fontSize: 13, padding: '3px 0' }}>
+                {formatDate(e.date)} — {customerNameOf(e) || 'N/A'}: <em>{e.remark || '—'}</em> → <strong>{newRemark(e) || '—'}</strong>
+              </div>
+            ))}
+          </div>
+          {targetEntries.length > 10 && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8, fontWeight: 600 }}>
+              Check this list carefully: {targetEntries.length} records will change.
+            </p>
+          )}
+        </div>
+      ),
+      confirmLabel: 'Yes, save comments',
+      danger: false,
+    });
+    if (!confirmed) { setIsBulkUpdating(false); return; }
+    try {
+      const updates = {};
+      targetEntries.forEach((e) => { updates[`waterDistributionEntries/${e.id}/remark`] = newRemark(e); });
+      await update(ref(database), updates);
+      flash(`Comment saved on ${targetEntries.length} ${targetEntries.length === 1 ? 'entry' : 'entries'}.`);
+      setSelectedIds([]);
+      setShowBulkComment(false);
+      setBulkComment('');
+    } catch (err) {
+      console.error('Bulk comment failed:', err);
+      flash(`Failed to save comments: ${err?.message || err}`, 'error');
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
   const handleBulkStatusClick = (status) => {
     if (status === 'Paid') {
       setBulkDatePaid(formatDateForInput(new Date().toISOString()));
       setBulkRemark('');
+      setShowBulkComment(false);
       setShowBulkDatePaid(true);
       return;
     }
@@ -860,8 +929,60 @@ const WaterDistribution = () => {
                 {s}
               </button>
             ))}
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={isBulkUpdating}
+              onClick={() => { setShowBulkDatePaid(false); setShowBulkComment(true); }}
+              style={{ padding: '4px 10px', fontSize: 12 }}
+            >
+              Comment
+            </button>
           </div>
           <button className="btn-secondary" onClick={clearSelection} disabled={isBulkUpdating}>Clear Selection</button>
+
+          {showBulkComment && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Comment for all {liveSelectedIds.length} selected:</span>
+              <input
+                type="text"
+                list="wd-comment-suggestions"
+                value={bulkComment}
+                onChange={(e) => setBulkComment(e.target.value)}
+                placeholder="Type or pick a comment"
+                style={{ padding: '4px 8px', fontSize: 12, minWidth: 220 }}
+              />
+              <datalist id="wd-comment-suggestions">
+                {commentSuggestions.map((c) => <option key={c} value={c} />)}
+              </datalist>
+              <select
+                value={bulkCommentMode}
+                onChange={(e) => setBulkCommentMode(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: 12 }}
+              >
+                <option value="add">Add to existing comment</option>
+                <option value="replace">Replace existing comment</option>
+              </select>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={isBulkUpdating}
+                onClick={handleBulkComment}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                Apply
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={isBulkUpdating}
+                onClick={() => setShowBulkComment(false)}
+                style={{ padding: '4px 10px', fontSize: 12 }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
 
           {showBulkDatePaid && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%' }}>

@@ -97,8 +97,9 @@
 
     "SoldItems": {
       ".read": "auth != null",
-      ".write": "auth != null",
+      ".write": "(auth.token.admin === true || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('status').val() !== 'inactive'))",
       "$id": {
+        ".write": "auth != null && (newData.exists() || newData.parent().parent().child('trash/SoldItems/' + $id).exists())",
         ".validate": "newData.hasChildren() || !newData.exists()",
         "$field": { ".validate": "!newData.isString() || newData.val().length <= 500" }
       }
@@ -115,8 +116,8 @@
 
     "maghsalEntries": {
       ".read": "auth != null",
-      ".write": "auth != null",
       "$id": {
+        ".write": "auth != null && (newData.exists() || newData.parent().parent().child('trash/maghsalEntries/' + $id).exists())",
         ".validate": "newData.hasChildren() || !newData.exists()",
         "$field": { ".validate": "!newData.isString() || newData.val().length <= 1000" }
       }
@@ -124,17 +125,27 @@
 
     "waterFillingEntries": {
       ".read": "auth != null",
-      ".write": "auth != null",
       "$id": {
+        ".write": "auth != null && (newData.exists() || newData.parent().parent().child('trash/waterFillingEntries/' + $id).exists())",
         ".validate": "newData.hasChildren() || !newData.exists()",
         "$field": { ".validate": "!newData.isString() || newData.val().length <= 1000" }
       }
     },
 
+    "trash": {
+      ".read": "(auth.token.admin === true || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('status').val() !== 'inactive'))",
+      "$col": {
+        "$id": {
+          ".write": "auth != null && ((!data.exists() && newData.exists()) || (auth.token.admin === true || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('status').val() !== 'inactive')))",
+          ".validate": "!newData.exists() || newData.hasChildren(['record', 'deletedAt'])"
+        }
+      }
+    },
+
     "waterDistributionEntries": {
       ".read": "auth != null",
-      ".write": "auth != null",
       "$id": {
+        ".write": "auth != null && (newData.exists() || newData.parent().parent().child('trash/waterDistributionEntries/' + $id).exists())",
         ".validate": "newData.hasChildren() || !newData.exists()",
         "$field": { ".validate": "!newData.isString() || newData.val().length <= 1000" }
       }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import '../CSS/navbar.css';
 import elsheikhLogo from '../assets/elsheikh-logo.png';
+import { IconTrash } from '../utils/icons';
 
 // ── SVG Icon Components ──────────────────────────────────────────────────────
 
@@ -183,6 +184,7 @@ const navGroups = [
       { id: 'addCustomer', Icon: IconUser,      label: 'Customers' },
       { id: 'employees',   Icon: IconBriefcase, label: 'Employees' },
       { id: 'settings',    Icon: IconSettings,  label: 'Settings'  },
+      { id: 'trash',       Icon: IconTrash,     label: 'Trash'     },
     ],
   },
 ];

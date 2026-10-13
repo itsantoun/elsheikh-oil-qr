@@ -6,7 +6,9 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { moveToTrash } from '../utils/trash';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
 const TRANSACTION_TYPES = [
   { value: 'normal', label: 'Water Filling' },
@@ -33,6 +35,10 @@ const WaterFilling = () => {
   const [entries, setEntries] = useState([]);
   const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [customers, setCustomers] = useState([]);
+  // Every customer (not just this page's type) — entries show the current
+  // name of the customer they're linked to by id, so renames carry over.
+  const [customerIndex, setCustomerIndex] = useState(() => buildCustomerIndex([]));
+  const customerNameOf = (e) => recordCustomerName(e, customerIndex);
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
@@ -54,21 +60,15 @@ const WaterFilling = () => {
 
   // Bulk payment-status selection — persisted so a page refresh doesn't
   // silently drop what was checked (same pattern as Oil Sold Items).
-  const [selectedIds, setSelectedIds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('waterFillingSelectedIds');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Not remembered between visits — a selection left over from an earlier
+  // visit could otherwise be bulk-updated by mistake.
+  const [selectedIds, setSelectedIds] = useState([]);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
+  // Drop the selection older versions of this page saved.
   useEffect(() => {
-    try {
-      localStorage.setItem('waterFillingSelectedIds', JSON.stringify(selectedIds));
-    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
-  }, [selectedIds]);
+    try { localStorage.removeItem('waterFillingSelectedIds'); } catch { /* ignore storage errors */ }
+  }, []);
 
   // Add/Edit modal
   const [showModal, setShowModal] = useState(false);
@@ -158,6 +158,7 @@ const WaterFilling = () => {
           .filter((c) => (c.waterFillingSizes || []).length > 0);
         list.sort(sortByName);
       }
+      setCustomerIndex(buildCustomerIndex(snap.exists() ? snap.val() : {}));
       setCustomers(list);
     });
 
@@ -199,6 +200,7 @@ const WaterFilling = () => {
     if (customerFilter) {
       const cf = customerFilter.toLowerCase();
       result = result.filter((e) =>
+        recordCustomerName(e, customerIndex).toLowerCase().includes(cf) ||
         (e.customerName || '').toLowerCase().includes(cf) ||
         (e.customerNameArabic || '').toLowerCase().includes(cf)
       );
@@ -225,7 +227,7 @@ const WaterFilling = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, customerIndex, customerFilter, transactionTypeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // Drop any selected ids that were actually deleted from Firebase — pruning
   // against `entries` (not `filtered`), so a filter that merely hides a
@@ -264,7 +266,8 @@ const WaterFilling = () => {
     setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against below.
-    const targetIds = [...selectedIds];
+    const targetIds = [...selectedIds].filter((id) => filtered.some((r) => r.id === id));
+    if (targetIds.length === 0) { setIsBulkUpdating(false); return; }
 
     // Show exactly which entries are about to change before committing —
     // so a stale/mismatched selection is caught here instead of discovered
@@ -280,10 +283,18 @@ const WaterFilling = () => {
           <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
             {targetEntries.map((e) => (
               <div key={e.id} style={{ fontSize: 13, padding: '3px 0' }}>
-                {formatDate(e.date)} — {e.customerName || 'N/A'} ({getTransactionTypeLabel(e.transactionType)})
+                {formatDate(e.date)} — {customerNameOf(e) || 'N/A'} ({getTransactionTypeLabel(e.transactionType)})
               </div>
             ))}
           </div>
+          {(targetEntries.length > 10 || (status !== 'Free' && targetEntries.some((r) => r.paymentStatus === 'Free'))) && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8, fontWeight: 600 }}>
+              Check this list carefully:
+              {targetEntries.length > 10 && ` ${targetEntries.length} records will change.`}
+              {status !== 'Free' && targetEntries.some((r) => r.paymentStatus === 'Free')
+                && ` ${targetEntries.filter((r) => r.paymentStatus === 'Free').length} Free item(s) will become ${status}.`}
+            </p>
+          )}
           {targetEntries.length < targetIds.length && (
             <p style={{ color: 'var(--red, #dc3545)', marginTop: 8 }}>
               {targetIds.length - targetEntries.length} selected {targetIds.length - targetEntries.length === 1 ? 'entry no longer exists' : 'entries no longer exist'} and will be skipped.
@@ -400,7 +411,7 @@ const WaterFilling = () => {
 
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
-    setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
+    setFormCustomerId(entry.customerId || recordCustomerId(entry, customerIndex));
     setFormTransactionType(entry.transactionType || '');
     setFormDate(formatDateForInput(entry.date));
     setFormQuantity(String(toNumber(entry.quantity)));
@@ -537,15 +548,15 @@ const WaterFilling = () => {
   const requestDelete = async (id) => {
     const confirmed = await confirm({
       title: 'Delete Entry?',
-      message: 'Deleting this entry removes it from Water Filling records. This action cannot be undone.',
+      message: 'This entry will be removed from Water Filling records and moved to Trash, where an admin can restore it.',
     });
     if (!confirmed) return;
     try {
-      await update(ref(database), { [`waterFillingEntries/${id}`]: null });
+      await moveToTrash('waterFillingEntries', id, user);
       flash('Entry deleted.');
     } catch (err) {
       console.error(err);
-      flash('Failed to delete entry.', 'error');
+      flash(`Failed to delete entry: ${err?.message || err}`, 'error');
     }
   };
 
@@ -779,7 +790,7 @@ const WaterFilling = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
-                  <td><span className="cell-clip-sm" title={e.customerName || 'N/A'}>{e.customerName || 'N/A'}</span></td>
+                  <td><span className="cell-clip-sm" title={customerNameOf(e) || 'N/A'}>{customerNameOf(e) || 'N/A'}</span></td>
                   <td>{getTransactionTypeLabel(e.transactionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>
                   <td>

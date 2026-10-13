@@ -6,6 +6,7 @@ import { ref, onValue } from 'firebase/database';
 import '../CSS/soldItems.css';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import { printPdfDoc } from '../utils/printPdf';
+import { buildCustomerIndex, recordCustomerId } from '../utils/customerLink';
 
 const toNumber = (v) => {
   const n = parseFloat(v);
@@ -81,6 +82,7 @@ const MaghsalReports = () => {
   const [reportType, setReportType] = useState('period');
   const [dateFrom, setDateFrom] = useState(monthAgoISO());
   const [dateTo, setDateTo] = useState(todayISO());
+  // Customer id — entries follow the customer by id, so renames carry over.
   const [customerFilter, setCustomerFilter] = useState('');
   const [message, setMessage] = useState(null);
 
@@ -104,6 +106,9 @@ const MaghsalReports = () => {
     return () => { unsubE(); unsubC(); };
   }, []);
 
+  const customerIndex = useMemo(() => buildCustomerIndex(customers), [customers]);
+  const customerFilterName = customers.find((c) => c.id === customerFilter)?.name || '';
+
   const flash = (msg) => { setMessage(msg); setTimeout(() => setMessage(null), 3000); };
 
   // ── Filter entries by date range and (when relevant) customer ─────────
@@ -115,11 +120,11 @@ const MaghsalReports = () => {
       if (isNaN(ms)) return false;
       if (ms < fromMs || ms > toMs) return false;
       if (reportType === 'customer' && customerFilter) {
-        if ((e.customerName || '') !== customerFilter) return false;
+        if (recordCustomerId(e, customerIndex) !== customerFilter) return false;
       }
       return true;
     });
-  }, [entries, dateFrom, dateTo, customerFilter, reportType]);
+  }, [entries, customerIndex, dateFrom, dateTo, customerFilter, reportType]);
 
   // ── Aggregations ──────────────────────────────────────────────────────
   const periodSummary = useMemo(() => {
@@ -182,7 +187,7 @@ const MaghsalReports = () => {
   const fileLabel = () => {
     const safe = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
     const parts = [`Maghsal_${reportType}`];
-    if (reportType === 'customer' && customerFilter) parts.push(safe(customerFilter));
+    if (reportType === 'customer' && customerFilter) parts.push(safe(customerFilterName));
     parts.push(`${dateFrom}_to_${dateTo}`);
     return parts.join('_');
   };
@@ -235,7 +240,7 @@ const MaghsalReports = () => {
     doc.setFontSize(14);
     const titles = {
       period: 'Maghsal — Period Summary',
-      customer: `Maghsal — Statement for ${customerFilter || 'All Customers'}`,
+      customer: `Maghsal — Statement for ${customerFilterName || 'All Customers'}`,
       category: 'Maghsal — Category Breakdown',
     };
     doc.text(titles[reportType] || 'Maghsal Report', 14, 15);
@@ -366,7 +371,7 @@ const MaghsalReports = () => {
               <label>Customer</label>
               <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)}>
                 <option value="">Select customer…</option>
-                {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           )}
@@ -440,7 +445,7 @@ const MaghsalReports = () => {
         <div className="ui-card">
           <div className="ui-card-header">
             <h2 className="ui-card-title">
-              Statement {customerFilter ? `— ${customerFilter}` : ''}
+              Statement {customerFilter ? `— ${customerFilterName}` : ''}
             </h2>
             <span className="ui-card-subtle">{customerStatement.rows.length} entry(s)</span>
           </div>

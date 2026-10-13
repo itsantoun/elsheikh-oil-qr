@@ -290,12 +290,18 @@ const AddCustomer = () => {
   // Records save the customer's name as text and every page matches on it,
   // so a rename must carry over to their existing records — otherwise old
   // sales/entries stay under the old name and drop out of this customer's
-  // reports. A record that has a customerId only follows that id (two
-  // customers can share a name); older ones without it match on the old
-  // English or Arabic name.
+  // reports. A record that has a customerId only follows that id. Older ones
+  // without it match on the old English name only, and only when no other
+  // customer uses that name (in either field) — otherwise another client's
+  // records would be pulled over. Matched records get stamped with the
+  // customerId so they stay with this customer from then on.
   const RENAME_COLLECTIONS = ['SoldItems', 'maghsalEntries', 'waterFillingEntries', 'waterDistributionEntries'];
   const buildRenameUpdates = async (id, oldCustomer, newName, newNameArabic) => {
-    const oldNames = [oldCustomer.name, oldCustomer.nameArabic].map((n) => String(n || '').trim()).filter(Boolean);
+    const norm = (n) => String(n || '').trim().toLowerCase();
+    const oldName = norm(oldCustomer.name);
+    const nameShared = customers.some((c) => c.id !== id
+      && (norm(c.name) === oldName || norm(c.nameArabic) === oldName));
+    const matchByName = oldName !== '' && !nameShared;
     const updates = {};
     const snaps = await Promise.all(RENAME_COLLECTIONS.map((c) => get(ref(database, c))));
     snaps.forEach((snap, i) => {
@@ -305,9 +311,10 @@ const AddCustomer = () => {
         const rec = data[key] || {};
         const belongs = rec.customerId
           ? rec.customerId === id
-          : oldNames.includes(String(rec.customerName || '').trim());
+          : matchByName && norm(rec.customerName) === oldName;
         if (!belongs) return;
         const path = `${RENAME_COLLECTIONS[i]}/${key}`;
+        if (!rec.customerId) updates[`${path}/customerId`] = id;
         if (rec.customerName !== newName) updates[`${path}/customerName`] = newName;
         if ('customerNameArabic' in rec && rec.customerNameArabic !== newNameArabic) {
           updates[`${path}/customerNameArabic`] = newNameArabic;

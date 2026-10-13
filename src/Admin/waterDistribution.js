@@ -6,8 +6,10 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { moveToTrash } from '../utils/trash';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 import { getEmployeeDisplayName } from './employees';
+import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
 const DISTRIBUTION_TYPES = [
   { value: 'water-distribution', label: 'Water Distribution' },
@@ -34,6 +36,10 @@ const WaterDistribution = () => {
   const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [customers, setCustomers] = useState([]);
+  // Every customer (not just this page's type) — entries show the current
+  // name of the customer they're linked to by id, so renames carry over.
+  const [customerIndex, setCustomerIndex] = useState(() => buildCustomerIndex([]));
+  const customerNameOf = (e) => recordCustomerName(e, customerIndex);
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
@@ -56,21 +62,15 @@ const WaterDistribution = () => {
 
   // Bulk payment-status selection — persisted so a page refresh doesn't
   // silently drop what was checked (same pattern as Water Filling).
-  const [selectedIds, setSelectedIds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('waterDistributionSelectedIds');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Not remembered between visits — a selection left over from an earlier
+  // visit could otherwise be bulk-updated by mistake.
+  const [selectedIds, setSelectedIds] = useState([]);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
+  // Drop the selection older versions of this page saved.
   useEffect(() => {
-    try {
-      localStorage.setItem('waterDistributionSelectedIds', JSON.stringify(selectedIds));
-    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
-  }, [selectedIds]);
+    try { localStorage.removeItem('waterDistributionSelectedIds'); } catch { /* ignore storage errors */ }
+  }, []);
 
   // Add/Edit modal
   const [showModal, setShowModal] = useState(false);
@@ -172,6 +172,7 @@ const WaterDistribution = () => {
           }));
         list.sort(sortByName);
       }
+      setCustomerIndex(buildCustomerIndex(snap.exists() ? snap.val() : {}));
       setCustomers(list);
     });
 
@@ -258,6 +259,7 @@ const WaterDistribution = () => {
     if (customerFilter) {
       const cf = customerFilter.toLowerCase();
       result = result.filter((e) =>
+        recordCustomerName(e, customerIndex).toLowerCase().includes(cf) ||
         (e.customerName || '').toLowerCase().includes(cf) ||
         (e.customerNameArabic || '').toLowerCase().includes(cf)
       );
@@ -288,7 +290,7 @@ const WaterDistribution = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, entryEmployeeName, customerFilter, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, customerIndex, entryEmployeeName, customerFilter, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // The saved selection is never pruned automatically — a refresh can deliver
   // entries in more than one snapshot, and pruning against an early one wiped
@@ -327,7 +329,8 @@ const WaterDistribution = () => {
     setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against below.
-    const targetIds = [...liveSelectedIds];
+    const targetIds = [...liveSelectedIds].filter((id) => filtered.some((r) => r.id === id));
+    if (targetIds.length === 0) { setIsBulkUpdating(false); return; }
 
     // Show exactly which entries are about to change before committing —
     // so a stale/mismatched selection is caught here instead of discovered
@@ -343,10 +346,18 @@ const WaterDistribution = () => {
           <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
             {targetEntries.map((e) => (
               <div key={e.id} style={{ fontSize: 13, padding: '3px 0' }}>
-                {formatDate(e.date)} — {e.customerName || 'N/A'} ({getDistributionTypeLabel(e.distributionType)})
+                {formatDate(e.date)} — {customerNameOf(e) || 'N/A'} ({getDistributionTypeLabel(e.distributionType)})
               </div>
             ))}
           </div>
+          {(targetEntries.length > 10 || (status !== 'Free' && targetEntries.some((r) => r.paymentStatus === 'Free'))) && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8, fontWeight: 600 }}>
+              Check this list carefully:
+              {targetEntries.length > 10 && ` ${targetEntries.length} records will change.`}
+              {status !== 'Free' && targetEntries.some((r) => r.paymentStatus === 'Free')
+                && ` ${targetEntries.filter((r) => r.paymentStatus === 'Free').length} Free item(s) will become ${status}.`}
+            </p>
+          )}
           {targetEntries.length < targetIds.length && (
             <p style={{ color: 'var(--red, #dc3545)', marginTop: 8 }}>
               {targetIds.length - targetEntries.length} selected {targetIds.length - targetEntries.length === 1 ? 'entry no longer exists' : 'entries no longer exist'} and will be skipped.
@@ -454,7 +465,7 @@ const WaterDistribution = () => {
 
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
-    setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
+    setFormCustomerId(entry.customerId || recordCustomerId(entry, customerIndex));
     setFormEmployeeId(entry.employeeId || employees.find((e) => e.name === entry.employeeName)?.id || '');
     setFormDistributionType(entry.distributionType || '');
     setFormDate(formatDateForInput(entry.date));
@@ -659,16 +670,16 @@ const WaterDistribution = () => {
   const requestDelete = async (id) => {
     const confirmed = await confirm({
       title: 'Delete Entry?',
-      message: 'Deleting this entry removes it from Water Distribution records. This action cannot be undone.',
+      message: 'This entry will be removed from Water Distribution records and moved to Trash, where an admin can restore it.',
     });
     if (!confirmed) return;
     try {
-      await update(ref(database), { [`waterDistributionEntries/${id}`]: null });
+      await moveToTrash('waterDistributionEntries', id, user);
       setSelectedIds((prev) => prev.filter((x) => x !== id));
       flash('Entry deleted.');
     } catch (err) {
       console.error(err);
-      flash('Failed to delete entry.', 'error');
+      flash(`Failed to delete entry: ${err?.message || err}`, 'error');
     }
   };
 
@@ -910,7 +921,7 @@ const WaterDistribution = () => {
                   <td className="date-cell">
                     <span className="date-display">{formatDate(e.date)}</span>
                   </td>
-                  <td><span className="cell-clip-sm" title={e.customerName || 'N/A'}>{e.customerName || 'N/A'}</span></td>
+                  <td><span className="cell-clip-sm" title={customerNameOf(e) || 'N/A'}>{customerNameOf(e) || 'N/A'}</span></td>
                   <td><span className="cell-clip-sm" title={entryEmployeeName(e) || '—'}>{entryEmployeeName(e) || '—'}</span></td>
                   <td>{getDistributionTypeLabel(e.distributionType)}</td>
                   <td className="text-right">{toNumber(e.quantity)}</td>

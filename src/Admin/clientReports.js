@@ -20,6 +20,7 @@ import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, convertPrice } from '../utils/exchangeRate';
 import { IconEye, IconTrash } from '../utils/icons';
 import { getEmployeeDisplayName } from './employees';
+import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -163,6 +164,8 @@ const ClientReports = () => {
       prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
     ));
   };
+  // Text the record's comment (remark) must contain — blank = no filter.
+  const [commentFilter, setCommentFilter] = useState('');
   const [message, setMessage] = useState(null);
   const [messageKind, setMessageKind] = useState('success');
 
@@ -326,12 +329,11 @@ const ClientReports = () => {
     return ms >= bounds.fromMs && ms <= bounds.toMs;
   };
 
-  const matchesSelectedCustomer = (engName, arName) => {
-    if (!selectedCustomer) return false;
-    return (engName && engName === selectedCustomer.name)
-      || (arName && arName === selectedCustomer.nameArabic)
-      || (engName && engName === selectedCustomer.nameArabic);
-  };
+  // Records follow the customer by id, so a rename never drops them out of
+  // the statement (see utils/customerLink).
+  const customerIndex = useMemo(() => buildCustomerIndex(customers), [customers]);
+  const matchesSelectedCustomer = (rec) => Boolean(selectedCustomer)
+    && recordCustomerId(rec, customerIndex) === selectedCustomer.id;
 
   // Available type options for the filter. Miscellaneous ("other" scope)
   // products are grouped under a single "Other" entry here instead of one
@@ -390,16 +392,20 @@ const ClientReports = () => {
     // to that employee — the Item column then names the client served.
     const matchesSubject = (e) => (isEmployeeReport
       ? e.employeeId === selectedEmployee.id
-      : matchesSelectedCustomer(e.customerName, e.customerNameArabic));
+      : matchesSelectedCustomer(e));
 
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
+    // Oil/Filter sales have no comment, so they drop out while this is set.
+    const commentTerm = commentFilter.trim().toLowerCase();
+    const matchesCommentFilter = (remark) => !commentTerm || String(remark || '').toLowerCase().includes(commentTerm);
 
     maghsalEntries.forEach((e) => {
       if (isEmployeeReport) return;
       if (typeFilter !== 'All' && typeFilter !== 'Maghsal') return;
-      if (!matchesSelectedCustomer(e.customerName, e.customerNameArabic)) return;
+      if (!matchesSelectedCustomer(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
+      if (!matchesCommentFilter(e.remark)) return;
       records.push({
         key: `m-${e.id}`,
         date: e.date,
@@ -416,6 +422,7 @@ const ClientReports = () => {
       if (!matchesSubject(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
+      if (!matchesCommentFilter(e.remark)) return;
       // Statement totals are USD-denominated — convert LBP premiums so they
       // aggregate correctly alongside Oil/Filter/Maghsal totals.
       const totalUSD = e.premiumCurrency === 'LBP'
@@ -425,7 +432,7 @@ const ClientReports = () => {
         key: `w-${e.id}`,
         date: e.date,
         section: 'Water Filling',
-        item: isEmployeeReport ? (e.customerName || 'N/A') : waterFillingItemLabel(e.transactionType),
+        item: isEmployeeReport ? (recordCustomerName(e, customerIndex) || 'N/A') : waterFillingItemLabel(e.transactionType),
         quantity: toNumber(e.quantity),
         total: totalUSD,
         status: e.paymentStatus || 'N/A',
@@ -437,6 +444,7 @@ const ClientReports = () => {
       if (!matchesSubject(e)) return;
       if (!inRange(e.date)) return;
       if (!matchesStatusFilter(e.paymentStatus)) return;
+      if (!matchesCommentFilter(e.remark)) return;
       // Statement totals are USD-denominated — convert LBP prices so they
       // aggregate correctly alongside Oil/Filter/Maghsal/Water Filling totals.
       const totalUSD = e.priceCurrency === 'LBP'
@@ -446,7 +454,7 @@ const ClientReports = () => {
         key: `wd-${e.id}`,
         date: e.date,
         section: 'Water Distribution',
-        item: isEmployeeReport ? (e.customerName || 'N/A') : (e.truckType || 'Water Distribution'),
+        item: isEmployeeReport ? (recordCustomerName(e, customerIndex) || 'N/A') : (e.truckType || 'Water Distribution'),
         quantity: toNumber(e.quantity),
         total: totalUSD,
         status: e.paymentStatus || 'N/A',
@@ -455,11 +463,12 @@ const ClientReports = () => {
 
     soldItems.forEach((it) => {
       if (isEmployeeReport) return;
-      if (!matchesSelectedCustomer(it.customerName, it.customerName)) return;
+      if (!matchesSelectedCustomer(it)) return;
       if (!inRange(it.dateScanned)) return;
       const section = sectionForSoldItem(it);
       if (!matchesTypeFilter(section)) return;
       if (!matchesStatusFilter(it.paymentStatus)) return;
+      if (!matchesCommentFilter(it.remark)) return;
       const { quantity, revenue } = getItemRevenue(it);
       records.push({
         key: `o-${it.id}`,
@@ -497,7 +506,7 @@ const ClientReports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal, totalQuantity };
-  }, [selectedCustomer, selectedEmployee, isEmployeeReport, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, typeFilter, paymentStatusFilters, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, selectedEmployee, isEmployeeReport, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, customerIndex, typeFilter, paymentStatusFilters, commentFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -557,6 +566,7 @@ const ClientReports = () => {
         customerNameArabic: selectedCustomer.nameArabic || '',
       }),
       typeFilter,
+      commentFilter: commentFilter.trim(),
       dateFrom,
       dateTo,
       rangeLabel: rangeLabel(),
@@ -889,6 +899,16 @@ const ClientReports = () => {
           </div>
 
           <div className="filter-group">
+            <label>Comment</label>
+            <input
+              type="text"
+              value={commentFilter}
+              onChange={(e) => setCommentFilter(e.target.value)}
+              placeholder="Comment contains…"
+            />
+          </div>
+
+          <div className="filter-group">
             <label>From</label>
             <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </div>
@@ -1033,7 +1053,7 @@ const ClientReports = () => {
             </div>
             <div className="modal-content">
               <span className="ui-card-subtle">
-                Type: {viewedEntry.typeFilter} · Range: {viewedEntry.rangeLabel} · {viewedEntry.recordCount} record(s)
+                Type: {viewedEntry.typeFilter}{viewedEntry.commentFilter ? ` · Comment: "${viewedEntry.commentFilter}"` : ''} · Range: {viewedEntry.rangeLabel} · {viewedEntry.recordCount} record(s)
                 · Generated {formatDate(viewedEntry.generatedAt)} by {viewedEntry.generatedBy}
               </span>
 
@@ -1102,7 +1122,7 @@ const ClientReports = () => {
             <div className="modal-content">
               <p>
                 {pendingSnapshot.reportFor === 'employee' ? 'Employee' : 'Client'}: <strong>{pendingSnapshot.customerName}</strong><br />
-                Type: {pendingSnapshot.typeFilter} · Range: {pendingSnapshot.rangeLabel}<br />
+                Type: {pendingSnapshot.typeFilter}{pendingSnapshot.commentFilter ? ` · Comment: "${pendingSnapshot.commentFilter}"` : ''} · Range: {pendingSnapshot.rangeLabel}<br />
                 {pendingSnapshot.recordCount} record(s) · Grand Total: ${formatCurrency(pendingSnapshot.grandTotal)}
               </p>
               <p>Confirming will save a snapshot to Report History so you can find it again later without regenerating it.</p>

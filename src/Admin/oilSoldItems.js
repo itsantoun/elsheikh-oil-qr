@@ -20,6 +20,8 @@ import {
   money,
   receiptTableOptions,
 } from '../utils/pdfReceipt';
+import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
+import { moveToTrash } from '../utils/trash';
 
 // Legacy safety filter: hides any leftover Maghsal-typed rows from Oil/Filter view
 // until the Settings → Maghsal Migration is run.
@@ -35,17 +37,6 @@ const sortByName = (a, b) => {
   if (nameA < nameB) return -1;
   if (nameA > nameB) return 1;
   return 0;
-};
-
-// Older records stored the customer's Arabic name in `customerName` (a
-// legacy Barcode Scanner convention). Resolve it back to the English name
-// for display — trimmed/case-insensitive so stray whitespace doesn't break
-// the match — without touching the stored value.
-const resolveCustomerName = (rawName, customerList) => {
-  const raw = (rawName || '').trim();
-  if (!raw) return rawName;
-  const match = customerList.find((c) => (c.nameArabic || '').trim().toLowerCase() === raw.toLowerCase());
-  return match?.name || rawName;
 };
 
 const OilSoldItems = () => {
@@ -64,6 +55,9 @@ const OilSoldItems = () => {
   
   const [customers, setCustomers] = useState([]);
   const customersListRef = React.useRef([]);
+  // Every customer, for showing each sale under its customer's current name
+  // (by customerId; older sales by their saved English/Arabic name).
+  const customerIndexRef = React.useRef(buildCustomerIndex([]));
   const [products, setProducts] = useState([]);
   // { [productId]: lastReconciledISODate } — from the Stock Checker's "Mark
   // Accurate" action. Movement before this date is already baked into
@@ -87,22 +81,16 @@ const OilSoldItems = () => {
   // Bulk payment-status selection — distinct from the reconciliation
   // "Check" column above. Persisted so a page refresh doesn't silently drop
   // what was checked (same pattern as Water Filling/Maghsal).
-  const [selectedIds, setSelectedIds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('soldItemsSelectedIds');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Not remembered between visits — a selection left over from an earlier
+  // visit could otherwise be bulk-updated by mistake.
+  const [selectedIds, setSelectedIds] = useState([]);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [soldItemsLoaded, setSoldItemsLoaded] = useState(false);
 
+  // Drop the selection older versions of this page saved.
   useEffect(() => {
-    try {
-      localStorage.setItem('soldItemsSelectedIds', JSON.stringify(selectedIds));
-    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
-  }, [selectedIds]);
+    try { localStorage.removeItem('soldItemsSelectedIds'); } catch { /* ignore storage errors */ }
+  }, []);
 
   // Drop any selected ids that were actually deleted from Firebase. Skipped
   // until items have loaded at least once, so a page refresh doesn't wipe a
@@ -139,7 +127,8 @@ const OilSoldItems = () => {
     setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against and report on below.
-    const targetIds = [...selectedIds];
+    const targetIds = [...selectedIds].filter((id) => filteredItems.some((r) => r.id === id));
+    if (targetIds.length === 0) { setIsBulkUpdating(false); return; }
 
     // Show exactly which items are about to change before committing — so
     // a stale/mismatched selection is caught here instead of discovered
@@ -159,6 +148,14 @@ const OilSoldItems = () => {
               </div>
             ))}
           </div>
+          {(targetItems.length > 10 || (status !== 'Free' && targetItems.some((r) => r.paymentStatus === 'Free'))) && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8, fontWeight: 600 }}>
+              Check this list carefully:
+              {targetItems.length > 10 && ` ${targetItems.length} records will change.`}
+              {status !== 'Free' && targetItems.some((r) => r.paymentStatus === 'Free')
+                && ` ${targetItems.filter((r) => r.paymentStatus === 'Free').length} Free item(s) will become ${status}.`}
+            </p>
+          )}
           {targetItems.length < targetIds.length && (
             <p style={{ color: 'var(--red, #dc3545)', marginTop: 8 }}>
               {targetIds.length - targetItems.length} selected {targetIds.length - targetItems.length === 1 ? 'item no longer exists' : 'items no longer exist'} and will be skipped.
@@ -439,6 +436,7 @@ const OilSoldItems = () => {
         customerList.sort((a, b) => sortByName(a, b));
       }
       customersListRef.current = customerList;
+      customerIndexRef.current = buildCustomerIndex(customersSnapshot.exists() ? customersSnapshot.val() : {});
       setCustomers(customerList);
     });
 
@@ -451,7 +449,7 @@ const OilSoldItems = () => {
           .map((key) => ({
             id: key,
             ...soldData[key],
-            customerName: resolveCustomerName(soldData[key].customerName, customersListRef.current),
+            customerName: recordCustomerName(soldData[key], customerIndexRef.current),
           }))
           .filter(item => !isStockLikeStatus(item.paymentStatus));
         const sortedItems = sortItemsByDate(soldItemList);
@@ -600,11 +598,7 @@ const OilSoldItems = () => {
   // Delete functions
   const handleDelete = async (itemId) => {
     try {
-      const updates = {
-        [`SoldItems/${itemId}`]: null,
-      };
-
-      await update(ref(database), updates);
+      await moveToTrash('SoldItems', itemId, user);
       setSoldItems(prev => prev.filter((item) => item.id !== itemId));
       setFilteredItems(prev => prev.filter((item) => item.id !== itemId));
       setCheckedItems((prev) => {
@@ -614,7 +608,7 @@ const OilSoldItems = () => {
       });
     } catch (error) {
       console.error('Error deleting item:', error);
-      setErrorMessage('Failed to delete item.');
+      setErrorMessage(`Failed to delete item: ${error?.message || error}`);
       setTimeout(() => setErrorMessage(null), 3000);
     }
   };
@@ -624,7 +618,7 @@ const OilSoldItems = () => {
     const dateLabel = item ? formatDateTime(item.dateScanned) : 'N/A';
     const confirmed = await confirm({
       title: 'Delete Sold Item?',
-      message: `Are you sure you want to delete this item (date: ${dateLabel})? This action cannot be undone.`,
+      message: `Are you sure you want to delete this item (date: ${dateLabel})? It will be moved to Trash, where an admin can restore it.`,
     });
     if (!confirmed) return;
     handleDelete(itemId);
@@ -659,6 +653,7 @@ const OilSoldItems = () => {
         customerList.sort((a, b) => sortByName(a, b));
       }
       setCustomers(customerList);
+      customerIndexRef.current = buildCustomerIndex(customersSnapshot.exists() ? customersSnapshot.val() : {});
 
       // Update sold items
       if (soldItemsSnapshot.exists()) {
@@ -667,7 +662,7 @@ const OilSoldItems = () => {
           .map((key) => ({
             id: key,
             ...soldData[key],
-            customerName: resolveCustomerName(soldData[key].customerName, customerList),
+            customerName: recordCustomerName(soldData[key], customerIndexRef.current),
           }))
           .filter(item => !isStockLikeStatus(item.paymentStatus));
         const sortedItems = sortItemsByDate(soldItemList);
@@ -993,7 +988,7 @@ const OilSoldItems = () => {
     setEditingItemId(item.id);
     setMissingItemGroupId(linkedProduct ? getBatchGroupKey(linkedProduct) : '');
     setMissingItemBatchId(linkedProduct ? linkedProduct.id : '');
-    setMissingItemCustomerId(customers.find((c) => c.name === item.customerName || c.nameArabic === item.customerName)?.id || '');
+    setMissingItemCustomerId(item.customerId || recordCustomerId(item, customerIndexRef.current));
     setMissingItemDate(formatDateForInput(item.dateScanned) || getTodayDateForInput());
     setMissingItemQuantity(String(toNumber(item.quantity)));
     setMissingItemPaymentStatus(item.paymentStatus || 'Paid');
@@ -1044,6 +1039,7 @@ const OilSoldItems = () => {
         name: selectedProduct.name || 'Unknown Product',
         category: selectedProduct.category || 'Unknown',
       } : {}),
+      ...(selectedCustomer ? { customerId: selectedCustomer.id } : {}),
       customerName: customerNameValue,
       dateScanned: dateScannedValue,
       quantity: quantityValue,
@@ -1164,6 +1160,7 @@ const OilSoldItems = () => {
           price: toNumber(selectedProduct.price),
           dateScanned: dateScannedValue,
           scannedBy: scannedByValue,
+          customerId: selectedCustomer.id,
           customerName: customerNameForStorage,
           quantity: quantityValue,
           paymentStatus: paymentStatusValue,

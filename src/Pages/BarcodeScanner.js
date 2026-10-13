@@ -1310,6 +1310,7 @@ const BarcodeScanner = () => {
             price: scannedProduct.price || 0,
             dateScanned: currentDate,
             scannedBy: scannedBy,
+            customerId: selectedCustomer,
             customerName: customer.name,
             quantity: quantity,
             paymentStatus: paymentStatus,

@@ -6,7 +6,9 @@ import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
+import { moveToTrash } from '../utils/trash';
 import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
+import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
 const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
 
@@ -28,6 +30,10 @@ const Maghsal = () => {
   const [entries, setEntries] = useState([]);
   const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [customers, setCustomers] = useState([]);
+  // Every customer (not just this page's type) — entries show the current
+  // name of the customer they're linked to by id, so renames carry over.
+  const [customerIndex, setCustomerIndex] = useState(() => buildCustomerIndex([]));
+  const customerNameOf = (e) => recordCustomerName(e, customerIndex);
   const [products, setProducts] = useState([]);
   // { [productId]: lastReconciledISODate } — from the Stock Checker's
   // "Mark Accurate" action. Movement recorded before this date is already
@@ -62,21 +68,15 @@ const Maghsal = () => {
 
   // Bulk payment-status selection — separate from the "Check" filter above,
   // and persisted so a page refresh doesn't drop what was selected.
-  const [selectedIds, setSelectedIds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('maghsalSelectedIds');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Not remembered between visits — a selection left over from an earlier
+  // visit could otherwise be bulk-updated by mistake.
+  const [selectedIds, setSelectedIds] = useState([]);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
+  // Drop the selection older versions of this page saved.
   useEffect(() => {
-    try {
-      localStorage.setItem('maghsalSelectedIds', JSON.stringify(selectedIds));
-    } catch { /* ignore storage errors (private mode, quota, etc.) */ }
-  }, [selectedIds]);
+    try { localStorage.removeItem('maghsalSelectedIds'); } catch { /* ignore storage errors */ }
+  }, []);
 
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -182,6 +182,7 @@ const Maghsal = () => {
           }));
         list.sort(sortByName);
       }
+      setCustomerIndex(buildCustomerIndex(snap.exists() ? snap.val() : {}));
       setCustomers(list);
     });
 
@@ -353,6 +354,7 @@ const Maghsal = () => {
     if (customerFilter) {
       const cf = customerFilter.toLowerCase();
       result = result.filter((e) =>
+        recordCustomerName(e, customerIndex).toLowerCase().includes(cf) ||
         (e.customerName || '').toLowerCase().includes(cf) ||
         (e.customerNameArabic || '').toLowerCase().includes(cf)
       );
@@ -393,7 +395,7 @@ const Maghsal = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerFilter, categoryFilter, serviceCategoryFilters, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
+  }, [entries, customerIndex, customerFilter, categoryFilter, serviceCategoryFilters, paymentStatusFilter, dateFromFilter, dateToFilter, monthFilter, checkFilter, checkedItems]);
 
   // Table view — sharedFiltered further split by the All/Used tab.
   const filtered = useMemo(() => (
@@ -431,7 +433,8 @@ const Maghsal = () => {
     setIsBulkUpdating(true);
     // Snapshot the ids being written — selectedIds is cleared right after,
     // so this is what we verify against below.
-    const targetIds = [...selectedIds];
+    const targetIds = [...selectedIds].filter((id) => filtered.some((r) => r.id === id));
+    if (targetIds.length === 0) { setIsBulkUpdating(false); return; }
 
     // Show exactly which entries are about to change before committing —
     // so a stale/mismatched selection is caught here instead of discovered
@@ -447,10 +450,18 @@ const Maghsal = () => {
           <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
             {targetEntries.map((e) => (
               <div key={e.id} style={{ fontSize: 13, padding: '3px 0' }}>
-                {formatDateTime(e.date)} — {e.customerName || 'N/A'} ({e.serviceCategory || e.category || 'Service'})
+                {formatDateTime(e.date)} — {customerNameOf(e) || 'N/A'} ({e.serviceCategory || e.category || 'Service'})
               </div>
             ))}
           </div>
+          {(targetEntries.length > 10 || (status !== 'Free' && targetEntries.some((r) => r.paymentStatus === 'Free'))) && (
+            <p style={{ color: 'var(--red, #dc3545)', marginTop: 8, fontWeight: 600 }}>
+              Check this list carefully:
+              {targetEntries.length > 10 && ` ${targetEntries.length} records will change.`}
+              {status !== 'Free' && targetEntries.some((r) => r.paymentStatus === 'Free')
+                && ` ${targetEntries.filter((r) => r.paymentStatus === 'Free').length} Free item(s) will become ${status}.`}
+            </p>
+          )}
           {targetEntries.length < targetIds.length && (
             <p style={{ color: 'var(--red, #dc3545)', marginTop: 8 }}>
               {targetIds.length - targetEntries.length} selected {targetIds.length - targetEntries.length === 1 ? 'entry no longer exists' : 'entries no longer exist'} and will be skipped.
@@ -756,7 +767,7 @@ const Maghsal = () => {
   // ── Edit (reuses the Add modal) ──────────────────
   const openEditModal = (entry) => {
     setEditingEntryId(entry.id);
-    setFormCustomerId(entry.customerId || customers.find((c) => c.name === entry.customerName)?.id || '');
+    setFormCustomerId(entry.customerId || recordCustomerId(entry, customerIndex));
     setFormDate(formatDateForInput(entry.date));
     const usedLine = Array.isArray(entry.consumablesUsed) && entry.consumablesUsed[0];
     const usedProduct = usedLine ? getProduct(usedLine.productId) : null;
@@ -828,15 +839,15 @@ const Maghsal = () => {
   const requestDelete = async (id) => {
     const confirmed = await confirm({
       title: 'Delete Entry?',
-      message: 'Deleting this entry removes it from Maghsal records. Product stock quantity will not be changed automatically. This action cannot be undone.',
+      message: 'This entry will be removed from Maghsal records and moved to Trash, where an admin can restore it. Product stock quantity will not be changed automatically.',
     });
     if (!confirmed) return;
     try {
-      await update(ref(database), { [`maghsalEntries/${id}`]: null });
+      await moveToTrash('maghsalEntries', id, user);
       flash('Entry deleted.');
     } catch (err) {
       console.error(err);
-      flash('Failed to delete entry.', 'error');
+      flash(`Failed to delete entry: ${err?.message || err}`, 'error');
     }
   };
 
@@ -1082,7 +1093,7 @@ const Maghsal = () => {
                     <td className="date-cell">
                       <span className="date-display">{formatDateTime(e.date)}</span>
                     </td>
-                    <td>{e.customerName || 'N/A'}</td>
+                    <td>{customerNameOf(e) || 'N/A'}</td>
                     <td>{e.serviceCategory || '—'}</td>
                     <td>{e.category || 'Unspecified'}</td>
                     <td className="text-right">

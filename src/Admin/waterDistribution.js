@@ -493,12 +493,9 @@ const WaterDistribution = () => {
   };
 
   // ── Bulk comment ───────────────────────
-  // 'add' appends after any existing comment with " | " (same as Mark as
-  // Paid's remark, so nothing is lost); 'replace' overwrites it — an empty
-  // comment with 'replace' clears it.
+  // Sets the typed comment on every selected entry, replacing what was there.
   const [showBulkComment, setShowBulkComment] = useState(false);
   const [bulkComment, setBulkComment] = useState('');
-  const [bulkCommentMode, setBulkCommentMode] = useState('add');
   // Comments already in use, offered as suggestions so the same wording is
   // reused (the Client Reports comment dropdown groups by exact text).
   const commentSuggestions = useMemo(() => {
@@ -511,19 +508,14 @@ const WaterDistribution = () => {
   const handleBulkComment = async () => {
     const text = bulkComment.trim();
     if (liveSelectedIds.length === 0 || isBulkUpdating) return;
-    if (!text && bulkCommentMode === 'add') { flash('Type a comment to add.', 'error'); return; }
+    if (!text) { flash('Type a comment first.', 'error'); return; }
     setIsBulkUpdating(true);
     const targetIds = [...liveSelectedIds].filter((id) => filtered.some((r) => r.id === id));
     const targetEntries = targetIds.map((id) => entries.find((e) => e.id === id)).filter(Boolean);
     if (targetEntries.length === 0) { setIsBulkUpdating(false); return; }
-    const newRemark = (e) => {
-      const existing = String(e.remark || '').trim();
-      if (bulkCommentMode === 'replace') return text;
-      return existing ? `${existing} | ${text}` : text;
-    };
-    const action = bulkCommentMode === 'replace' ? (text ? 'Replace the comment on' : 'Clear the comment on') : 'Add a comment to';
+    const newRemark = () => text;
     const confirmed = await confirm({
-      title: `${action} ${targetEntries.length} ${targetEntries.length === 1 ? 'entry' : 'entries'}?`,
+      title: `Set the comment on ${targetEntries.length} ${targetEntries.length === 1 ? 'entry' : 'entries'}?`,
       message: (
         <div>
           <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border-light)', borderRadius: 6, padding: '6px 10px', marginTop: 8 }}>
@@ -955,14 +947,6 @@ const WaterDistribution = () => {
               <datalist id="wd-comment-suggestions">
                 {commentSuggestions.map((c) => <option key={c} value={c} />)}
               </datalist>
-              <select
-                value={bulkCommentMode}
-                onChange={(e) => setBulkCommentMode(e.target.value)}
-                style={{ padding: '4px 8px', fontSize: 12 }}
-              >
-                <option value="add">Add to existing comment</option>
-                <option value="replace">Replace existing comment</option>
-              </select>
               <button
                 type="button"
                 className="btn-primary"

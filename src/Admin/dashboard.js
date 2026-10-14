@@ -333,30 +333,6 @@ const Dashboard = ({ onNavigate }) => {
 
       {/* Recent Activity + Low Stock, side by side (stacked on narrow screens) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 'var(--s-4, 16px)', alignItems: 'start' }}>
-        {/* Recent Activity */}
-        <div className="ui-card">
-          <div className="ui-card-header">
-            <h2 className="ui-card-title">Recent Activity</h2>
-            <button
-              className="pill tone-brand"
-              style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
-              onClick={() => onNavigate && onNavigate('activity')}
-            >
-              View all <IconArrowRight />
-            </button>
-          </div>
-          {recentActivity.length === 0 ? (
-            <div className="empty-state-card">
-              {activityLoaded ? 'No activity recorded yet. Changes will show up here as they happen.' : 'Loading…'}
-            </div>
-          ) : (
-            <div className="activity-list">
-              {recentActivity.map((e) => <ActivityRow key={e.id} entry={e} onClick={setActivityEntry} />)}
-            </div>
-          )}
-        </div>
-        <ActivityDetailsModal entry={activityEntry} onClose={() => setActivityEntry(null)} />
-
         {/* Low Stock Alert */}
         <div className="ui-card">
           <div className="ui-card-header">
@@ -392,7 +368,31 @@ const Dashboard = ({ onNavigate }) => {
             </div>
           )}
         </div>
+
+        {/* Recent Activity */}
+        <div className="ui-card">
+          <div className="ui-card-header">
+            <h2 className="ui-card-title">Recent Activity</h2>
+            <button
+              className="pill tone-brand"
+              style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
+              onClick={() => onNavigate && onNavigate('activity')}
+            >
+              View all <IconArrowRight />
+            </button>
+          </div>
+          {recentActivity.length === 0 ? (
+            <div className="empty-state-card">
+              {activityLoaded ? 'No activity recorded yet. Changes will show up here as they happen.' : 'Loading…'}
+            </div>
+          ) : (
+            <div className="activity-list">
+              {recentActivity.map((e) => <ActivityRow key={e.id} entry={e} onClick={setActivityEntry} />)}
+            </div>
+          )}
+        </div>
       </div>
+      <ActivityDetailsModal entry={activityEntry} onClose={() => setActivityEntry(null)} />
     </div>
   );
 };

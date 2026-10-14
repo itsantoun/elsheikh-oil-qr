@@ -171,12 +171,10 @@ export const logPageVisit = async (user, pageLabel) => {
   await logActivity(who, { section: 'Navigation', action: 'Visited', summary: `${userLabel(who)} opened ${pageLabel}` });
 };
 
-// Looking at or taking data out (logins, page visits, viewing a report,
-// exporting, printing) — kept off the Dashboard's Recent Activity card,
-// which shows changes only; all of it is on the Activity Log page.
+// Logins, logouts and page visits are private: they're kept off the
+// Dashboard's Recent Activity card and shown only on the Activity Log page.
 const PRIVATE_SECTIONS = new Set(['Logins', 'Navigation']);
-const PRIVATE_ACTIONS = new Set(['Viewed', 'Exported', 'Printed']);
-export const isPrivateActivity = (e) => PRIVATE_SECTIONS.has(e?.section) || PRIVATE_ACTIONS.has(e?.action);
+export const isPrivateActivity = (e) => PRIVATE_SECTIONS.has(e?.section);
 
 // "Exported PDF of …" / "Printed …".
 export const logExport = (user, section, what, format, print = false) => logActivity(user, {

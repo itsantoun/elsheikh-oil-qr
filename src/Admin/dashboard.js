@@ -100,8 +100,8 @@ const IconArrowRight = () => (
 const Dashboard = ({ onNavigate }) => {
   const { entries: latestActivity, loaded: activityLoaded } = useActivityLog(50);
   const [activityEntry, setActivityEntry] = useState(null);
-  // Changes only — logins, page visits, report views, exports and prints are
-  // private and stay on the Activity Log page.
+  // Everything except logins, logouts and page visits, which are private and
+  // stay on the Activity Log page.
   const recentActivity = useMemo(() => latestActivity
     .filter((e) => !isPrivateActivity(e))
     .slice(0, 10), [latestActivity]);

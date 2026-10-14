@@ -331,64 +331,67 @@ const Dashboard = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Recent Activity */}
-      <div className="ui-card">
-        <div className="ui-card-header">
-          <h2 className="ui-card-title">Recent Activity</h2>
-          <button
-            className="pill tone-brand"
-            style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
-            onClick={() => onNavigate && onNavigate('activity')}
-          >
-            View all <IconArrowRight />
-          </button>
+      {/* Recent Activity + Low Stock, side by side (stacked on narrow screens) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 'var(--s-4, 16px)', alignItems: 'start' }}>
+        {/* Recent Activity */}
+        <div className="ui-card">
+          <div className="ui-card-header">
+            <h2 className="ui-card-title">Recent Activity</h2>
+            <button
+              className="pill tone-brand"
+              style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
+              onClick={() => onNavigate && onNavigate('activity')}
+            >
+              View all <IconArrowRight />
+            </button>
+          </div>
+          {recentActivity.length === 0 ? (
+            <div className="empty-state-card">
+              {activityLoaded ? 'No activity recorded yet. Changes will show up here as they happen.' : 'Loading…'}
+            </div>
+          ) : (
+            <div className="activity-list">
+              {recentActivity.map((e) => <ActivityRow key={e.id} entry={e} onClick={setActivityEntry} />)}
+            </div>
+          )}
         </div>
-        {recentActivity.length === 0 ? (
-          <div className="empty-state-card">
-            {activityLoaded ? 'No activity recorded yet. Changes will show up here as they happen.' : 'Loading…'}
-          </div>
-        ) : (
-          <div className="activity-list">
-            {recentActivity.map((e) => <ActivityRow key={e.id} entry={e} onClick={setActivityEntry} />)}
-          </div>
-        )}
-      </div>
-      <ActivityDetailsModal entry={activityEntry} onClose={() => setActivityEntry(null)} />
+        <ActivityDetailsModal entry={activityEntry} onClose={() => setActivityEntry(null)} />
 
-      {/* Low Stock Alert */}
-      <div className="ui-card">
-        <div className="ui-card-header">
-          <h2 className="ui-card-title">Low Stock Alert</h2>
-          <button
-            className="pill tone-brand"
-            style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
-            onClick={() => onNavigate && onNavigate('stock')}
-          >
-            View stock <IconArrowRight />
-          </button>
-        </div>
-        {stats.lowStock.length === 0 ? (
-          <div className="empty-state-card">All products are above the {LOW_STOCK_THRESHOLD}-unit threshold.</div>
-        ) : (
-          <div className="activity-list">
-            {stats.lowStock.slice(0, 10).map((p) => (
-              <div className="activity-item" key={p.id}>
-                <div className="activity-avatar" style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}>
-                  <IconPackage />
-                </div>
-                <div className="activity-body">
-                  <span className="activity-title">{p.name || 'Unnamed product'}</span>
-                  <span className="activity-sub">{p.productType || 'General'}</span>
-                </div>
-                <div className="activity-end">
-                  <span className={`pill ${p.qty === 0 ? 'tone-red' : 'tone-amber'}`}>
-                    {p.qty === 0 ? 'Out of stock' : `${p.qty} left`}
-                  </span>
-                </div>
-              </div>
-            ))}
+        {/* Low Stock Alert */}
+        <div className="ui-card">
+          <div className="ui-card-header">
+            <h2 className="ui-card-title">Low Stock Alert</h2>
+            <button
+              className="pill tone-brand"
+              style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
+              onClick={() => onNavigate && onNavigate('stock')}
+            >
+              View stock <IconArrowRight />
+            </button>
           </div>
-        )}
+          {stats.lowStock.length === 0 ? (
+            <div className="empty-state-card">All products are above the {LOW_STOCK_THRESHOLD}-unit threshold.</div>
+          ) : (
+            <div className="activity-list">
+              {stats.lowStock.slice(0, 10).map((p) => (
+                <div className="activity-item" key={p.id}>
+                  <div className="activity-avatar" style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}>
+                    <IconPackage />
+                  </div>
+                  <div className="activity-body">
+                    <span className="activity-title">{p.name || 'Unnamed product'}</span>
+                    <span className="activity-sub">{p.productType || 'General'}</span>
+                  </div>
+                  <div className="activity-end">
+                    <span className={`pill ${p.qty === 0 ? 'tone-red' : 'tone-amber'}`}>
+                      {p.qty === 0 ? 'Out of stock' : `${p.qty} left`}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

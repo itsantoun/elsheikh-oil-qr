@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, get, update, onValue, push } from 'firebase/database';
+import { ref, get, update, onValue } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { moveToTrash } from '../utils/trash';
+import { activityUpdate, saveEntryWithLog, recordLabel } from '../utils/activityLog';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
@@ -324,6 +325,18 @@ const WaterFilling = () => {
           }
         }
       });
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Water Filling',
+        action: 'Bulk status',
+        summary: `Marked ${writeIds.length} Water Filling ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}${status === 'Paid' && datePaid ? ` (Date Paid ${datePaid})` : ''}`,
+        details: {
+          collection: 'waterFillingEntries',
+          status,
+          datePaid: status === 'Paid' ? (datePaid || null) : null,
+          remark: remark || null,
+          records: targetEntries.map((e) => ({ id: e.id, label: recordLabel(e), from: e.paymentStatus || null })),
+        },
+      }));
       await update(ref(database), updates);
       flash(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
@@ -524,14 +537,24 @@ const WaterFilling = () => {
       };
 
       if (editingEntryId) {
-        await update(ref(database, `waterFillingEntries/${editingEntryId}`), payload);
+        await saveEntryWithLog(user, {
+          collection: 'waterFillingEntries',
+          section: 'Water Filling',
+          id: editingEntryId,
+          before: entries.find((e) => e.id === editingEntryId),
+          data: payload,
+        });
         flash('Entry updated.');
       } else {
-        await update(push(ref(database, 'waterFillingEntries')), {
-          ...payload,
-          loggedBy: user?.name || user?.displayName || user?.email || 'Unknown',
-          loggedByUid: user?.uid || '',
-          createdAt: new Date().toISOString(),
+        await saveEntryWithLog(user, {
+          collection: 'waterFillingEntries',
+          section: 'Water Filling',
+          data: {
+            ...payload,
+            loggedBy: user?.name || user?.displayName || user?.email || 'Unknown',
+            loggedByUid: user?.uid || '',
+            createdAt: new Date().toISOString(),
+          },
         });
         flash('Entry saved.');
       }

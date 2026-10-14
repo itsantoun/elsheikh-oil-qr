@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, set, update, push } from 'firebase/database';
 import {
@@ -9,6 +9,8 @@ import {
 } from '../utils/exportFolder';
 import '../CSS/settings.css';
 import { DEFAULT_USD_TO_LBP_RATE, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { UserContext } from '../Auth/userContext';
+import { logActivity } from '../utils/activityLog';
 
 const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
 
@@ -80,6 +82,7 @@ const isMaghsalRow = (row) => {
 };
 
 const Settings = () => {
+  const { user } = useContext(UserContext);
   // Export folder
   const [folderName, setFolderName] = useState(null);
   const [supported, setSupported] = useState(true);
@@ -336,6 +339,12 @@ const Settings = () => {
         products: archiveProducts,
       });
       await set(ref(database, 'products'), resetProducts);
+      logActivity(user, {
+        section: 'Settings',
+        action: 'Archive & reset',
+        summary: `Archived ${productsList.length} products and reset all product quantities to 0`,
+        details: { archiveId, totalQuantityBeforeReset: totalQtyBeforeReset },
+      });
 
       flashMessage(`Archived ${productsList.length} products and reset all quantities to 0.`);
     } catch (err) {
@@ -408,6 +417,11 @@ const Settings = () => {
         set(ref(database, 'SoldItems'), null),
         set(ref(database, 'stockChecks'), null),
       ]);
+      logActivity(user, {
+        section: 'Settings',
+        action: 'Archive & reset',
+        summary: `Archived stock data, cleared live Oil sales and stock checks, and reset quantities to 0 for ${allProducts.length} products`,
+      });
 
       flashMessage(`Archived stock data and reset quantities to 0 for ${allProducts.length} products.`);
     } catch (err) {
@@ -461,6 +475,7 @@ const Settings = () => {
     setCategoriesBusy(true);
     try {
       await set(ref(database, 'settings/maghsalCategories'), next);
+      logActivity(user, { section: 'Settings', action: 'Edited', summary: 'Updated the list of Maghsal categories', details: { value: next } });
       setCategories(next);
       flashMessage('Maghsal categories saved.');
     } catch (err) {
@@ -524,6 +539,7 @@ const Settings = () => {
     setCitiesBusy(true);
     try {
       await set(ref(database, 'settings/customerCities'), next);
+      logActivity(user, { section: 'Settings', action: 'Edited', summary: 'Updated the list of customer cities', details: { value: next } });
       setCities(next);
       flashMessage('Cities saved.');
     } catch (err) {
@@ -582,6 +598,7 @@ const Settings = () => {
     setNationalitiesBusy(true);
     try {
       await set(ref(database, 'settings/nationalities'), next);
+      logActivity(user, { section: 'Settings', action: 'Edited', summary: 'Updated the list of nationalities', details: { value: next } });
       setNationalities(next);
       flashMessage('Nationalities saved.');
     } catch (err) {
@@ -640,6 +657,7 @@ const Settings = () => {
     setRolesBusy(true);
     try {
       await set(ref(database, 'settings/employeeRoles'), next);
+      logActivity(user, { section: 'Settings', action: 'Edited', summary: 'Updated the list of employee roles', details: { value: next } });
       setRoles(next);
       flashMessage('Employee roles saved.');
     } catch (err) {
@@ -698,6 +716,7 @@ const Settings = () => {
     setTruckTypesBusy(true);
     try {
       await set(ref(database, 'settings/waterDistributionTruckTypes'), next);
+      logActivity(user, { section: 'Settings', action: 'Edited', summary: 'Updated the list of Water Distribution truck types', details: { value: next } });
       setTruckTypes(next);
       flashMessage('Truck types saved.');
     } catch (err) {
@@ -761,6 +780,12 @@ const Settings = () => {
     setExchangeRateBusy(true);
     try {
       await set(ref(database, 'settings/usdToLbpRate'), v);
+      logActivity(user, {
+        section: 'Settings',
+        action: 'Edited',
+        summary: `Changed the exchange rate from ${exchangeRate} to ${v} LL per USD`,
+        details: { changes: { usdToLbpRate: { from: exchangeRate, to: v } } },
+      });
       setExchangeRate(v);
       flashMessage('Exchange rate saved.');
     } catch (err) {
@@ -896,6 +921,11 @@ const Settings = () => {
         completedAt: new Date().toISOString(),
         countMigrated: created,
       });
+      logActivity(user, {
+        section: 'Settings',
+        action: 'Migration',
+        summary: `Moved ${created} Maghsal row(s) from Oil sales to Maghsal; removed ${maghsalSoldKeys.length} Oil row(s) and ${maghsalProductKeys.length} product(s)`,
+      });
 
       setMigrationStatus(
         `Migration complete: ${created} entry(s) moved to maghsalEntries. ` +
@@ -965,6 +995,7 @@ const Settings = () => {
 
       setNameFixStatus(`Fixing ${count} row(s)...`);
       await update(ref(database), updates);
+      logActivity(user, { section: 'Settings', action: 'Data fix', summary: `Changed ${count} Oil sale customer name(s) from Arabic to English` });
       setNameFixStatus(`Done — ${count} SoldItems row(s) updated to the English customer name.`);
       flashMessage(`Fixed ${count} customer name(s) in Sold Items.`);
     } catch (err) {

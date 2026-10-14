@@ -132,6 +132,15 @@
       }
     },
 
+    "activityLog": {
+      ".read": "(auth.token.admin === true || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('status').val() !== 'inactive'))",
+      ".indexOn": ["at"],
+      "$id": {
+        ".write": "auth != null && !data.exists() && newData.exists()",
+        ".validate": "newData.hasChildren(['at', 'by', 'section', 'action', 'summary']) && newData.child('byUid').val() === auth.uid"
+      }
+    },
+
     "trash": {
       ".read": "(auth.token.admin === true || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('users').child(auth.uid).child('status').val() !== 'inactive'))",
       "$col": {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { database, app as primaryApp, auth } from '../Auth/firebase';
 import { ref, get, set, update } from 'firebase/database';
+import { logActivity } from '../utils/activityLog';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import '../CSS/addUser.css';
 import { IconCheck, IconAlertTriangle, IconUser, IconUsers, IconPlus, IconRefresh, IconMail, IconSettings, IconTrash } from '../utils/icons';
@@ -120,6 +121,12 @@ const AddUser = () => {
         status: 'active',
         createdAt: new Date().toISOString(),
       });
+      logActivity(auth.currentUser, {
+        section: 'Users',
+        action: 'Added',
+        summary: `Added user "${cleanedName}" (${cleanedEmail}) as ${cleanedRole}`,
+        details: { id: uid, name: cleanedName, email: cleanedEmail, role: cleanedRole },
+      });
 
       setSuccessMessage('User created successfully. Password is not stored in database.');
       setUsers((prev) => [...prev, { id: uid, name: cleanedName, email: cleanedEmail, role: cleanedRole, status: 'active' }]);
@@ -162,6 +169,12 @@ const AddUser = () => {
         status: nextStatus,
         deactivatedAt: nextStatus === 'inactive' ? new Date().toISOString() : null,
       });
+      logActivity(auth.currentUser, {
+        section: 'Users',
+        action: nextStatus === 'inactive' ? 'Deactivated' : 'Reactivated',
+        summary: `${nextStatus === 'inactive' ? 'Deactivated' : 'Reactivated'} user "${targetUser.name || targetUser.email}"`,
+        details: { id, email: targetUser.email || null },
+      });
       setUsers((prev) => prev.map((user) => (
         user.id === id ? { ...user, status: nextStatus } : user
       )));
@@ -198,6 +211,12 @@ const AddUser = () => {
 
     try {
       await update(ref(database, `users/${userId}`), { role: nextRole });
+      logActivity(auth.currentUser, {
+        section: 'Users',
+        action: 'Edited',
+        summary: `Changed role of "${currentUser.name || currentUser.email}" from ${normalizeRole(currentUser.role)} to ${nextRole}`,
+        details: { id: userId, changes: { role: { from: normalizeRole(currentUser.role), to: nextRole } } },
+      });
       setUsers((prev) => prev.map((user) => (
         user.id === userId ? { ...user, role: nextRole } : user
       )));

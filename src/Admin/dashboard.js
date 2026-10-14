@@ -3,6 +3,7 @@ import { database } from '../Auth/firebase';
 import { ref, onValue, query, orderByChild, limitToLast } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import { getBatchGroupKey } from '../utils/productBatches';
+import { useActivityLog, ActivityRow, ActivityDetailsModal } from '../Components/ActivityLog';
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -96,6 +97,8 @@ const IconArrowRight = () => (
 );
 
 const Dashboard = ({ onNavigate }) => {
+  const { entries: recentActivity, loaded: activityLoaded } = useActivityLog(10);
+  const [activityEntry, setActivityEntry] = useState(null);
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
   const [maghsalEntries, setMaghsalEntries] = useState([]);
@@ -327,6 +330,30 @@ const Dashboard = ({ onNavigate }) => {
           </button>
         </div>
       </div>
+
+      {/* Recent Activity */}
+      <div className="ui-card">
+        <div className="ui-card-header">
+          <h2 className="ui-card-title">Recent Activity</h2>
+          <button
+            className="pill tone-brand"
+            style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: '4px 8px' }}
+            onClick={() => onNavigate && onNavigate('activity')}
+          >
+            View all <IconArrowRight />
+          </button>
+        </div>
+        {recentActivity.length === 0 ? (
+          <div className="empty-state-card">
+            {activityLoaded ? 'No activity recorded yet. Changes will show up here as they happen.' : 'Loading…'}
+          </div>
+        ) : (
+          <div className="activity-list">
+            {recentActivity.map((e) => <ActivityRow key={e.id} entry={e} onClick={setActivityEntry} />)}
+          </div>
+        )}
+      </div>
+      <ActivityDetailsModal entry={activityEntry} onClose={() => setActivityEntry(null)} />
 
       {/* Low Stock Alert */}
       <div className="ui-card">

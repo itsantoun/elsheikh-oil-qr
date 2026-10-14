@@ -22,6 +22,7 @@ import {
 } from '../utils/pdfReceipt';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 import { moveToTrash } from '../utils/trash';
+import { activityUpdate, saveEntryWithLog, recordLabel, logActivity } from '../utils/activityLog';
 
 // Legacy safety filter: hides any leftover Maghsal-typed rows from Oil/Filter view
 // until the Settings → Maghsal Migration is run.
@@ -195,6 +196,18 @@ const OilSoldItems = () => {
           updates[`SoldItems/${id}/totalProfit`] = m.totalProfitAmount;
         }
       });
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Oil / Filter',
+        action: 'Bulk status',
+        summary: `Marked ${writeIds.length} Oil / Filter ${writeIds.length === 1 ? 'item' : 'items'} as ${status}${status === 'Paid' && datePaid ? ` (Date Paid ${datePaid})` : ''}`,
+        details: {
+          collection: 'SoldItems',
+          status,
+          datePaid: status === 'Paid' ? (datePaid || null) : null,
+          remark: remark || null,
+          records: targetItems.map((i) => ({ id: i.id, label: recordLabel(i), from: i.paymentStatus || null })),
+        },
+      }));
       await update(ref(database), updates);
       setSelectedIds([]);
       setShowBulkDatePaid(false);
@@ -1058,7 +1071,13 @@ const OilSoldItems = () => {
 
     setIsSavingMissingItem(true);
     try {
-      await update(ref(database, `SoldItems/${editingItem.id}`), changes);
+      await saveEntryWithLog(user, {
+        collection: 'SoldItems',
+        section: 'Oil / Filter',
+        id: editingItem.id,
+        before: editingItem,
+        data: changes,
+      });
       const updatedItems = sortItemsByDate(soldItems.map((item) => (
         item.id === editingItem.id ? { ...item, ...changes } : item
       )));
@@ -1134,7 +1153,16 @@ const OilSoldItems = () => {
           scannedBy: scannedByValue,
           remark: missingItemRemark,
         };
-        await push(ref(database, 'transactions'), transaction);
+        const txKey = push(ref(database, 'transactions')).key;
+        await update(ref(database), {
+          [`transactions/${txKey}`]: transaction,
+          ...activityUpdate(user, {
+            section: 'Transactions',
+            action: 'Added',
+            summary: `Submitted stock-in from Oil / Filter — ${transaction.name} × ${quantityValue}`,
+            details: { collection: 'transactions', id: txKey, record: transaction },
+          }),
+        });
       } else {
         // Paid / Unpaid → save to SoldItems as usual
         const totalCostValue = sellPriceValue * quantityValue;
@@ -1175,8 +1203,8 @@ const OilSoldItems = () => {
           remark: missingItemRemark,
         };
 
-        const createdRef = await push(ref(database, 'SoldItems'), newItem);
-        const newItemForList = { id: createdRef.key, ...newItem };
+        const createdKey = await saveEntryWithLog(user, { collection: 'SoldItems', section: 'Oil / Filter', data: newItem });
+        const newItemForList = { id: createdKey, ...newItem };
         const updatedItems = sortItemsByDate([...soldItems, newItemForList]);
         setSoldItems(updatedItems);
       }
@@ -1634,6 +1662,12 @@ const OilSoldItems = () => {
                             const itemRef = ref(database, `SoldItems/${item.id}`);
                             try {
                               await update(itemRef, { paymentStatus: 'Stock Confirmed' });
+                              logActivity(user, {
+                                section: 'Oil / Filter',
+                                action: 'Edited',
+                                summary: `Confirmed stock — ${recordLabel(item)}`,
+                                details: { collection: 'SoldItems', id: item.id, changes: { paymentStatus: { from: 'Stock', to: 'Stock Confirmed' } } },
+                              });
                               const updatedItems = soldItems.map((i) =>
                                 i.id === item.id ? { ...i, paymentStatus: 'Stock Confirmed' } : i
                               );

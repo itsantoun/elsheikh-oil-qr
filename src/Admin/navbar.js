@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import '../CSS/navbar.css';
 import elsheikhLogo from '../assets/elsheikh-logo.png';
-import { IconTrash } from '../utils/icons';
+import { IconTrash, IconClock } from '../utils/icons';
 
 // ── SVG Icon Components ──────────────────────────────────────────────────────
 
@@ -131,6 +131,7 @@ const navGroups = [
     children: [
       { id: 'dashboard', Icon: IconHome,     label: 'Dashboard' },
       { id: 'reports',   Icon: IconBarChart, label: 'Client Reports'   },
+      { id: 'activity',  Icon: IconClock,    label: 'Activity Log' },
     ],
   },
   {

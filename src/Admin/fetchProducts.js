@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { ref, get, set, update, remove, push } from "firebase/database";
 import { database } from '../Auth/firebase';
 import '../CSS/admin.css';
@@ -6,8 +6,11 @@ import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAl
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { getBatchCode } from '../utils/productBatches';
+import { UserContext } from '../Auth/userContext';
+import { logActivity, fieldChanges, describeChanges } from '../utils/activityLog';
 
 const FetchProducts = () => {
+  const { user } = useContext(UserContext);
   const [confirm, confirmDialog] = useConfirmDialog();
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
@@ -300,6 +303,13 @@ const FetchProducts = () => {
         createdAt: new Date().toISOString(),
       });
 
+      logActivity(user, {
+        section: 'Products',
+        action: 'Added',
+        summary: `Added product "${newProduct.name.trim() || 'Unnamed Product'}" (${sanitizedId}), quantity ${parsedQuantity}`,
+        details: { id: sanitizedId, itemCost: parsedItemCost, purchasingPrice: parsedPurchasingPrice, quantity: parsedQuantity },
+      });
+
       const newProductObj = {
         id: sanitizedId,
         name: newProduct.name.trim() || 'Unnamed Product',
@@ -335,7 +345,14 @@ const FetchProducts = () => {
 
     const productRef = ref(database, `products/${id}`);
     try {
+      const removedProduct = products.find((product) => product.id === id);
       await remove(productRef);
+      logActivity(user, {
+        section: 'Products',
+        action: 'Deleted',
+        summary: `Deleted product "${removedProduct?.name || id}" (${id})`,
+        details: { id, record: removedProduct || null },
+      });
       const updatedProducts = products.filter((product) => product.id !== id);
       setProducts(updatedProducts);
       setFilteredProducts(updatedProducts);
@@ -365,6 +382,7 @@ const FetchProducts = () => {
       // in `products/` untouched; only the Delete button removes a product.
       const productRef = ref(database, `products/${product.id}`);
       await update(productRef, { held: true, heldDate });
+      logActivity(user, { section: 'Products', action: 'Held', summary: `Put product "${product.name}" on hold`, details: { id: product.id } });
 
       const updatedProducts = products.map((p) => (p.id === product.id ? { ...p, held: true, heldDate } : p));
       setProducts(updatedProducts);
@@ -392,6 +410,7 @@ const FetchProducts = () => {
 
       const productRef = ref(database, `products/${product.id}`);
       await update(productRef, { held: false, heldDate: null });
+      logActivity(user, { section: 'Products', action: 'Restored', summary: `Restored held product "${product.name}"`, details: { id: product.id } });
 
       const updatedProducts = products.map((p) => (p.id === product.id ? { ...p, held: false, heldDate: null } : p));
       setProducts(sortProducts(updatedProducts, sortBy.field, sortBy.order));
@@ -460,6 +479,26 @@ const FetchProducts = () => {
         ...(existingData.barcode ? { barcode: existingData.barcode } : {}),
         ...(editingProduct.createdAt ? { createdAt: editingProduct.createdAt } : existingData.createdAt ? { createdAt: existingData.createdAt } : {}),
       });
+
+      const beforeProduct = products.find((product) => product.id === oldId) || {};
+      const productChanges = fieldChanges(beforeProduct, {
+        name: editingProduct.name.trim() || 'Unnamed Product',
+        productType: productTypeValue,
+        itemCost: parsedItemCost,
+        purchasingPrice: parsedPurchasingPrice,
+        quantity: parsedQuantity,
+        scope: scopeValue,
+        unit: (editingProduct.unit || '').trim(),
+      });
+      if (oldId !== newId) productChanges.barcode = { from: oldId, to: newId };
+      if (Object.keys(productChanges).length > 0) {
+        logActivity(user, {
+          section: 'Products',
+          action: 'Edited',
+          summary: `Edited product "${editingProduct.name.trim() || oldId}" — ${describeChanges(productChanges)}`,
+          details: { id: newId, changes: productChanges },
+        });
+      }
 
       const updatedProducts = products.map((product) =>
         product.id === oldId

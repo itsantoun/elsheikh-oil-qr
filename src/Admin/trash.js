@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../Auth/firebase';
+import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
@@ -40,6 +41,7 @@ const describe = (collection, r) => {
 };
 
 const Trash = () => {
+  const { user } = useContext(UserContext);
   const [trash, setTrash] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [customerIndex, setCustomerIndex] = useState(() => buildCustomerIndex([]));
@@ -109,7 +111,7 @@ const Trash = () => {
     if (!ok) return;
     setBusyKey(row.key);
     try {
-      await restoreFromTrash(row.collection, row.id);
+      await restoreFromTrash(row.collection, row.id, user);
       flash(`Restored to ${row.section}.`);
     } catch (err) {
       console.error('Restore failed:', err);
@@ -128,7 +130,7 @@ const Trash = () => {
     if (!ok) return;
     setBusyKey(row.key);
     try {
-      await deleteForever(row.collection, row.id);
+      await deleteForever(row.collection, row.id, user);
       flash('Deleted forever.');
     } catch (err) {
       console.error('Delete forever failed:', err);

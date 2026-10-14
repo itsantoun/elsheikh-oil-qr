@@ -473,7 +473,7 @@
 // export default Transactions;
 
 
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, update, remove } from 'firebase/database';
 import '../CSS/transactions.css';
@@ -482,8 +482,13 @@ import { useNotifications } from '../Auth/notificationContext';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
 import { isSamePrice, resolveOrCreateBatchForPrice } from '../utils/productBatches';
+import { UserContext } from '../Auth/userContext';
+import { activityUpdate, logActivity, fieldChanges, describeChanges } from '../utils/activityLog';
+
+const txLabel = (t) => `${t?.name || 'Item'} × ${t?.quantity ?? ''}`;
 
 const Transactions = () => {
+  const { user } = useContext(UserContext);
   const { notifySuccess, notifyError } = useNotifications();
   const [transactions, setTransactions] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -801,6 +806,12 @@ const Transactions = () => {
         }
       }
 
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Transactions',
+        action: 'Confirmed',
+        summary: `Confirmed stock-in — ${txLabel(transactions.find((t) => t.id === id))} (added to stock)`,
+        details: { collection: 'transactions', id },
+      }));
       await update(ref(database), updates);
       notifySuccess('Transaction confirmed.');
     } catch (error) {
@@ -848,6 +859,12 @@ const Transactions = () => {
         }
       }
 
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Transactions',
+        action: 'Unconfirmed',
+        summary: `Unconfirmed stock-in — ${txLabel(transactions.find((t) => t.id === id))} (removed from stock)`,
+        details: { collection: 'transactions', id },
+      }));
       await update(ref(database), updates);
       notifySuccess('Transaction set to pending.');
     } catch (error) {
@@ -947,6 +964,15 @@ const Transactions = () => {
         }
       }
 
+      const txChanges = fieldChanges(original, txUpdates);
+      if (Object.keys(txChanges).length > 0) {
+        Object.assign(rootUpdates, activityUpdate(user, {
+          section: 'Transactions',
+          action: 'Edited',
+          summary: `Edited transaction — ${txLabel(original)}: ${describeChanges(txChanges)}`,
+          details: { collection: 'transactions', id, changes: txChanges },
+        }));
+      }
       await update(ref(database), rootUpdates);
 
       setTransactions(prev =>
@@ -991,6 +1017,12 @@ const Transactions = () => {
     if (!confirmed) return;
     try {
       await remove(ref(database, `transactions/${id}`));
+      logActivity(user, {
+        section: 'Transactions',
+        action: 'Deleted',
+        summary: `Deleted transaction — ${txLabel(item)}`,
+        details: { collection: 'transactions', id, record: item || null },
+      });
       setTransactions(prev => prev.filter(t => t.id !== id));
       notifySuccess('Transaction deleted.');
     } catch (error) {

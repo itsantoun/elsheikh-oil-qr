@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ref, get, update, push, set, remove, onValue } from 'firebase/database';
 import { database } from '../Auth/firebase';
 import { BrowserMultiFormatReader } from '@zxing/library';
@@ -13,6 +13,8 @@ import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { getBatchCode, getBatchGroupKey } from '../utils/productBatches';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
+import { UserContext } from '../Auth/userContext';
+import { logActivity } from '../utils/activityLog';
 
 // ─── Firebase nodes used ──────────────────────────────────────────────────────
 // products/{id}                          — live product data
@@ -23,6 +25,7 @@ import PageHeader from '../Components/PageHeader';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RemainingProducts = () => {
+  const { user } = useContext(UserContext);
   const [confirm, confirmDialog] = useConfirmDialog();
   const [products, setProducts]                 = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
@@ -646,6 +649,7 @@ const RemainingProducts = () => {
     if (!confirmed) return;
     try {
       await remove(ref(database, `stockCheckHistory/${entry.historyKey.monthKey}/${entry.historyKey.key}`));
+      logActivity(user, { section: 'Stock', action: 'Deleted', summary: `Deleted a stock history entry (${entry.type}, ${formatDate(entry.date)})` });
       showSuccess('History entry deleted.');
       if (historySelectedProduct) fetchProductHistory(historySelectedProduct);
     } catch (err) { console.error(err); showError('Failed to delete history entry.'); }
@@ -779,6 +783,7 @@ const RemainingProducts = () => {
     try {
       const expectedQty = getExpectedRemaining(scannedProduct);
       await update(ref(database, `products/${scannedProduct.id}`), { quantity: counted });
+      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${scannedProduct.name}" marked accurate, quantity set to ${counted} (expected ${expectedQty})`, details: { id: scannedProduct.id, expected: expectedQty, counted } });
       const checkedAt = dateStrToISO(scanDate || todayStr());
       await update(ref(database, `stockChecks/${scannedProduct.id}`), {
         productName: scannedProduct.name, systemQuantity: expectedQty,
@@ -807,6 +812,7 @@ const RemainingProducts = () => {
         countedQuantity: counted, status: 'pending', checkedAt,
       };
       await update(ref(database, `stockChecks/${scannedProduct.id}`), checkData);
+      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${scannedProduct.name}" flagged inaccurate — counted ${counted}, expected ${expectedQty}`, details: { id: scannedProduct.id, expected: expectedQty, counted } });
       await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'inaccurate', checkedAt);
       setPendingChecks(prev => {
         const exists = prev.find(c => c.id === scannedProduct.id);
@@ -836,6 +842,7 @@ const RemainingProducts = () => {
       // Flag it as held rather than deleting it — the product record stays
       // in `products/` untouched; only the Delete button removes a product.
       await update(ref(database, `products/${product.id}`), { held: true, heldDate: heldAt });
+      logActivity(user, { section: 'Products', action: 'Held', summary: `Put product "${product.name}" on hold`, details: { id: product.id } });
       setProducts(prev => prev.map(p => (p.id === product.id ? { ...p, held: true, heldDate: heldAt } : p)));
       showSuccess(`"${product.name}" moved to Held.`);
     } catch (err) { console.error(err); showError('Failed to hold product.'); }
@@ -860,6 +867,7 @@ const RemainingProducts = () => {
     if (isNaN(newQty)) { showError('Enter a valid quantity.'); return; }
     try {
       await update(ref(database, `products/${product.id}`), { quantity: newQty });
+      logActivity(user, { section: 'Stock', action: 'Edited', summary: `Changed quantity of "${product.name}" from ${toNumber(product.quantity)} to ${newQty}`, details: { id: product.id, changes: { quantity: { from: toNumber(product.quantity), to: newQty } } } });
       setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: newQty } : p));
       setEditingQtyId(null);
       setEditQtyValue('');
@@ -873,6 +881,7 @@ const RemainingProducts = () => {
     try {
       const expectedQty = getExpectedRemaining(product);
       await update(ref(database, `products/${product.id}`), { quantity: counted });
+      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${product.name}" marked accurate, quantity set to ${counted} (expected ${expectedQty})`, details: { id: product.id, expected: expectedQty, counted } });
       const checkedAt = dateStrToISO(checkDate[product.id] || todayStr());
       await update(ref(database, `stockChecks/${product.id}`), {
         productName: product.name, systemQuantity: expectedQty,
@@ -901,6 +910,7 @@ const RemainingProducts = () => {
         countedQuantity: counted, status: 'pending', checkedAt,
       };
       await update(ref(database, `stockChecks/${product.id}`), checkData);
+      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${product.name}" flagged inaccurate — counted ${counted}, expected ${expectedQty}`, details: { id: product.id, expected: expectedQty, counted } });
       await pushHistory(product.id, product.name, expectedQty, counted, 'inaccurate', checkedAt);
       setPendingChecks(prev => {
         const exists = prev.find(c => c.id === product.id);
@@ -940,6 +950,7 @@ const RemainingProducts = () => {
         set(ref(database, 'stockChecks'), checksPayload),
         set(ref(database, 'stockCheckHistory'), historyPayload),
       ]);
+      logActivity(user, { section: 'Stock', action: 'Restored archive', summary: `Restored stock archive from ${formatDate(selectedArchive.archivedAt)} — replaced live products, Oil sales and stock checks` });
 
       await fetchData();
       setCountedQty({});

@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, get, set, update, remove, push, onValue } from 'firebase/database';
+import { ref, get, update, push, onValue } from 'firebase/database';
 import '../CSS/addCustomer.css';
-import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSettings, IconSave, IconEdit, IconTrash, IconUser } from '../utils/icons';
+import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX, IconRefresh, IconSave, IconEdit, IconTrash, IconUser } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, convertPrice, formatLBP, formatUSD, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { UserContext } from '../Auth/userContext';
+import { activityUpdate, fieldChanges, describeChanges } from '../utils/activityLog';
 
 // Water Filling and Water Filling (Small) are peer client types, same as
 // Maghsal or Oil & Filter — no separate "pick a size" sub-step. Each one maps
@@ -51,6 +53,7 @@ const emptyForm = {
 };
 
 const AddCustomer = () => {
+  const { user } = useContext(UserContext);
   const [customers, setCustomers] = useState([]);
   const [formData, setFormData] = useState({ ...emptyForm });
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -241,7 +244,15 @@ const AddCustomer = () => {
         pickupWaterDistributionPricing: buildPickupWaterDistributionPricingPayload(formData),
       };
       const newCustomerRef = push(ref(database, 'customers'));
-      await set(newCustomerRef, customerData);
+      await update(ref(database), {
+        [`customers/${newCustomerRef.key}`]: customerData,
+        ...activityUpdate(user, {
+          section: 'Customers',
+          action: 'Added',
+          summary: `Added customer "${customerData.name}"`,
+          details: { id: newCustomerRef.key, record: customerData },
+        }),
+      });
 
       setCustomers(prev => {
         const updated = [...prev, { id: newCustomerRef.key, ...customerData }];
@@ -355,7 +366,17 @@ const AddCustomer = () => {
         : {};
       const customerUpdates = {};
       Object.keys(customerData).forEach((k) => { customerUpdates[`customers/${id}/${k}`] = customerData[k]; });
-      await update(ref(database), { ...customerUpdates, ...renameUpdates });
+      const changes = fieldChanges(oldCustomer, customerData);
+      const recordsMoved = new Set(Object.keys(renameUpdates).map((k) => k.split('/').slice(0, 2).join('/'))).size;
+      const logUpdate = Object.keys(changes).length === 0 ? {} : activityUpdate(user, {
+        section: 'Customers',
+        action: renamed ? 'Renamed' : 'Edited',
+        summary: renamed
+          ? `Renamed customer "${oldCustomer.name || ''}" → "${customerData.name}"${recordsMoved ? ` (name updated on ${recordsMoved} record${recordsMoved === 1 ? '' : 's'})` : ''}`
+          : `Edited customer "${customerData.name}" — ${describeChanges(changes)}`,
+        details: { id, changes, recordsMoved },
+      });
+      await update(ref(database), { ...customerUpdates, ...renameUpdates, ...logUpdate });
 
       setCustomers(prev => {
         const updated = prev.map(c =>
@@ -389,7 +410,16 @@ const AddCustomer = () => {
 
     try {
       setIsLoading(true);
-      await remove(ref(database, `customers/${id}`));
+      const { id: _id, ...record } = customer;
+      await update(ref(database), {
+        [`customers/${id}`]: null,
+        ...activityUpdate(user, {
+          section: 'Customers',
+          action: 'Deleted',
+          summary: `Deleted customer "${customer.name}"`,
+          details: { id, record },
+        }),
+      });
       setCustomers(prev => prev.filter(c => c.id !== id));
       if (expandedCustomer === id) setExpandedCustomer(null);
       setSuccessMessage(`Customer "${customer.name}" deleted successfully.`);

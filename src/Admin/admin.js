@@ -16,6 +16,7 @@ import WaterDistribution from './waterDistribution';
 import Dashboard from './dashboard';
 import ClientReports from './clientReports';
 import Trash from './trash';
+import ActivityLogPage from './activityLog';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
@@ -105,6 +106,7 @@ const Admin = () => {
             <Route path="waterFilling" element={<WaterFilling />} />
             <Route path="waterDistribution" element={<WaterDistribution />} />
             <Route path="trash" element={<Trash />} />
+            <Route path="activity" element={<ActivityLogPage />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Routes>
         </div>

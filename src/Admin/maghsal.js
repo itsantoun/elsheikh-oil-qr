@@ -7,6 +7,7 @@ import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icon
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { moveToTrash } from '../utils/trash';
+import { activityUpdate, saveEntryWithLog, recordLabel } from '../utils/activityLog';
 import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
@@ -483,6 +484,16 @@ const Maghsal = () => {
       writeIds.forEach((id) => {
         updates[`maghsalEntries/${id}/paymentStatus`] = status;
       });
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Maghsal',
+        action: 'Bulk status',
+        summary: `Marked ${writeIds.length} Maghsal ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}`,
+        details: {
+          collection: 'maghsalEntries',
+          status,
+          records: targetEntries.map((e) => ({ id: e.id, label: recordLabel(e), from: e.paymentStatus || null })),
+        },
+      }));
       await update(ref(database), updates);
       flash(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
@@ -674,7 +685,16 @@ const Maghsal = () => {
         scannedBy: scannedBy,
         remark: formRemark.trim(),
       };
-      await push(ref(database, 'transactions'), transaction);
+      const txKey = push(ref(database, 'transactions')).key;
+      await update(ref(database), {
+        [`transactions/${txKey}`]: transaction,
+        ...activityUpdate(user, {
+          section: 'Transactions',
+          action: 'Added',
+          summary: `Submitted stock-in from Maghsal — ${transaction.name} × ${stockQuantityValue}`,
+          details: { collection: 'transactions', id: txKey, record: transaction },
+        }),
+      });
 
       closeAddModal();
       flash('Stock-in submitted — awaiting confirmation in Transactions.');
@@ -745,9 +765,8 @@ const Maghsal = () => {
         stockAdjusted: false,
       };
 
-      const entryRef = push(ref(database, 'maghsalEntries'));
       try {
-        await update(entryRef, newEntry);
+        await saveEntryWithLog(user, { collection: 'maghsalEntries', section: 'Maghsal', data: newEntry });
       } catch (entryErr) {
         console.error('Maghsal entry save failed:', entryErr, 'payload:', newEntry);
         flash(`Failed to save entry: ${entryErr?.message || entryErr}`, 'error');
@@ -808,21 +827,27 @@ const Maghsal = () => {
         purchasingPrice: toNumber(selectedProduct.purchasingPrice),
       }] : [];
 
-      await update(ref(database, `maghsalEntries/${editingEntryId}`), {
-        customerId: selectedCustomer.id,
-        customerName: selectedCustomer.name || '',
-        customerNameArabic: selectedCustomer.nameArabic || '',
-        date: dateISO,
-        category: selectedProduct ? selectedProduct.name : '',
-        serviceCategory: formServiceCategory,
-        price: servicePrice,
-        servicePrice,
-        quantity: qty,
-        goodsTotal: 0,
-        totalPrice: servicePrice,
-        consumablesUsed,
-        paymentStatus: formPaymentStatus,
-        remark: formRemark.trim(),
+      await saveEntryWithLog(user, {
+        collection: 'maghsalEntries',
+        section: 'Maghsal',
+        id: editingEntryId,
+        before: originalEntry,
+        data: {
+          customerId: selectedCustomer.id,
+          customerName: selectedCustomer.name || '',
+          customerNameArabic: selectedCustomer.nameArabic || '',
+          date: dateISO,
+          category: selectedProduct ? selectedProduct.name : '',
+          serviceCategory: formServiceCategory,
+          price: servicePrice,
+          servicePrice,
+          quantity: qty,
+          goodsTotal: 0,
+          totalPrice: servicePrice,
+          consumablesUsed,
+          paymentStatus: formPaymentStatus,
+          remark: formRemark.trim(),
+        },
       });
 
       closeAddModal();

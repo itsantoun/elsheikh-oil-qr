@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { database } from '../Auth/firebase';
-import { ref, get, update, onValue, push } from 'firebase/database';
+import { ref, get, update, onValue } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
 import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { moveToTrash } from '../utils/trash';
+import { activityUpdate, saveEntryWithLog, recordLabel } from '../utils/activityLog';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 import { getEmployeeDisplayName } from './employees';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
@@ -394,6 +395,18 @@ const WaterDistribution = () => {
           }
         }
       });
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Water Distribution',
+        action: 'Bulk status',
+        summary: `Marked ${writeIds.length} Water Distribution ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}${status === 'Paid' && datePaid ? ` (Date Paid ${datePaid})` : ''}`,
+        details: {
+          collection: 'waterDistributionEntries',
+          status,
+          datePaid: status === 'Paid' ? (datePaid || null) : null,
+          remark: remark || null,
+          records: targetEntries.map((e) => ({ id: e.id, label: recordLabel(e), from: e.paymentStatus || null })),
+        },
+      }));
       await update(ref(database), updates);
       flash(`Marked ${writeIds.length} ${writeIds.length === 1 ? 'entry' : 'entries'} as ${status}.`);
       setSelectedIds([]);
@@ -539,6 +552,16 @@ const WaterDistribution = () => {
     try {
       const updates = {};
       targetEntries.forEach((e) => { updates[`waterDistributionEntries/${e.id}/remark`] = newRemark(e); });
+      Object.assign(updates, activityUpdate(user, {
+        section: 'Water Distribution',
+        action: 'Bulk comment',
+        summary: `Set comment "${text}" on ${targetEntries.length} Water Distribution ${targetEntries.length === 1 ? 'entry' : 'entries'}`,
+        details: {
+          collection: 'waterDistributionEntries',
+          comment: text,
+          records: targetEntries.map((e) => ({ id: e.id, label: recordLabel(e), from: e.remark || null })),
+        },
+      }));
       await update(ref(database), updates);
       flash(`Comment saved on ${targetEntries.length} ${targetEntries.length === 1 ? 'entry' : 'entries'}.`);
       setSelectedIds([]);
@@ -724,14 +747,24 @@ const WaterDistribution = () => {
       };
 
       if (editingEntryId) {
-        await update(ref(database, `waterDistributionEntries/${editingEntryId}`), payload);
+        await saveEntryWithLog(user, {
+          collection: 'waterDistributionEntries',
+          section: 'Water Distribution',
+          id: editingEntryId,
+          before: entries.find((e) => e.id === editingEntryId),
+          data: payload,
+        });
         flash('Entry updated.');
       } else {
-        await update(push(ref(database, 'waterDistributionEntries')), {
-          ...payload,
-          loggedBy: user?.name || user?.displayName || user?.email || 'Unknown',
-          loggedByUid: user?.uid || '',
-          createdAt: new Date().toISOString(),
+        await saveEntryWithLog(user, {
+          collection: 'waterDistributionEntries',
+          section: 'Water Distribution',
+          data: {
+            ...payload,
+            loggedBy: user?.name || user?.displayName || user?.email || 'Unknown',
+            loggedByUid: user?.uid || '',
+            createdAt: new Date().toISOString(),
+          },
         });
         flash('Entry saved.');
       }

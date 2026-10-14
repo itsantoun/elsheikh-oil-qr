@@ -21,6 +21,7 @@ import { useExchangeRate, convertPrice } from '../utils/exchangeRate';
 import { IconEye, IconTrash } from '../utils/icons';
 import { getEmployeeDisplayName } from './employees';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
+import { logActivity } from '../utils/activityLog';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -621,6 +622,11 @@ const ClientReports = () => {
         generatedAt: new Date().toISOString(),
         generatedBy: user?.name || user?.displayName || user?.email || 'Unknown',
       });
+      logActivity(user, {
+        section: 'Reports',
+        action: 'Saved',
+        summary: `Saved report for ${snapshot.customerName || 'unknown'} (${snapshot.rangeLabel || 'all time'}, ${snapshot.recordCount ?? 0} records)`,
+      });
       await fetchReportHistory();
       flash('Report saved to history.');
     } catch (err) {
@@ -641,7 +647,13 @@ const ClientReports = () => {
     });
     if (!confirmed) return;
     try {
+      const removed = reportHistory.find((h) => h.id === id);
       await remove(ref(database, `reports/${id}`));
+      logActivity(user, {
+        section: 'Reports',
+        action: 'Deleted',
+        summary: `Deleted saved report for ${removed?.customerName || 'unknown'} (${removed?.rangeLabel || ''})`,
+      });
       if (viewingHistoryId === id) setViewingHistoryId(null);
       flash('Report removed from history.');
     } catch (err) {

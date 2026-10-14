@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, get, set, update, remove, push, onValue } from 'firebase/database';
 import '../CSS/addCustomer.css';
@@ -6,6 +6,8 @@ import { IconCheck, IconAlertTriangle, IconUsers, IconPlus, IconClipboard, IconX
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExchangeRate, formatNumberInput, stripCommas } from '../utils/exchangeRate';
+import { UserContext } from '../Auth/userContext';
+import { logActivity, fieldChanges, describeChanges } from '../utils/activityLog';
 
 const sortByName = (a, b) => {
   const nameA = (a.name || '').trim().toLowerCase();
@@ -73,6 +75,7 @@ export const getEmployeeDisplayName = (employee) => (
 );
 
 const Employees = () => {
+  const { user } = useContext(UserContext);
   const [employees, setEmployees] = useState([]);
   const [formData, setFormData] = useState({ ...emptyForm });
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -214,6 +217,12 @@ const Employees = () => {
       };
       const newEmployeeRef = push(ref(database, 'employees'));
       await set(newEmployeeRef, employeeData);
+      logActivity(user, {
+        section: 'Employees',
+        action: 'Added',
+        summary: `Added employee "${employeeData.name}"`,
+        details: { id: newEmployeeRef.key, record: employeeData },
+      });
 
       setEmployees((prev) => {
         const updated = [...prev, { id: newEmployeeRef.key, ...employeeData }];
@@ -269,7 +278,20 @@ const Employees = () => {
         assignedTruckType: isDriverRole(editData.role) ? editData.assignedTruckType : '',
         remark: editData.remark.trim(),
       };
+      const before = employees.find((emp) => emp.id === id) || {};
       await update(ref(database, `employees/${id}`), employeeData);
+      const changes = fieldChanges(before, employeeData);
+      delete changes.exchangeRateAtEntry;
+      if (Object.keys(changes).length > 0) {
+        logActivity(user, {
+          section: 'Employees',
+          action: changes.name ? 'Renamed' : 'Edited',
+          summary: changes.name
+            ? `Renamed employee "${before.name || ''}" → "${employeeData.name}"`
+            : `Edited employee "${employeeData.name}" — ${describeChanges(changes)}`,
+          details: { id, changes },
+        });
+      }
 
       setEmployees((prev) => {
         const updated = prev.map((emp) => (emp.id === id ? { ...emp, ...employeeData } : emp));
@@ -299,6 +321,12 @@ const Employees = () => {
     try {
       setIsLoading(true);
       await remove(ref(database, `employees/${id}`));
+      logActivity(user, {
+        section: 'Employees',
+        action: 'Deleted',
+        summary: `Deleted employee "${employee.name}"`,
+        details: { id, record: employee },
+      });
       setEmployees((prev) => prev.filter((emp) => emp.id !== id));
       if (expandedEmployee === id) setExpandedEmployee(null);
       flash('success', `"${employee.name}" deleted successfully.`);

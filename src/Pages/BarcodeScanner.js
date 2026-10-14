@@ -774,6 +774,7 @@ import '../CSS/BarcodeScanner.css';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { findSiblingBatches, pickFifoBatch } from '../utils/productBatches';
+import { activityUpdate, saveEntryWithLog } from '../utils/activityLog';
 import {
   IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
   IconTag, IconBarChart, IconDollarSign, IconUser, IconHash, IconTrendingUp,
@@ -1240,6 +1241,7 @@ const BarcodeScanner = () => {
       totalCost,
     });
     const scannedBy = name || 'Unknown';
+    const logUser = { name: scannedBy };
     const currentDate = new Date().toISOString();
 
     try {
@@ -1257,7 +1259,16 @@ const BarcodeScanner = () => {
           scannedBy: scannedBy,
           remark: remark,
         };
-        await push(ref(database, 'transactions'), transaction);
+        const txKey = push(ref(database, 'transactions')).key;
+        await update(ref(database), {
+          [`transactions/${txKey}`]: transaction,
+          ...activityUpdate(logUser, {
+            section: 'Transactions',
+            action: 'Added',
+            summary: `Submitted stock-in from the scanner — ${transaction.name} × ${quantity}`,
+            details: { collection: 'transactions', id: txKey, record: transaction },
+          }),
+        });
       } else {
         const customer = customers.find(c => c.id === selectedCustomer);
         if (!customer) {
@@ -1300,7 +1311,7 @@ const BarcodeScanner = () => {
             createdAt: currentDate,
             stockAdjusted: false,
           };
-          await push(ref(database, 'maghsalEntries'), maghsalEntry);
+          await saveEntryWithLog(logUser, { collection: 'maghsalEntries', section: 'Maghsal', data: maghsalEntry });
         } else {
           const newItem = {
             barcode: scannedProduct.barcode,
@@ -1321,7 +1332,7 @@ const BarcodeScanner = () => {
             totalProfit: profitMetrics.profit,
             remark: remark,
           };
-          await push(ref(database, 'SoldItems'), newItem);
+          await saveEntryWithLog(logUser, { collection: 'SoldItems', section: 'Oil / Filter', data: newItem });
         }
       }
 
@@ -1377,15 +1388,20 @@ const BarcodeScanner = () => {
 
         if (itemKey) {
           const profitMetrics = calculateSaleProfit(item);
-          const updatedItemRef = ref(database, `SoldItems/${itemKey}`);
-          await update(updatedItemRef, {
-            quantity: profitMetrics.quantity,
-            totalCost: profitMetrics.revenue,
-            paymentStatus: item.paymentStatus,
-            remark: item.remark,
-            purchasingPrice: profitMetrics.unitBuyPrice,
-            unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
-            totalProfit: profitMetrics.profit,
+          await saveEntryWithLog({ name: name || 'Unknown' }, {
+            collection: 'SoldItems',
+            section: 'Oil / Filter',
+            id: itemKey,
+            before: items[itemKey],
+            data: {
+              quantity: profitMetrics.quantity,
+              totalCost: profitMetrics.revenue,
+              paymentStatus: item.paymentStatus,
+              remark: item.remark,
+              purchasingPrice: profitMetrics.unitBuyPrice,
+              unitProfit: profitMetrics.unitSellPrice - profitMetrics.unitBuyPrice,
+              totalProfit: profitMetrics.profit,
+            },
           });
 
           setEditingItem(null);
@@ -1397,7 +1413,7 @@ const BarcodeScanner = () => {
       console.error("Error updating item:", error);
       setDialogMessage("Error updating item in the database.");
     }
-  }, [calculateSaleProfit]);
+  }, [calculateSaleProfit, name]);
 
   const handleClosePopup = useCallback(() => {
     setIsPopupOpen(false);

@@ -5,6 +5,7 @@ import { UserContext } from '../Auth/userContext';
 import { resolveUserAccess } from '../Auth/accessControl';
 import { isValidEmail, MAX_EMAIL_LEN, MAX_PASSWORD_LEN } from '../Auth/validators';
 import elsheikhLogo from '../assets/elsheikh-logo.png';
+import { logSession } from '../utils/activityLog';
 import '../CSS/login.css';
 
 function Login({ onLogin }) {
@@ -41,6 +42,7 @@ function Login({ onLogin }) {
         setLoginError('This profile is deactivated. Contact admin.');
         return;
       }
+      await logSession('Logged in', access.role === 'admin' ? 'admin' : 'scanner');
       onLogin(access.role === 'admin' ? 'admin' : 'scanner');
     } catch (error) {
       // Generic message — do not leak whether the email exists.

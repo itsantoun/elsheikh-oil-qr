@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, query, orderByChild, limitToLast } from 'firebase/database';
 import { database } from '../Auth/firebase';
-import { IconEdit, IconPlus, IconTrash, IconCornerUpLeft, IconUser, IconCheck, IconSettings } from '../utils/icons';
+import { IconEdit, IconPlus, IconTrash, IconCornerUpLeft, IconUser, IconCheck, IconSettings, IconEye, IconLock, IconLogOut } from '../utils/icons';
 
 // Shared by the Dashboard's Recent Activity card and the Activity Log page.
 
@@ -75,6 +75,9 @@ const TONES = {
   Restored: ['var(--cyan-bg)', 'var(--cyan)', IconCornerUpLeft],
   Renamed: ['var(--purple-bg)', 'var(--purple)', IconUser],
   Confirmed: ['var(--green-bg)', 'var(--green)', IconCheck],
+  'Logged in': ['var(--green-bg)', 'var(--green)', IconLock],
+  'Logged out': ['var(--surface-2, #f1f3f5)', 'var(--text-muted, #6b7280)', IconLogOut],
+  Visited: ['var(--surface-2, #f1f3f5)', 'var(--text-muted, #6b7280)', IconEye],
 };
 const toneFor = (action) => {
   if (TONES[action]) return TONES[action];

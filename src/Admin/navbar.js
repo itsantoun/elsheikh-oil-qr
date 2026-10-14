@@ -190,6 +190,15 @@ const navGroups = [
   },
 ];
 
+// "Water Distribution › Entries" — a page's name as the activity log shows it.
+export const pageLabel = (id) => {
+  for (const g of navGroups) {
+    const child = g.children.find((c) => c.id === id);
+    if (child) return g.children.length === 1 || g.id === 'adminGroup' || g.id === 'overview' ? child.label : `${g.label} › ${child.label}`;
+  }
+  return id;
+};
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 const Navbar = ({ onNavigate, activePage, onLogout }) => {

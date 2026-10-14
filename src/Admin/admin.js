@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import Navbar from './navbar';
+import Navbar, { pageLabel } from './navbar';
 import AddUsers from './adduser';
 import FetchProducts from './fetchProducts';
 import ItemsSold from './oilSoldItems';
@@ -22,6 +22,7 @@ import '../CSS/admin.css';
 import { auth } from '../Auth/firebase';
 import { signOut } from 'firebase/auth';
 import { resolveUserAccess } from '../Auth/accessControl';
+import { logPageVisit, logSession } from '../utils/activityLog';
 
 const Admin = () => {
   const { user, setUser } = useContext(UserContext);
@@ -57,8 +58,16 @@ const Admin = () => {
     };
   }, [navigate]);
 
+  // Log each page an admin opens (see logPageVisit for repeat handling).
+  const visitedPage = location.pathname.replace(/^\/admin\/?/, '') || 'dashboard';
+  useEffect(() => {
+    if (!isAuthorized || !user) return;
+    logPageVisit(user, pageLabel(visitedPage));
+  }, [isAuthorized, visitedPage]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleLogout = async () => {
     try {
+      await logSession('Logged out');
       await signOut(auth);
       setUser({ email: '', name: '' });
     } catch (error) {

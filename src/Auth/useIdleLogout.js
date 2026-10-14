@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
+import { logSession } from '../utils/activityLog';
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -19,6 +20,7 @@ export const useIdleLogout = (timeoutMs = DEFAULT_TIMEOUT_MS) => {
     const handleLogout = async () => {
       if (auth.currentUser) {
         try {
+          await logSession('Logged out', 'inactive for 30 minutes');
           await signOut(auth);
         } catch (error) {
           console.error('Idle logout failed:', error);

@@ -774,7 +774,7 @@ import '../CSS/BarcodeScanner.css';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { findSiblingBatches, pickFifoBatch } from '../utils/productBatches';
-import { activityUpdate, saveEntryWithLog } from '../utils/activityLog';
+import { activityUpdate, saveEntryWithLog, logSession, logPageVisit } from '../utils/activityLog';
 import {
   IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
   IconTag, IconBarChart, IconDollarSign, IconUser, IconHash, IconTrendingUp,
@@ -850,6 +850,7 @@ const BarcodeScanner = () => {
           const userData = snapshot.val();
           const fetchedName = userData?.name || 'Unknown';
           setName(fetchedName);
+          logPageVisit({ name: fetchedName }, 'Scanner');
         } else {
           console.error("User data not found in the database.");
           setName('Unknown');
@@ -1366,6 +1367,7 @@ const BarcodeScanner = () => {
   const handleLogout = useCallback(async () => {
     try {
       setCameraActive(false);
+      await logSession('Logged out');
       await signOut(auth);
       setUser(null);
     } catch (error) {

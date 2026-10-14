@@ -1,4 +1,4 @@
-import { ref, push, update } from 'firebase/database';
+import { ref, push, update, get } from 'firebase/database';
 import { database, auth } from '../Auth/firebase';
 
 // Activity log: one entry per change, at activityLog/{pushId}. The database
@@ -116,4 +116,38 @@ export const saveEntryWithLog = async (user, { collection, section, id, before, 
   }
   await update(ref(database), updates);
   return id;
+};
+
+// ── Sessions & navigation ─────────────────────────────────────────────
+
+// The signed-in person as the log shows them: their profile name, or email.
+const signedInUser = async () => {
+  const u = auth.currentUser;
+  if (!u) return null;
+  let name = '';
+  try {
+    name = (await get(ref(database, `users/${u.uid}/name`))).val() || '';
+  } catch { /* fall back to the email */ }
+  return { name: name || u.email || 'Unknown', uid: u.uid };
+};
+
+// "Logged in" / "Logged out" (await it before signing out — after that the
+// write is no longer allowed).
+export const logSession = async (action, note = '') => {
+  const u = await signedInUser();
+  if (!u) return;
+  await logActivity(u, { section: 'Logins', action, summary: `${u.name} ${action.toLowerCase()}${note ? ` (${note})` : ''}` });
+};
+
+// "Opened <page>". A repeat of the same page within a few minutes (refresh,
+// back and forth) isn't logged again.
+const REPEAT_MS = 5 * 60 * 1000;
+export const logPageVisit = async (user, pageLabel) => {
+  const key = `lastVisit:${auth.currentUser?.uid || ''}`;
+  try {
+    const last = JSON.parse(sessionStorage.getItem(key) || 'null');
+    if (last && last.page === pageLabel && Date.now() - last.at < REPEAT_MS) return;
+    sessionStorage.setItem(key, JSON.stringify({ page: pageLabel, at: Date.now() }));
+  } catch { /* storage unavailable — log anyway */ }
+  await logActivity(user, { section: 'Navigation', action: 'Visited', summary: `${userLabel(user)} opened ${pageLabel}` });
 };

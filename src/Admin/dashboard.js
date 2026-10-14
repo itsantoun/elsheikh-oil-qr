@@ -97,8 +97,13 @@ const IconArrowRight = () => (
 );
 
 const Dashboard = ({ onNavigate }) => {
-  const { entries: recentActivity, loaded: activityLoaded } = useActivityLog(10);
+  const { entries: latestActivity, loaded: activityLoaded } = useActivityLog(50);
   const [activityEntry, setActivityEntry] = useState(null);
+  // Changes only — logins, logouts and page visits are private and stay on
+  // the Activity Log page.
+  const recentActivity = useMemo(() => latestActivity
+    .filter((e) => e.section !== 'Logins' && e.section !== 'Navigation')
+    .slice(0, 10), [latestActivity]);
   const { user } = useContext(UserContext);
   const [soldItems, setSoldItems] = useState([]);
   const [maghsalEntries, setMaghsalEntries] = useState([]);
@@ -383,7 +388,7 @@ const Dashboard = ({ onNavigate }) => {
           </div>
           {recentActivity.length === 0 ? (
             <div className="empty-state-card">
-              {activityLoaded ? 'No activity recorded yet. Changes will show up here as they happen.' : 'Loading…'}
+              {activityLoaded ? 'No changes recorded yet. They will show up here as they happen.' : 'Loading…'}
             </div>
           ) : (
             <div className="activity-list">

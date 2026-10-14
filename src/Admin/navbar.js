@@ -131,7 +131,6 @@ const navGroups = [
     children: [
       { id: 'dashboard', Icon: IconHome,     label: 'Dashboard' },
       { id: 'reports',   Icon: IconBarChart, label: 'Client Reports'   },
-      { id: 'activity',  Icon: IconClock,    label: 'Activity Log' },
     ],
   },
   {
@@ -185,6 +184,7 @@ const navGroups = [
       { id: 'addCustomer', Icon: IconUser,      label: 'Customers' },
       { id: 'employees',   Icon: IconBriefcase, label: 'Employees' },
       { id: 'settings',    Icon: IconSettings,  label: 'Settings'  },
+      { id: 'activity',    Icon: IconClock,     label: 'Activity Log' },
       { id: 'trash',       Icon: IconTrash,     label: 'Trash'     },
     ],
   },

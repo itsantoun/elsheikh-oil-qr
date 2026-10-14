@@ -22,7 +22,7 @@ import {
 } from '../utils/pdfReceipt';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 import { moveToTrash } from '../utils/trash';
-import { activityUpdate, saveEntryWithLog, recordLabel, logActivity } from '../utils/activityLog';
+import { activityUpdate, saveEntryWithLog, recordLabel, logActivity, logExport } from '../utils/activityLog';
 
 // Legacy safety filter: hides any leftover Maghsal-typed rows from Oil/Filter view
 // until the Settings → Maghsal Migration is run.
@@ -799,6 +799,7 @@ const OilSoldItems = () => {
       compact: density.totalsCompact,
     });
 
+    logExport(user, 'Oil / Filter', `client statement${customerFilter ? ` for ${customerFilter}` : ''} (${filteredItems.length} items)`, 'PDF', print);
     if (print) { printPdfDoc(doc); return; }
 
     const filename = buildExportFilename('pdf');
@@ -853,6 +854,7 @@ const OilSoldItems = () => {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const filename = buildExportFilename('csv');
     const result = await saveBlobToExportFolder(blob, filename);
+    logExport(user, 'Oil / Filter', `sold items list${customerFilter ? ` for ${customerFilter}` : ''} (${filteredItems.length} items)`, 'Excel (CSV)');
     if (result.strategy === 'folder') {
       setErrorMessage(`Saved to "${result.folderName}/${filename}"`);
       setTimeout(() => setErrorMessage(null), 3000);

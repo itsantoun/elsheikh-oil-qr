@@ -151,3 +151,17 @@ export const logPageVisit = async (user, pageLabel) => {
   } catch { /* storage unavailable — log anyway */ }
   await logActivity(user, { section: 'Navigation', action: 'Visited', summary: `${userLabel(user)} opened ${pageLabel}` });
 };
+
+// Looking at or taking data out (logins, page visits, viewing a report,
+// exporting, printing) — kept off the Dashboard's Recent Activity card,
+// which shows changes only; all of it is on the Activity Log page.
+const PRIVATE_SECTIONS = new Set(['Logins', 'Navigation']);
+const PRIVATE_ACTIONS = new Set(['Viewed', 'Exported', 'Printed']);
+export const isPrivateActivity = (e) => PRIVATE_SECTIONS.has(e?.section) || PRIVATE_ACTIONS.has(e?.action);
+
+// "Exported PDF of …" / "Printed …".
+export const logExport = (user, section, what, format, print = false) => logActivity(user, {
+  section,
+  action: print ? 'Printed' : 'Exported',
+  summary: print ? `Printed ${what}` : `Exported ${what} as ${format}`,
+});

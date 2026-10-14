@@ -7,7 +7,7 @@ import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { getBatchCode } from '../utils/productBatches';
 import { UserContext } from '../Auth/userContext';
-import { logActivity, fieldChanges, describeChanges } from '../utils/activityLog';
+import { logActivity, fieldChanges, describeChanges, logExport } from '../utils/activityLog';
 
 const FetchProducts = () => {
   const { user } = useContext(UserContext);
@@ -577,6 +577,7 @@ const FetchProducts = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    logExport(user, 'Products', `products list (${filteredProducts.length} products)`, 'Excel (CSV)');
   };
 
   const sortProducts = (products, field, order) => {

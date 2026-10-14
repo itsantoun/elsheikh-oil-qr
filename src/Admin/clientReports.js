@@ -21,7 +21,7 @@ import { useExchangeRate, convertPrice } from '../utils/exchangeRate';
 import { IconEye, IconTrash } from '../utils/icons';
 import { getEmployeeDisplayName } from './employees';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
-import { logActivity } from '../utils/activityLog';
+import { logActivity, logExport } from '../utils/activityLog';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const toNumber = (v) => {
@@ -361,6 +361,11 @@ const ClientReports = () => {
   useEffect(() => { setCommentFilter(''); }, [customerId, employeeId, reportFor]);
   const showCommentFilter = (typeFilter === 'All' || typeFilter === 'Water Distribution') && commentOptions.length > 0;
   useEffect(() => { if (!showCommentFilter) setCommentFilter(''); }, [showCommentFilter]);
+  // Opening a client's or employee's report is logged (Activity Log only).
+  useEffect(() => {
+    if (!hasSubject) return;
+    logActivity(user, { section: 'Reports', action: 'Viewed', summary: `Viewed ${subjectWord} report for ${subjectName}` });
+  }, [customerId, employeeId, reportFor, hasSubject]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Available type options for the filter. Miscellaneous ("other" scope)
   // products are grouped under a single "Other" entry here instead of one
@@ -782,6 +787,7 @@ const ClientReports = () => {
       forEmployee: isEmployeeReport,
       print,
     });
+    logExport(user, 'Reports', `${subjectWord} report for ${subjectName} (${rangeLabel()})`, 'PDF', print);
   };
 
   // Older saved reports (from before the Total Quantity field existed) won't
@@ -810,6 +816,7 @@ const ClientReports = () => {
       forEmployee: entry.reportFor === 'employee',
       print,
     });
+    logExport(user, 'Reports', `saved report for ${entry.customerName} (${entry.rangeLabel})`, 'PDF', print);
   };
 
   // ── CSV export ────────────────────────────────────────────────────────────────
@@ -836,6 +843,7 @@ const ClientReports = () => {
     const filename = `${fileLabel()}.csv`;
     const result = await saveBlobToExportFolder(blob, filename);
     reportSaveResult(result);
+    logExport(user, 'Reports', `${subjectWord} report for ${subjectName} (${rangeLabel()})`, 'Excel (CSV)');
   };
 
   // ── Quick range presets ───────────────────────────────────────────────────────

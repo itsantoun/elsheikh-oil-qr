@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
@@ -7,6 +7,8 @@ import '../CSS/soldItems.css';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import { printPdfDoc } from '../utils/printPdf';
 import { buildCustomerIndex, recordCustomerId } from '../utils/customerLink';
+import { UserContext } from '../Auth/userContext';
+import { logExport } from '../utils/activityLog';
 
 const toNumber = (v) => {
   const n = parseFloat(v);
@@ -76,6 +78,7 @@ const sanitizeCSVCell = (value) => {
 };
 
 const MaghsalReports = () => {
+  const { user } = useContext(UserContext);
   const [entries, setEntries] = useState([]);
   const [customers, setCustomers] = useState([]);
 
@@ -192,6 +195,8 @@ const MaghsalReports = () => {
     return parts.join('_');
   };
 
+  const exportLabel = () => `Maghsal ${reportType} report${reportType === 'customer' && customerFilterName ? ` for ${customerFilterName}` : ''} (${dateFrom || 'start'} to ${dateTo || 'now'})`;
+
   const exportCSV = async () => {
     let headers = [], rows = [];
     if (reportType === 'period') {
@@ -232,6 +237,7 @@ const MaghsalReports = () => {
     const filename = `${fileLabel()}.csv`;
     const result = await saveBlobToExportFolder(blob, filename);
     if (result.strategy === 'folder') flash(`Saved to "${result.folderName}/${filename}"`);
+    logExport(user, 'Reports', exportLabel(), 'Excel (CSV)');
   };
 
   // `print: true` sends the same PDF to the printer instead of saving it.
@@ -302,6 +308,7 @@ const MaghsalReports = () => {
       });
     }
 
+    logExport(user, 'Reports', exportLabel(), 'PDF', print);
     if (print) { printPdfDoc(doc); return; }
 
     const filename = `${fileLabel()}.pdf`;

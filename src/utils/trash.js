@@ -1,6 +1,6 @@
 import { ref, get, update } from 'firebase/database';
 import { database } from '../Auth/firebase';
-import { activityUpdate, recordLabel } from './activityLog';
+import { activityUpdate, recordLabel, userLabel } from './activityLog';
 
 // Deleting a record moves it to trash/{collection}/{id} (with who deleted it
 // and when) instead of destroying it, so an admin can restore it from the
@@ -12,8 +12,6 @@ export const TRASH_SECTIONS = {
   maghsalEntries: 'Maghsal',
   SoldItems: 'Oil / Filter',
 };
-
-const userLabel = (user) => user?.name || user?.displayName || user?.email || 'Unknown';
 
 // Moves one record to trash in a single atomic write. The record is read
 // fresh from the database, so the copy is exactly what was stored (not the

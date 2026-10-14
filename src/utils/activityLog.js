@@ -1,4 +1,5 @@
 import { ref, push, update, get } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
 import { database, auth } from '../Auth/firebase';
 
 // Activity log: one entry per change, at activityLog/{pushId}. The database
@@ -13,7 +14,21 @@ import { database, auth } from '../Auth/firebase';
 //   details  — anything worth showing in the popup: { changes: { field:
 //              { from, to } }, records: [ … ], … }
 
-export const userLabel = (user) => user?.name || user?.displayName || user?.email || 'Unknown';
+// The signed-in person's profile name (users/{uid}/name), looked up once per
+// sign-in — some pages only have the Firebase account, which has no name.
+const profileNames = {};
+onAuthStateChanged(auth, async (u) => {
+  if (!u || profileNames[u.uid] !== undefined) return;
+  try {
+    profileNames[u.uid] = (await get(ref(database, `users/${u.uid}/name`))).val() || '';
+  } catch {
+    profileNames[u.uid] = '';
+  }
+});
+
+export const userLabel = (user) => user?.name
+  || profileNames[auth.currentUser?.uid]
+  || user?.displayName || user?.email || auth.currentUser?.email || 'Unknown';
 
 // Firebase rejects undefined values and these characters in keys.
 const clean = (value) => {
@@ -124,11 +139,14 @@ export const saveEntryWithLog = async (user, { collection, section, id, before, 
 const signedInUser = async () => {
   const u = auth.currentUser;
   if (!u) return null;
-  let name = '';
-  try {
-    name = (await get(ref(database, `users/${u.uid}/name`))).val() || '';
-  } catch { /* fall back to the email */ }
-  return { name: name || u.email || 'Unknown', uid: u.uid };
+  if (profileNames[u.uid] === undefined) {
+    try {
+      profileNames[u.uid] = (await get(ref(database, `users/${u.uid}/name`))).val() || '';
+    } catch {
+      profileNames[u.uid] = '';
+    }
+  }
+  return { name: profileNames[u.uid] || u.email || 'Unknown', uid: u.uid };
 };
 
 // "Logged in" / "Logged out" (await it before signing out — after that the
@@ -149,7 +167,8 @@ export const logPageVisit = async (user, pageLabel) => {
     if (last && last.page === pageLabel && Date.now() - last.at < REPEAT_MS) return;
     sessionStorage.setItem(key, JSON.stringify({ page: pageLabel, at: Date.now() }));
   } catch { /* storage unavailable — log anyway */ }
-  await logActivity(user, { section: 'Navigation', action: 'Visited', summary: `${userLabel(user)} opened ${pageLabel}` });
+  const who = user?.name ? user : (await signedInUser()) || user;
+  await logActivity(who, { section: 'Navigation', action: 'Visited', summary: `${userLabel(who)} opened ${pageLabel}` });
 };
 
 // Looking at or taking data out (logins, page visits, viewing a report,

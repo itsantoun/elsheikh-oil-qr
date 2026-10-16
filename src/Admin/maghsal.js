@@ -101,7 +101,6 @@ const Maghsal = () => {
   const [formStockProductId, setFormStockProductId] = useState('');
   const [formStockQuantity, setFormStockQuantity] = useState('1');
   const [formStockPurchasingPrice, setFormStockPurchasingPrice] = useState('');
-  const [formStockSellPrice, setFormStockSellPrice] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Inline edit (simple fields only)
@@ -600,17 +599,16 @@ const Maghsal = () => {
     setFormStockProductId('');
     setFormStockQuantity('1');
     setFormStockPurchasingPrice('');
-    setFormStockSellPrice('');
     setShowAddModal(true);
   };
 
-  // When the user picks a product in stock-in mode, pre-fill the prices from
-  // the product (both still editable in case supplier or retail price changed).
+  // When the user picks a product in stock-in mode, pre-fill the purchasing
+  // price from the product (still editable in case the supplier price changed).
+  // Selling price isn't asked for here — it's managed from the Products page.
   const handleStockProductChange = (productId) => {
     setFormStockProductId(productId);
     const p = getProduct(productId);
     setFormStockPurchasingPrice(p ? String(toNumber(p.purchasingPrice)) : '');
-    setFormStockSellPrice(p ? String(toNumber(p.itemCost)) : '');
   };
 
   const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); setFormBatchId(''); };
@@ -623,7 +621,7 @@ const Maghsal = () => {
   const stockSelectedProduct = isStockMode ? getProduct(formStockProductId) : null;
   const stockQuantityValue = toNumber(formStockQuantity);
   const stockPurchasingPriceValue = toNumber(formStockPurchasingPrice);
-  const stockSellPriceValue = toNumber(formStockSellPrice);
+  const stockSellPriceValue = toNumber(stockSelectedProduct?.itemCost);
   const stockTotalCost = stockPurchasingPriceValue * stockQuantityValue;
 
   const canSave = Boolean(
@@ -1317,25 +1315,11 @@ const Maghsal = () => {
                         disabled={isSaving}
                       />
                     </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Selling Price</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formStockSellPrice}
-                        onChange={(e) => setFormStockSellPrice(e.target.value)}
-                        className="form-input"
-                        disabled={isSaving}
-                      />
-                    </div>
                   </div>
 
                   {stockSelectedProduct && (
                     <div className="missing-item-summary" style={{ marginTop: 'var(--s-3)' }}>
                       <span>Unit Purchase: ${stockPurchasingPriceValue.toFixed(2)}</span>
-                      <span>Unit Sell: ${stockSellPriceValue.toFixed(2)}</span>
                       <span style={{ color: 'var(--brand)' }}>Total Cost: ${stockTotalCost.toFixed(2)}</span>
                     </div>
                   )}

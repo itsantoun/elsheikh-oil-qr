@@ -149,7 +149,7 @@ export const resolveOrCreateBatchForPrice = async (
       productType: root?.productType || '',
       ...(root?.scope ? { scope: root.scope } : {}),
       unit: root?.unit || '',
-      ...(root && !isMaghsalProduct(root) ? { barcode: root.barcode || root.id } : {}),
+      ...(root ? { barcode: getBatchCode(root) } : {}),
       baseProductId: rootId,
       itemCost: toNumber(itemCost),
       purchasingPrice: toNumber(purchasingPrice),

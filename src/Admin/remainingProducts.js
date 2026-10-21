@@ -11,6 +11,7 @@ import {
 } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { getBatchCode, getBatchGroupKey } from '../utils/productBatches';
+import BatchTag from './batchTag';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
 import { UserContext } from '../Auth/userContext';
@@ -1056,14 +1057,7 @@ const RemainingProducts = () => {
                         <span className="product-name-cell">{product.name}</span>
                         {' '}
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
-                        {product.baseProductId && (
-                          <span
-                            title="Linked to another price batch of this same product"
-                            style={{ fontSize: 11, marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: 'var(--surface-2, #e9f0fa)', color: 'var(--brand)' }}
-                          >
-                            linked
-                          </span>
-                        )}
+                        <BatchTag product={product} />
                       </td>
                       <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
                       <td className="text-right">
@@ -1231,14 +1225,7 @@ const RemainingProducts = () => {
                         <span className="product-name-cell">{product.name}</span>
                         {' '}
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
-                        {product.baseProductId && (
-                          <span
-                            title="Linked to another price batch of this same product"
-                            style={{ fontSize: 11, marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: 'var(--surface-2, #e9f0fa)', color: 'var(--brand)' }}
-                          >
-                            linked
-                          </span>
-                        )}
+                        <BatchTag product={product} />
                       </td>
                         <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
                         <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>

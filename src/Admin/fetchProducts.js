@@ -6,6 +6,7 @@ import { IconRefresh, IconBarChart, IconSave, IconPlus, IconX, IconCheck, IconAl
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { getBatchCode } from '../utils/productBatches';
+import BatchTag from './batchTag';
 import { UserContext } from '../Auth/userContext';
 import { logActivity, fieldChanges, describeChanges, logExport } from '../utils/activityLog';
 
@@ -1036,7 +1037,10 @@ const FetchProducts = () => {
                           className="edit-input"
                         />
                       ) : (
-                        <span className="product-name-cell cell-wrap">{product.name}</span>
+                        <>
+                          <span className="product-name-cell cell-wrap">{product.name}</span>
+                          <BatchTag product={product} />
+                        </>
                       )}
                     </td>
                     <td>
@@ -1240,6 +1244,7 @@ const FetchProducts = () => {
                     </td>
                     <td>
                       <span className="product-name-cell cell-wrap">{product.name}</span>
+                        <BatchTag product={product} />
                     </td>
                     <td>
                       <span className="type-cell">{product.productType}</span>

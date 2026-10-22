@@ -588,8 +588,10 @@ const RemainingProducts = () => {
 
       // Determine starting balance.
       // If we have stock check anchors, start from 0 and let the first check reset it.
-      // If no checks, use product.quantity as the known current baseline and walk backwards
-      // to find the initial balance: initialQty = product.quantity + allSales - allRestocks.
+      // If no checks, walk backwards from today's remaining stock (the Stock
+      // Checker's number) to find the initial balance. product.quantity alone
+      // isn't today's stock — sales are never subtracted from it — so using it
+      // made a never-checked batch end on its stocked-in total even when sold out.
       const hasChecks = events.some(e => e.isCheckEvent);
       let balance = 0;
       let balanceKnown = false;
@@ -597,7 +599,7 @@ const RemainingProducts = () => {
         const totalSales    = events.filter(e => e.type === 'Sale').reduce((s, e) => s + Math.abs(e.qty), 0);
         const totalUsed     = events.filter(e => e.type === 'Used').reduce((s, e) => s + Math.abs(e.qty), 0);
         const totalRestocks = events.filter(e => e.type === 'Restock').reduce((s, e) => s + e.qty, 0);
-        balance = toNumber(product.quantity) + totalSales + totalUsed - totalRestocks;
+        balance = getExpectedRemaining(product) + totalSales + totalUsed - totalRestocks;
         balanceKnown = true;
       }
 
@@ -639,7 +641,7 @@ const RemainingProducts = () => {
       setProductHistoryEntries(walked);
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
-  }, [showError, isStockLikeStatus, getProductKey]);
+  }, [showError, isStockLikeStatus, getProductKey, getExpectedRemaining]);
 
   // Removes a mistaken Stock Check / Inaccurate Check entry from the audit
   // log. This only cleans up the history timeline — it does not touch the

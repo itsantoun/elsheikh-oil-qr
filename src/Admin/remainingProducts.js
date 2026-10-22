@@ -460,7 +460,9 @@ const RemainingProducts = () => {
       if (soldSnap.exists()) {
         Object.values(soldSnap.val()).forEach(item => {
           if (isStockLikeStatus(item.paymentStatus)) return;
-          if (item.barcode !== product.id && item.productId !== product.id) return;
+          // By productId when present — a shared barcode would otherwise pull
+          // another price batch's sales into this one's history.
+          if (getProductKey(item) !== product.id) return;
           events.push({
             date: item.dateScanned || item.createdAt || null,
             type: 'Sale',
@@ -507,7 +509,9 @@ const RemainingProducts = () => {
       // All restocks (transactions) for this product — all statuses
       if (txSnap.exists()) {
         Object.values(txSnap.val()).forEach(tx => {
-          if (tx.barcode !== product.id && tx.productId !== product.id) return;
+          // A restock confirmed at a new price lands in the batch recorded as
+          // resolvedProductId, not the product it was entered against.
+          if (String(tx.resolvedProductId || getProductKey(tx)) !== product.id) return;
           events.push({
             date: tx.dateScanned || null,
             type: 'Restock',
@@ -635,7 +639,7 @@ const RemainingProducts = () => {
       setProductHistoryEntries(walked);
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
-  }, [showError, isStockLikeStatus]);
+  }, [showError, isStockLikeStatus, getProductKey]);
 
   // Removes a mistaken Stock Check / Inaccurate Check entry from the audit
   // log. This only cleans up the history timeline — it does not touch the
@@ -1307,7 +1311,8 @@ const RemainingProducts = () => {
             : productScope(p) !== 'maghsal';
           return inGroup && (
             p.name?.toLowerCase().includes(searchText) ||
-            p.id?.toLowerCase().includes(searchText)
+            p.id?.toLowerCase().includes(searchText) ||
+            String(getBatchCode(p)).toLowerCase().includes(searchText)
           );
         })
       : [];
@@ -1368,7 +1373,8 @@ const RemainingProducts = () => {
                   onMouseLeave={e => e.currentTarget.style.background = '#fff'}
                 >
                   <strong>{p.name}</strong>
-                  <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>— {p.id}</span>
+                  <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>— {getBatchCode(p)} · ${toNumber(p.itemCost).toFixed(2)}</span>
+                  <BatchTag product={p} />
                 </div>
               ))}
             </div>
@@ -1393,7 +1399,10 @@ const RemainingProducts = () => {
               <div style={{ flex: 1, minWidth: 140, background: '#f8f9fa', borderRadius: 10, padding: '12px 16px', border: '1px solid #dee2e6' }}>
                 <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Product</div>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{historySelectedProduct.name}</div>
-                <div style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>{historySelectedProduct.id}</div>
+                <div style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>
+                  {getBatchCode(historySelectedProduct)} · ${toNumber(historySelectedProduct.itemCost).toFixed(2)}
+                  <BatchTag product={historySelectedProduct} />
+                </div>
               </div>
               <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '2px solid #198754' }}>
                 <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Current Stock</div>

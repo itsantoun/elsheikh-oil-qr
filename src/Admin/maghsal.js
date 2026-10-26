@@ -1101,6 +1101,7 @@ const Maghsal = () => {
                 <th className="text-right">Qty</th>
                 <th className="text-right">Charges</th>
                 <th>Status</th>
+                <th>Remarks</th>
                 <th>Actions</th>
                 <th>Check</th>
               </tr>
@@ -1132,6 +1133,7 @@ const Maghsal = () => {
                     <td>
                       <span className={`status-badge status-${(e.paymentStatus || '').toLowerCase()}`}>{e.paymentStatus || 'N/A'}</span>
                     </td>
+                    <td><span className="cell-clip-sm" title={e.remark || ''}>{e.remark || '—'}</span></td>
                     <td>
                       <div className="action-buttons">
                         <button className="btn-small btn-primary" onClick={() => openEditModal(e)} title="Edit"><IconEdit /></button>

@@ -482,6 +482,12 @@ const Maghsal = () => {
       const updates = {};
       writeIds.forEach((id) => {
         updates[`maghsalEntries/${id}/paymentStatus`] = status;
+        // Free charges 0, like the other pages.
+        if (status === 'Free') {
+          updates[`maghsalEntries/${id}/price`] = 0;
+          updates[`maghsalEntries/${id}/servicePrice`] = 0;
+          updates[`maghsalEntries/${id}/totalPrice`] = 0;
+        }
       });
       Object.assign(updates, activityUpdate(user, {
         section: 'Maghsal',
@@ -611,7 +617,21 @@ const Maghsal = () => {
     setFormStockPurchasingPrice(p ? String(toNumber(p.purchasingPrice)) : '');
   };
 
-  const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); setFormBatchId(''); };
+  // Free always charges 0, like the other pages. The price typed before
+  // switching to Free comes back if the status is changed again.
+  const [priceBeforeFree, setPriceBeforeFree] = useState(null);
+  const handlePaymentStatusChange = (status) => {
+    if (status === 'Free' && formPaymentStatus !== 'Free') {
+      setPriceBeforeFree(formServicePrice);
+      setFormServicePrice('0');
+    } else if (status !== 'Free' && formPaymentStatus === 'Free' && priceBeforeFree != null) {
+      setFormServicePrice(priceBeforeFree);
+      setPriceBeforeFree(null);
+    }
+    setFormPaymentStatus(status);
+  };
+
+  const closeAddModal = () => { setShowAddModal(false); setEditingEntryId(null); setFormBatchId(''); setPriceBeforeFree(null); };
 
 
 
@@ -731,14 +751,14 @@ const Maghsal = () => {
 
     setIsSaving(true);
     try {
-      const servicePrice = toNumber(formServicePrice);
+      const servicePrice = formPaymentStatus === 'Free' ? 0 : toNumber(formServicePrice);
       const qty = toNumber(formQuantity);
 
       const consumablesUsed = selectedProduct ? [{
         productId: selectedProduct.id,
         name: selectedProduct.name || 'Unknown',
         quantity: qty,
-        unitCost: toNumber(selectedProduct.itemCost),
+        unitCost: formPaymentStatus === 'Free' ? 0 : toNumber(selectedProduct.itemCost),
         purchasingPrice: toNumber(selectedProduct.purchasingPrice),
       }] : [];
 
@@ -811,7 +831,7 @@ const Maghsal = () => {
 
     setIsSaving(true);
     try {
-      const servicePrice = toNumber(formServicePrice);
+      const servicePrice = formPaymentStatus === 'Free' ? 0 : toNumber(formServicePrice);
       const qty = toNumber(formQuantity);
       const dateISO = (originalEntry && formatDateForInput(originalEntry.date) === formDate)
         ? originalEntry.date
@@ -821,7 +841,7 @@ const Maghsal = () => {
         productId: selectedProduct.id,
         name: selectedProduct.name || 'Unknown',
         quantity: qty,
-        unitCost: toNumber(selectedProduct.itemCost),
+        unitCost: formPaymentStatus === 'Free' ? 0 : toNumber(selectedProduct.itemCost),
         purchasingPrice: toNumber(selectedProduct.purchasingPrice),
       }] : [];
 
@@ -1249,13 +1269,13 @@ const Maghsal = () => {
                 {formPaymentStatus !== 'Stock' && (
                   <div className="form-group">
                     <label className="form-label">Service Price</label>
-                    <input type="number" min="0" step="0.01" value={formServicePrice} onChange={(e) => setFormServicePrice(e.target.value)} className="form-input" disabled={isSaving} />
+                    <input type="number" min="0" step="0.01" value={formServicePrice} onChange={(e) => setFormServicePrice(e.target.value)} className="form-input" disabled={isSaving || formPaymentStatus === 'Free'} />
                   </div>
                 )}
 
                 <div className="form-group">
                   <label className="form-label">Payment Status</label>
-                  <select value={formPaymentStatus} onChange={(e) => setFormPaymentStatus(e.target.value)} className="form-select" disabled={isSaving}>
+                  <select value={formPaymentStatus} onChange={(e) => handlePaymentStatusChange(e.target.value)} className="form-select" disabled={isSaving}>
                     <option value="Paid">Paid</option>
                     <option value="Unpaid">Unpaid</option>
                     <option value="Hold">Hold</option>

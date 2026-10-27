@@ -442,7 +442,20 @@ const RemainingProducts = () => {
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
+  // Every price batch of `product` (the original plus its new-price copies),
+  // oldest first — Stock History shows them as one product.
+  const getHistoryGroup = useCallback((product) => {
+    if (!product) return [];
+    const key = getBatchGroupKey(product);
+    const group = products
+      .filter(p => getBatchGroupKey(p) === key)
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    return group.length ? group : [product];
+  }, [products]);
+
   const fetchProductHistory = useCallback(async (product) => {
+    const batches = getHistoryGroup(product);
+    const ids = new Set(batches.map(b => b.id));
     setProductHistoryLoading(true);
     setProductHistoryEntries([]);
     setMonthlySummary([]);
@@ -462,8 +475,9 @@ const RemainingProducts = () => {
           if (isStockLikeStatus(item.paymentStatus)) return;
           // By productId when present — a shared barcode would otherwise pull
           // another price batch's sales into this one's history.
-          if (getProductKey(item) !== product.id) return;
+          if (!ids.has(getProductKey(item))) return;
           events.push({
+            batchId: getProductKey(item),
             date: item.dateScanned || item.createdAt || null,
             type: 'Sale',
             qty: -(toNumber(item.quantity)),
@@ -481,8 +495,9 @@ const RemainingProducts = () => {
           const goodList = Array.isArray(entry.goodsSold) ? entry.goodsSold : [];
 
           conList.forEach(line => {
-            if (line.productId !== product.id) return;
+            if (!ids.has(line.productId)) return;
             events.push({
+              batchId: line.productId,
               date,
               type: 'Used',
               qty: -(toNumber(line.quantity)),
@@ -493,8 +508,9 @@ const RemainingProducts = () => {
           });
 
           goodList.forEach(line => {
-            if (line.productId !== product.id) return;
+            if (!ids.has(line.productId)) return;
             events.push({
+              batchId: line.productId,
               date,
               type: 'Sale',
               qty: -(toNumber(line.quantity)),
@@ -511,8 +527,10 @@ const RemainingProducts = () => {
         Object.values(txSnap.val()).forEach(tx => {
           // A restock confirmed at a new price lands in the batch recorded as
           // resolvedProductId, not the product it was entered against.
-          if (String(tx.resolvedProductId || getProductKey(tx)) !== product.id) return;
+          const txBatchId = String(tx.resolvedProductId || getProductKey(tx));
+          if (!ids.has(txBatchId)) return;
           events.push({
+            batchId: txBatchId,
             date: tx.dateScanned || null,
             type: 'Restock',
             qty: toNumber(tx.quantity),
@@ -527,10 +545,11 @@ const RemainingProducts = () => {
         Object.entries(historySnap.val()).forEach(([monthKey, monthData]) => {
           if (!monthData || typeof monthData !== 'object') return;
           Object.entries(monthData).forEach(([entryKey, entry]) => {
-            if (entry.productId !== product.id) return;
+            if (!ids.has(entry.productId)) return;
             const historyKey = { monthKey, key: entryKey };
             if (entry.status === 'accurate') {
               events.push({
+                batchId: entry.productId,
                 date: entry.checkedAt,
                 type: 'Stock Check',
                 qty: null,
@@ -542,6 +561,7 @@ const RemainingProducts = () => {
               });
             } else if (entry.status === 'inaccurate') {
               events.push({
+                batchId: entry.productId,
                 date: entry.checkedAt,
                 type: 'Inaccurate Check',
                 qty: 0,
@@ -553,6 +573,7 @@ const RemainingProducts = () => {
               });
             } else if (entry.status === 'held') {
               events.push({
+                batchId: entry.productId,
                 date: entry.checkedAt,
                 type: 'Held',
                 qty: 0,
@@ -562,6 +583,7 @@ const RemainingProducts = () => {
               });
             } else if (entry.status === 'restored') {
               events.push({
+                batchId: entry.productId,
                 date: entry.checkedAt,
                 type: 'Restored',
                 qty: 0,
@@ -571,6 +593,7 @@ const RemainingProducts = () => {
               });
             } else if (entry.status === 'deleted') {
               events.push({
+                batchId: entry.productId,
                 date: entry.checkedAt,
                 type: 'Deleted',
                 qty: 0,
@@ -586,33 +609,44 @@ const RemainingProducts = () => {
       // Sort all events ascending by date
       events.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
 
-      // Determine starting balance.
-      // If we have stock check anchors, start from 0 and let the first check reset it.
-      // If no checks, walk backwards from today's remaining stock (the Stock
-      // Checker's number) to find the initial balance. product.quantity alone
-      // isn't today's stock — sales are never subtracted from it — so using it
-      // made a never-checked batch end on its stocked-in total even when sold out.
-      const hasChecks = events.some(e => e.isCheckEvent);
-      let balance = 0;
-      let balanceKnown = false;
-      if (!hasChecks) {
-        const totalSales    = events.filter(e => e.type === 'Sale').reduce((s, e) => s + Math.abs(e.qty), 0);
-        const totalUsed     = events.filter(e => e.type === 'Used').reduce((s, e) => s + Math.abs(e.qty), 0);
-        const totalRestocks = events.filter(e => e.type === 'Restock').reduce((s, e) => s + e.qty, 0);
-        balance = getExpectedRemaining(product) + totalSales + totalUsed - totalRestocks;
-        balanceKnown = true;
-      }
+      // Each price batch keeps its own running balance — a stock check sets
+      // only its own batch — and the timeline shows their total.
+      // A batch with stock checks starts unknown until its first check. One
+      // without checks walks backwards from today's remaining stock (the Stock
+      // Checker's number); products.quantity alone isn't today's stock since
+      // sales are never subtracted from it.
+      const balances = {};
+      const known = {};
+      batches.forEach(b => {
+        const own = events.filter(e => e.batchId === b.id);
+        if (own.some(e => e.isCheckEvent)) {
+          balances[b.id] = 0;
+          known[b.id] = false;
+          return;
+        }
+        const out = own.filter(e => e.type === 'Sale' || e.type === 'Used').reduce((s, e) => s + Math.abs(e.qty), 0);
+        const restocked = own.filter(e => e.type === 'Restock').reduce((s, e) => s + e.qty, 0);
+        balances[b.id] = getExpectedRemaining(b) + out - restocked;
+        known[b.id] = true;
+      });
+      const total = () => batches.reduce((s, b) => s + balances[b.id], 0);
+      const allKnown = () => batches.every(b => known[b.id]);
+      const priceLabel = (id) => {
+        if (batches.length < 2) return null;
+        const b = batches.find(x => x.id === id);
+        return b ? `$${toNumber(b.itemCost).toFixed(2)}` : null;
+      };
 
       // Forward walk — compute stockAfter and balanceBefore for every event
       const walked = events.map(event => {
-        const balanceBefore = balance;
+        const balanceBefore = total();
         if (event.isCheckEvent) {
-          balance = event.setTo;
-          balanceKnown = true;
+          balances[event.batchId] = event.setTo;
+          known[event.batchId] = true;
         } else if (!event.isInfoEvent) {
-          balance += (event.qty || 0);
+          balances[event.batchId] += (event.qty || 0);
         }
-        return { ...event, balanceBefore, stockAfter: balance, balanceKnown };
+        return { ...event, priceLabel: priceLabel(event.batchId), balanceBefore, stockAfter: total(), balanceKnown: allKnown() };
       });
 
       // Build monthly summary
@@ -641,7 +675,7 @@ const RemainingProducts = () => {
       setProductHistoryEntries(walked);
     } catch (err) { console.error(err); showError('Failed to load product history.'); }
     finally { setProductHistoryLoading(false); }
-  }, [showError, isStockLikeStatus, getProductKey, getExpectedRemaining]);
+  }, [showError, isStockLikeStatus, getProductKey, getExpectedRemaining, getHistoryGroup]);
 
   // Removes a mistaken Stock Check / Inaccurate Check entry from the audit
   // log. This only cleans up the history timeline — it does not touch the
@@ -1306,18 +1340,28 @@ const RemainingProducts = () => {
 
   const renderHistoryTab = () => {
     const searchText = historySearch.trim().toLowerCase();
-    const suggestions = searchText
-      ? products.filter(p => {
-          const inGroup = stockGroup === 'maghsal'
-            ? productScope(p) === 'maghsal'
-            : productScope(p) !== 'maghsal';
-          return inGroup && (
-            p.name?.toLowerCase().includes(searchText) ||
-            p.id?.toLowerCase().includes(searchText) ||
-            String(getBatchCode(p)).toLowerCase().includes(searchText)
-          );
-        })
-      : [];
+    // One suggestion per product: price batches collapse onto the original
+    // (or the oldest batch, if the original is gone).
+    const suggestions = [];
+    if (searchText) {
+      const seen = new Set();
+      products.forEach(p => {
+        const inGroup = stockGroup === 'maghsal'
+          ? productScope(p) === 'maghsal'
+          : productScope(p) !== 'maghsal';
+        const matches = inGroup && (
+          p.name?.toLowerCase().includes(searchText) ||
+          p.id?.toLowerCase().includes(searchText) ||
+          String(getBatchCode(p)).toLowerCase().includes(searchText)
+        );
+        const key = getBatchGroupKey(p);
+        if (!matches || seen.has(key)) return;
+        seen.add(key);
+        suggestions.push(getHistoryGroup(p)[0]);
+      });
+    }
+    const groupPrices = (group) => [...new Set(group.map(b => `$${toNumber(b.itemCost).toFixed(2)}`))].join(' / ');
+    const historyGroup = getHistoryGroup(historySelectedProduct);
 
     const fromMs = historyDateFrom ? new Date(historyDateFrom).setHours(0, 0, 0, 0) : null;
     const toMs   = historyDateTo   ? new Date(historyDateTo).setHours(23, 59, 59, 999) : null;
@@ -1340,7 +1384,7 @@ const RemainingProducts = () => {
     const latestHistoryEntry  = productHistoryEntries[0];
     const expectedNow         = latestHistoryEntry && latestHistoryEntry.balanceKnown
       ? latestHistoryEntry.stockAfter
-      : (historySelectedProduct ? getExpectedRemaining(historySelectedProduct) : 0);
+      : historyGroup.reduce((sum, b) => sum + getExpectedRemaining(b), 0);
     const movementHistoryLabel = historyIsMaghsal ? 'Used' : 'Sold';
     const movementHistoryTotal = historyIsMaghsal ? totalUsedAllTime : totalSoldAllTime;
 
@@ -1375,8 +1419,7 @@ const RemainingProducts = () => {
                   onMouseLeave={e => e.currentTarget.style.background = '#fff'}
                 >
                   <strong>{p.name}</strong>
-                  <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>— {getBatchCode(p)} · ${toNumber(p.itemCost).toFixed(2)}</span>
-                  <BatchTag product={p} />
+                  <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>— {getBatchCode(p)} · {groupPrices(getHistoryGroup(p))}</span>
                 </div>
               ))}
             </div>
@@ -1402,8 +1445,8 @@ const RemainingProducts = () => {
                 <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Product</div>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{historySelectedProduct.name}</div>
                 <div style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>
-                  {getBatchCode(historySelectedProduct)} · ${toNumber(historySelectedProduct.itemCost).toFixed(2)}
-                  <BatchTag product={historySelectedProduct} />
+                  {getBatchCode(historySelectedProduct)} · {groupPrices(historyGroup)}
+                  {historyGroup.length > 1 && ` (${historyGroup.length} prices combined)`}
                 </div>
               </div>
               <div style={{ minWidth: 120, background: '#fff', borderRadius: 10, padding: '12px 16px', border: '2px solid #198754' }}>
@@ -1542,7 +1585,10 @@ const RemainingProducts = () => {
                           return (
                           <tr key={i} style={{ backgroundColor: rowBg }}>
                             <td><span className="date-cell">{formatDate(entry.date)}</span></td>
-                            <td>{typeBadge()}</td>
+                            <td>
+                              {typeBadge()}
+                              {entry.priceLabel && <span style={{ color: '#888', fontSize: 12, marginLeft: 6 }}>{entry.priceLabel}</span>}
+                            </td>
                             <td className="text-right">
                               {entry.isCheckEvent ? (
                                 <span style={{ color: '#155724', fontWeight: 700 }}>Set to {entry.setTo}</span>

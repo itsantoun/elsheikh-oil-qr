@@ -25,6 +25,22 @@ import { logActivity } from '../utils/activityLog';
 // stockArchives/{archiveId}              — archived snapshots before reset
 // ─────────────────────────────────────────────────────────────────────────────
 
+// One entry per product: every price batch sharing a group key (the
+// original plus its new-price copies), oldest first. The Stock Checker and
+// Pending Review tabs show each group as a single row.
+const groupBatches = (list) => {
+  const map = new Map();
+  list.forEach((p) => {
+    const key = getBatchGroupKey(p);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(p);
+  });
+  return [...map.entries()].map(([key, batches]) => {
+    const sorted = [...batches].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    return { key, root: sorted.find((b) => b.id === key) || sorted[0], batches: sorted };
+  });
+};
+
 const RemainingProducts = () => {
   const { user } = useContext(UserContext);
   const [confirm, confirmDialog] = useConfirmDialog();
@@ -42,7 +58,9 @@ const RemainingProducts = () => {
   const [isLoading, setIsLoading]               = useState(false);
   const [isRestoring, setIsRestoring]           = useState(false);
 
+  // countedQty / checkDate are keyed by product group key (see groupBatches).
   const [countedQty, setCountedQty] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [editingQtyId, setEditingQtyId] = useState(null);
   const [editQtyValue, setEditQtyValue] = useState('');
   const [checkDate, setCheckDate]   = useState({});
@@ -201,11 +219,6 @@ const RemainingProducts = () => {
     const scope = product ? productScope(product) : stockGroup;
     return scope === 'maghsal' ? 'Used Since Check' : 'Sold Since Check';
   }, [productScope, stockGroup]);
-
-  const hasPositiveExpectedStock = useCallback(
-    (product) => getExpectedRemaining(product) > 0,
-    [getExpectedRemaining]
-  );
 
   // Whether a product belongs to the currently-active top-level stock group
   // (Oil & Filter vs. Maghsal). Shared by the header summary cards and the
@@ -415,30 +428,29 @@ const RemainingProducts = () => {
       return productScope(p) === scopeFilter;
     };
 
-    // Within Maghsal, products with Used movement since the last check live
-    // only in the Used tab — All Items excludes them entirely, mirroring the
-    // Maghsal page's All/Used split.
-    const inUsedFilter = (p) => {
-      if (stockGroup !== 'maghsal') return true;
-      const isUsed = toNumber(usedTotals[p.id]) > 0;
-      return usedFilter === 'used' ? isUsed : !isUsed;
-    };
-
-    // All products show by default, including zero-stock ones — "Zero Stock"
-    // is now an opt-in narrowing filter (for restock review) rather than the
-    // thing you have to click to stop items from disappearing. Held products
-    // are excluded here (they live in the Hold tab), but stay flagged rather
-    // than deleted — only the Delete button removes a product for real.
-    const activeProducts = products.filter(p => !p.held);
-    const baseProducts = showZeroStock
-      ? activeProducts.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p) && !hasPositiveExpectedStock(p))
-      : activeProducts.filter(p => inGroup(p) && inScope(p) && inUsedFilter(p));
-    if (!searchTerm.trim()) { setFilteredProducts(baseProducts); return; }
-    const t = searchTerm.toLowerCase();
-    setFilteredProducts(baseProducts.filter(p =>
-      p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
-    ));
-  }, [searchTerm, products, showZeroStock, getExpectedRemaining, hasPositiveExpectedStock, scopeFilter, stockGroup, productScope, usedFilter, usedTotals]);
+    // Filters apply to the whole product (all its price batches together):
+    // - Maghsal: products with Used movement since the last check live only
+    //   in the Used tab — All Items excludes them, mirroring the Maghsal
+    //   page's All/Used split.
+    // - "Zero Stock" narrows to products whose total expected stock is 0 or
+    //   less (for restock review); all products show by default.
+    // - Search matches any batch's name, barcode, id or type.
+    // Held batches are excluded here (they live in the Hold tab), but stay
+    // flagged rather than deleted — only the Delete button removes a product.
+    const t = searchTerm.trim().toLowerCase();
+    const kept = groupBatches(products.filter(p => !p.held && inGroup(p) && inScope(p))).filter(({ batches }) => {
+      if (stockGroup === 'maghsal') {
+        const isUsed = batches.some(b => toNumber(usedTotals[b.id]) > 0);
+        if (usedFilter === 'used' ? !isUsed : isUsed) return false;
+      }
+      if (showZeroStock && batches.reduce((sum, b) => sum + getExpectedRemaining(b), 0) > 0) return false;
+      return !t || batches.some(p =>
+        p.name?.toLowerCase().includes(t) || p.id?.toLowerCase().includes(t) ||
+        String(getBatchCode(p)).toLowerCase().includes(t) || p.productType?.toLowerCase().includes(t)
+      );
+    });
+    setFilteredProducts(kept.flatMap(g => g.batches));
+  }, [searchTerm, products, showZeroStock, getExpectedRemaining, scopeFilter, stockGroup, productScope, usedFilter, usedTotals]);
 
   // ── History fetch ──────────────────────────────────────────────────────────
 
@@ -818,27 +830,19 @@ const RemainingProducts = () => {
 
   // ── Actions: scan modal ────────────────────────────────────────────────────
 
+  const resetScan = () => {
+    setScannedProduct(null); setScanQty(''); setScanDate(''); setScannerPaused(false);
+    setScanStatus('Align barcode within the frame.');
+  };
+
   const handleScanAccurate = async () => {
     const counted = parseFloat(scanQty);
     if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
     try {
-      const expectedQty = getExpectedRemaining(scannedProduct);
-      await update(ref(database, `products/${scannedProduct.id}`), { quantity: counted });
-      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${scannedProduct.name}" marked accurate, quantity set to ${counted} (expected ${expectedQty})`, details: { id: scannedProduct.id, expected: expectedQty, counted } });
-      const checkedAt = dateStrToISO(scanDate || todayStr());
-      await update(ref(database, `stockChecks/${scannedProduct.id}`), {
-        productName: scannedProduct.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'accurate', checkedAt,
-      });
-      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'accurate', checkedAt);
-      setProducts(prev => prev.map(p => p.id === scannedProduct.id ? { ...p, quantity: counted } : p));
-      setSoldTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
-      setUsedTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
-      setLegacyAdjustedUsedTotals(prev => { const n = { ...prev }; delete n[scannedProduct.id]; return n; });
-      setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
-      showSuccess(`✓ "${scannedProduct.name}" updated to ${counted}.`);
-      setScannedProduct(null); setScanQty(''); setScanDate(''); setScannerPaused(false);
-      setScanStatus('Align barcode within the frame.');
+      const group = groupOf(scannedProduct);
+      await checkGroup(group, counted, 'accurate', dateStrToISO(scanDate || todayStr()));
+      showSuccess(`✓ "${group.root.name}" updated to ${counted}.`);
+      resetScan();
     } catch (err) { console.error(err); showError('Failed to update.'); }
   };
 
@@ -846,46 +850,37 @@ const RemainingProducts = () => {
     const counted = parseFloat(scanQty);
     if (isNaN(counted) || scanQty === '') { showError('Enter a counted quantity first.'); return; }
     try {
-      const expectedQty = getExpectedRemaining(scannedProduct);
-      const checkedAt = dateStrToISO(scanDate || todayStr());
-      const checkData = {
-        productName: scannedProduct.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'pending', checkedAt,
-      };
-      await update(ref(database, `stockChecks/${scannedProduct.id}`), checkData);
-      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${scannedProduct.name}" flagged inaccurate — counted ${counted}, expected ${expectedQty}`, details: { id: scannedProduct.id, expected: expectedQty, counted } });
-      await pushHistory(scannedProduct.id, scannedProduct.name, expectedQty, counted, 'inaccurate', checkedAt);
-      setPendingChecks(prev => {
-        const exists = prev.find(c => c.id === scannedProduct.id);
-        if (exists) return prev.map(c => c.id === scannedProduct.id ? { id: scannedProduct.id, ...checkData } : c);
-        return [...prev, { id: scannedProduct.id, ...checkData }];
-      });
-      setAllCheckedProductIds(prev => new Set([...prev, scannedProduct.id]));
-      showSuccess(`"${scannedProduct.name}" flagged for reconfirmation.`);
-      setScannedProduct(null); setScanQty(''); setScanDate(''); setScannerPaused(false);
-      setScanStatus('Align barcode within the frame.');
+      const group = groupOf(scannedProduct);
+      await checkGroup(group, counted, 'pending', dateStrToISO(scanDate || todayStr()));
+      showSuccess(`"${group.root.name}" flagged for reconfirmation.`);
+      resetScan();
     } catch (err) { console.error(err); showError('Failed to save.'); }
   };
 
   // ── Actions: hold ─────────────────────────────────────────────────────────
 
-  const handleHoldProduct = async (product) => {
+  // Holds every price batch of the product.
+  const handleHoldProduct = async (group) => {
+    const { root, batches } = group;
     const confirmed = await confirm({
       title: 'Hold Product?',
-      message: `Hold "${product.name}"? It will move to the Held section in Product Management.`,
+      message: `Hold "${root.name}"${batches.length > 1 ? ` (all ${batches.length} prices)` : ''}? It will move to the Held section in Product Management.`,
       confirmLabel: 'Yes, Hold',
       danger: false,
     });
     if (!confirmed) return;
     try {
       const heldAt = new Date().toISOString();
-      await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'held', heldAt);
-      // Flag it as held rather than deleting it — the product record stays
-      // in `products/` untouched; only the Delete button removes a product.
-      await update(ref(database, `products/${product.id}`), { held: true, heldDate: heldAt });
-      logActivity(user, { section: 'Products', action: 'Held', summary: `Put product "${product.name}" on hold`, details: { id: product.id } });
-      setProducts(prev => prev.map(p => (p.id === product.id ? { ...p, held: true, heldDate: heldAt } : p)));
-      showSuccess(`"${product.name}" moved to Held.`);
+      for (const product of batches) {
+        await pushHistory(product.id, product.name, toNumber(product.quantity), toNumber(product.quantity), 'held', heldAt);
+        // Flag it as held rather than deleting it — the product record stays
+        // in `products/` untouched; only the Delete button removes a product.
+        await update(ref(database, `products/${product.id}`), { held: true, heldDate: heldAt });
+      }
+      const ids = new Set(batches.map(b => b.id));
+      logActivity(user, { section: 'Products', action: 'Held', summary: `Put product "${root.name}" on hold`, details: { id: root.id, ids: [...ids] } });
+      setProducts(prev => prev.map(p => (ids.has(p.id) ? { ...p, held: true, heldDate: heldAt } : p)));
+      showSuccess(`"${root.name}" moved to Held.`);
     } catch (err) { console.error(err); showError('Failed to hold product.'); }
   };
 
@@ -916,52 +911,98 @@ const RemainingProducts = () => {
     } catch (err) { console.error(err); showError('Failed to update quantity.'); }
   };
 
-  const handleAccurate = async (product) => {
-    const counted = parseFloat(countedQty[product.id]);
-    if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
+  // The non-held price batches of `product`'s group, as a groupBatches entry.
+  const groupOf = (product) => {
+    const key = getBatchGroupKey(product);
+    return groupBatches(products.filter(p => !p.held && getBatchGroupKey(p) === key))[0]
+      || { key, root: product, batches: [product] };
+  };
+
+  // Splits a physical count for the whole product across its price batches.
+  // Older stock is sold first, so what's left on the shelf is the newest:
+  // fill the newest batch up to its expected remaining, then the next older
+  // one, and so on; anything beyond every batch's expected stock goes on the
+  // newest.
+  const splitCount = (batches, counted) => {
+    const newestFirst = [...batches].reverse();
+    const split = {};
+    let left = counted;
+    newestFirst.forEach(b => {
+      const take = Math.max(0, Math.min(getExpectedRemaining(b), left));
+      split[b.id] = take;
+      left -= take;
+    });
+    if (left > 0) split[newestFirst[0].id] += left;
+    return split;
+  };
+
+  // Records a check on every batch of `group` — 'accurate' sets each batch's
+  // quantity to its share of `counted`; 'pending' flags it for review. Each
+  // batch keeps its own stockChecks/history record, so per-price stock and
+  // the Stock History timeline stay correct.
+  const checkGroup = async (group, counted, status, checkedAt) => {
+    const { root, batches } = group;
+    const split = splitCount(batches, counted);
+    const expectedById = Object.fromEntries(batches.map(b => [b.id, getExpectedRemaining(b)]));
+    const expected = Object.values(expectedById).reduce((sum, q) => sum + q, 0);
+    const ids = new Set(batches.map(b => b.id));
+
+    for (const b of batches) {
+      const checkData = {
+        productName: b.name, systemQuantity: expectedById[b.id],
+        countedQuantity: split[b.id], status, checkedAt,
+      };
+      if (status === 'accurate') {
+        await update(ref(database, `products/${b.id}`), { quantity: split[b.id] });
+      }
+      await update(ref(database, `stockChecks/${b.id}`), checkData);
+      await pushHistory(b.id, b.name, expectedById[b.id], split[b.id], status === 'accurate' ? 'accurate' : 'inaccurate', checkedAt);
+    }
+
+    const details = { id: root.id, expected, counted, ...(batches.length > 1 ? { split } : {}) };
+    if (status === 'accurate') {
+      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${root.name}" marked accurate, quantity set to ${counted} (expected ${expected})`, details });
+      const without = (prev) => { const n = { ...prev }; ids.forEach(id => delete n[id]); return n; };
+      setProducts(prev => prev.map(p => ids.has(p.id) ? { ...p, quantity: split[p.id] } : p));
+      setSoldTotals(without);
+      setUsedTotals(without);
+      setLegacyAdjustedUsedTotals(without);
+      setPendingChecks(prev => prev.filter(c => !ids.has(c.id)));
+    } else {
+      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${root.name}" flagged inaccurate — counted ${counted}, expected ${expected}`, details });
+      setPendingChecks(prev => [
+        ...prev.filter(c => !ids.has(c.id)),
+        ...batches.map(b => ({
+          id: b.id, productName: b.name, systemQuantity: expectedById[b.id],
+          countedQuantity: split[b.id], status: 'pending', checkedAt,
+        })),
+      ]);
+    }
+    setAllCheckedProductIds(prev => new Set([...prev, ...ids]));
+  };
+
+  const clearRowInputs = (key) => {
+    setCountedQty(prev => { const n = { ...prev }; delete n[key]; return n; });
+    setCheckDate(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
+  const handleAccurate = async (group) => {
+    const counted = parseFloat(countedQty[group.key]);
+    if (!countedQty[group.key] || isNaN(counted)) { showError(`Enter a counted qty for "${group.root.name}" first.`); return; }
     try {
-      const expectedQty = getExpectedRemaining(product);
-      await update(ref(database, `products/${product.id}`), { quantity: counted });
-      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${product.name}" marked accurate, quantity set to ${counted} (expected ${expectedQty})`, details: { id: product.id, expected: expectedQty, counted } });
-      const checkedAt = dateStrToISO(checkDate[product.id] || todayStr());
-      await update(ref(database, `stockChecks/${product.id}`), {
-        productName: product.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'accurate', checkedAt,
-      });
-      await pushHistory(product.id, product.name, expectedQty, counted, 'accurate', checkedAt);
-      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, quantity: counted } : p));
-      setSoldTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      setUsedTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      setLegacyAdjustedUsedTotals(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      setCheckDate(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      setAllCheckedProductIds(prev => new Set([...prev, product.id]));
-      showSuccess(`✓ "${product.name}" updated to ${counted}.`);
+      await checkGroup(group, counted, 'accurate', dateStrToISO(checkDate[group.key] || todayStr()));
+      clearRowInputs(group.key);
+      showSuccess(`✓ "${group.root.name}" updated to ${counted}.`);
     } catch (err) { console.error(err); showError('Failed to update stock.'); }
   };
 
-  const handleInaccurate = async (product) => {
-    const counted = parseFloat(countedQty[product.id]);
-    if (!countedQty[product.id] || isNaN(counted)) { showError(`Enter a counted qty for "${product.name}" first.`); return; }
+  const handleInaccurate = async (group) => {
+    const counted = parseFloat(countedQty[group.key]);
+    if (!countedQty[group.key] || isNaN(counted)) { showError(`Enter a counted qty for "${group.root.name}" first.`); return; }
     try {
-      const expectedQty = getExpectedRemaining(product);
-      const checkedAt = dateStrToISO(checkDate[product.id] || todayStr());
-      const checkData = {
-        productName: product.name, systemQuantity: expectedQty,
-        countedQuantity: counted, status: 'pending', checkedAt,
-      };
-      await update(ref(database, `stockChecks/${product.id}`), checkData);
-      logActivity(user, { section: 'Stock', action: 'Stock check', summary: `Stock check: "${product.name}" flagged inaccurate — counted ${counted}, expected ${expectedQty}`, details: { id: product.id, expected: expectedQty, counted } });
-      await pushHistory(product.id, product.name, expectedQty, counted, 'inaccurate', checkedAt);
-      setPendingChecks(prev => {
-        const exists = prev.find(c => c.id === product.id);
-        if (exists) return prev.map(c => c.id === product.id ? { id: product.id, ...checkData } : c);
-        return [...prev, { id: product.id, ...checkData }];
-      });
-      setAllCheckedProductIds(prev => new Set([...prev, product.id]));
-      setCountedQty(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      setCheckDate(prev => { const n = { ...prev }; delete n[product.id]; return n; });
-      showSuccess(`"${product.name}" flagged for reconfirmation.`);
+      await checkGroup(group, counted, 'pending', dateStrToISO(checkDate[group.key] || todayStr()));
+      clearRowInputs(group.key);
+      showSuccess(`"${group.root.name}" flagged for reconfirmation.`);
     } catch (err) { console.error(err); showError('Failed to save check.'); }
   };
 
@@ -1010,6 +1051,179 @@ const RemainingProducts = () => {
     }
   };
 
+  // ── Render: product rows (Check + Pending tabs) ────────────────────────────
+
+  const groupStats = (batches) => batches.reduce((t, b) => ({
+    current: t.current + getCurrentStockForDisplay(b),
+    movement: t.movement + getMovementTotal(b),
+    expected: t.expected + getExpectedRemaining(b),
+  }), { current: 0, movement: 0, expected: 0 });
+
+  // Current Stock with the direct-edit pencil, for a single price batch.
+  const renderEditableStock = (product) => (editingQtyId === product.id ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+      <input
+        type="number" autoFocus value={editQtyValue}
+        onChange={e => setEditQtyValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') saveEditQty(product); if (e.key === 'Escape') cancelEditQty(); }}
+        className="edit-input"
+        style={{ width: 80 }}
+      />
+      <span title="Save">
+        <button className="btn-small btn-success" onClick={() => saveEditQty(product)}><IconSave /></button>
+      </span>
+      <span title="Cancel">
+        <button className="btn-small" onClick={cancelEditQty}><IconX /></button>
+      </span>
+    </div>
+  ) : (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span className="quantity-cell">{getCurrentStockForDisplay(product)}</span>
+      <button
+        className="btn-small" title="Edit quantity directly"
+        onClick={() => startEditQty(product)}
+      ><IconEdit /></button>
+    </span>
+  ));
+
+  // One row per product, with its price batches summed. A product with more
+  // than one price can be expanded to show (and directly edit) each price.
+  const renderGroupRows = (group, { pendingTab = false } = {}) => {
+    const { key, root, batches } = group;
+    const multi = batches.length > 1;
+    const expanded = multi && expandedGroups.has(key);
+    const pendingIds = new Set(pendingChecks.map(c => c.id));
+    const isPending = batches.some(b => pendingIds.has(b.id));
+    const isUnchecked = batches.some(b => !allCheckedProductIds.has(b.id));
+    const isPendingStockIn = batches.some(b => pendingStockInProductIds.has(b.id));
+    const { current, movement, expected } = groupStats(batches);
+    const inputVal = countedQty[key] ?? '';
+    const counted = parseFloat(inputVal);
+    const hasDiff = inputVal !== '' && counted !== expected;
+    const split = multi && inputVal !== '' && !isNaN(counted) ? splitCount(batches, counted) : null;
+    const toggle = () => setExpandedGroups(prev => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key); else n.add(key);
+      return n;
+    });
+    const price = (b) => `$${toNumber(b.itemCost).toFixed(2)}`;
+
+    return (
+      <React.Fragment key={key}>
+        <tr className={isPending ? 'row-warning' : (pendingTab ? 'row-info' : '')}>
+          <td title={getBatchCode(root)}><span className="barcode-cell">{getBatchCode(root)}</span></td>
+          <td title={root.name}>
+            <span className="product-name-cell">{root.name}</span>
+            {' '}
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{[...new Set(batches.map(price))].join(' / ')}</span>
+            {multi ? (
+              <button
+                type="button" onClick={toggle}
+                title={expanded ? 'Hide each price' : 'Show each price'}
+                style={{ fontSize: 11, marginLeft: 6, padding: '1px 6px', borderRadius: 999, border: 'none', cursor: 'pointer', background: 'var(--surface-2, #e9f0fa)', color: 'var(--brand)', whiteSpace: 'nowrap' }}
+              >
+                {expanded ? '▾' : '▸'} {batches.length} prices
+              </button>
+            ) : <BatchTag product={root} />}
+          </td>
+          <td title={root.productType}><span className="type-cell">{root.productType}</span></td>
+          <td className="text-right">
+            {!pendingTab && !multi ? renderEditableStock(root) : <span className="quantity-cell">{current}</span>}
+          </td>
+          <td className="text-right">
+            <span className="quantity-cell" style={{ color: movement > 0 ? '#dc3545' : '#6c757d' }}>{movement}</span>
+          </td>
+          <td className="text-right">
+            <span className="quantity-cell" style={{ fontWeight: 700, color: expected < 0 ? '#dc3545' : '#198754' }}>
+              {expected}
+            </span>
+          </td>
+          <td className="text-right">
+            <input
+              type="number" min="0" placeholder="Enter count" value={inputVal}
+              onChange={e => setCountedQty(prev => ({ ...prev, [key]: e.target.value }))}
+              className="edit-input"
+              style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
+            />
+            {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(counted - expected).toFixed(0)} vs expected</div>}
+            {split && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }} title="How the count is split across prices (newest stock first)">
+                {batches.map(b => `${price(b)}: ${split[b.id]}`).join(' · ')}
+              </div>
+            )}
+            <input
+              type="date" value={checkDate[key] ?? ''}
+              max={todayStr()}
+              onChange={e => setCheckDate(prev => ({ ...prev, [key]: e.target.value }))}
+              style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[key] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
+              title="Select the date you physically checked this product"
+            />
+          </td>
+          <td>
+            {pendingTab ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                {isPending && <span className="status-badge status-stock"><IconAlertTriangle /> Inaccurate</span>}
+                {!isPending && isUnchecked && <span className="status-badge status-stock-confirmed"><IconPackage /> Not Checked</span>}
+                {isPendingStockIn && (
+                  <span className="status-badge status-stock" title="Unconfirmed stock-in transaction awaiting confirmation in Transactions">
+                    <IconClipboard /> Stock-In Pending
+                  </span>
+                )}
+              </div>
+            ) : (isPending
+              ? <span className="status-badge status-stock"><IconAlertTriangle /> Pending</span>
+              : <span className="status-badge status-confirmed"><IconCheck /> OK</span>)}
+          </td>
+          <td>
+            <div className="action-buttons">
+              {/* title on a wrapping span, not just the button — disabled
+                  buttons suppress hover tooltips in some browsers */}
+              <span title="Mark this count as Accurate">
+                <button className="btn-small btn-success" onClick={() => handleAccurate(group)} disabled={!checkDate[key]}><IconCheck /></button>
+              </span>
+              <span title="Flag this count as Inaccurate for review">
+                <button className="btn-small btn-danger" onClick={() => handleInaccurate(group)} disabled={!checkDate[key]}><IconXCircle /></button>
+              </span>
+              <span title="Hold this product (move to Held)">
+                <button className="btn-small btn-warning" onClick={() => handleHoldProduct(group)}><IconPause /></button>
+              </span>
+            </div>
+          </td>
+        </tr>
+        {expanded && batches.map(b => {
+          const bExpected = getExpectedRemaining(b);
+          const bMovement = getMovementTotal(b);
+          return (
+            <tr key={b.id} style={{ backgroundColor: 'var(--surface-2, #f8f9fa)' }}>
+              <td></td>
+              <td>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', paddingLeft: 12 }}>↳ {price(b)}</span>
+                <BatchTag product={b} />
+              </td>
+              <td></td>
+              <td className="text-right">
+                {pendingTab ? <span className="quantity-cell">{getCurrentStockForDisplay(b)}</span> : renderEditableStock(b)}
+              </td>
+              <td className="text-right">
+                <span className="quantity-cell" style={{ color: bMovement > 0 ? '#dc3545' : '#6c757d' }}>{bMovement}</span>
+              </td>
+              <td className="text-right">
+                <span className="quantity-cell" style={{ color: bExpected < 0 ? '#dc3545' : '#198754' }}>{bExpected}</span>
+              </td>
+              <td className="text-right">
+                {split && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>→ {split[b.id]}</span>}
+              </td>
+              <td>
+                {pendingIds.has(b.id) && <span className="status-badge status-stock" style={{ fontSize: 11 }}><IconAlertTriangle /> Pending</span>}
+              </td>
+              <td></td>
+            </tr>
+          );
+        })}
+      </React.Fragment>
+    );
+  };
+
   // ── Render: Check tab ──────────────────────────────────────────────────────
 
   const renderCheckTab = () => (
@@ -1017,7 +1231,7 @@ const RemainingProducts = () => {
       <div className="header-section stock-panel-header">
         <div className="header-left">
           <h2 className="section-title">Stock Checker</h2>
-          <div className="stats-badge">{filteredProducts.length} Products</div>
+          <div className="stats-badge">{filteredGroups.length} Products</div>
           {scopedPendingCount > 0 && (
             <div className="stats-badge badge-amber">
               {scopedPendingCount} Pending
@@ -1083,101 +1297,11 @@ const RemainingProducts = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map(product => {
-                  const isPending        = pendingChecks.some(c => c.id === product.id);
-                  const inputVal         = countedQty[product.id] ?? '';
-                  const movementTotal    = getMovementTotal(product);
-                  const currentStock     = getCurrentStockForDisplay(product);
-                  const expectedRemaining = getExpectedRemaining(product);
-                  const hasDiff          = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
-                  return (
-                    <tr key={product.id} className={isPending ? 'row-warning' : ''}>
-                      <td title={getBatchCode(product)}><span className="barcode-cell">{getBatchCode(product)}</span></td>
-                      <td title={product.name}>
-                        <span className="product-name-cell">{product.name}</span>
-                        {' '}
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
-                        <BatchTag product={product} />
-                      </td>
-                      <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
-                      <td className="text-right">
-                        {editingQtyId === product.id ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
-                            <input
-                              type="number" autoFocus value={editQtyValue}
-                              onChange={e => setEditQtyValue(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') saveEditQty(product); if (e.key === 'Escape') cancelEditQty(); }}
-                              className="edit-input"
-                              style={{ width: 80 }}
-                            />
-                            <span title="Save">
-                              <button className="btn-small btn-success" onClick={() => saveEditQty(product)}><IconSave /></button>
-                            </span>
-                            <span title="Cancel">
-                              <button className="btn-small" onClick={cancelEditQty}><IconX /></button>
-                            </span>
-                          </div>
-                        ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <span className="quantity-cell">{currentStock}</span>
-                            <button
-                              className="btn-small" title="Edit quantity directly"
-                              onClick={() => startEditQty(product)}
-                            ><IconEdit /></button>
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-right">
-                        <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
-                      </td>
-                      <td className="text-right">
-                        <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
-                          {expectedRemaining}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        <input
-                          type="number" min="0" placeholder="Enter count" value={inputVal}
-                          onChange={e => setCountedQty(prev => ({ ...prev, [product.id]: e.target.value }))}
-                          className="edit-input"
-                          style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
-                        />
-                        {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
-                        <input
-                          type="date" value={checkDate[product.id] ?? ''}
-                          max={todayStr()}
-                          onChange={e => setCheckDate(prev => ({ ...prev, [product.id]: e.target.value }))}
-                          style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[product.id] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
-                          title="Select the date you physically checked this product"
-                        />
-                      </td>
-                      <td>
-                        {isPending
-                          ? <span className="status-badge status-stock"><IconAlertTriangle /> Pending</span>
-                          : <span className="status-badge status-confirmed"><IconCheck /> OK</span>}
-                      </td>
-                      <td>
-                        <div className="action-buttons">
-                          {/* title on a wrapping span, not just the button — disabled
-                              buttons suppress hover tooltips in some browsers */}
-                          <span title="Mark this count as Accurate">
-                            <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /></button>
-                          </span>
-                          <span title="Flag this count as Inaccurate for review">
-                            <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /></button>
-                          </span>
-                          <span title="Hold this product (move to Held)">
-                            <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /></button>
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {filteredGroups.map(group => renderGroupRows(group))}
               </tbody>
             </table>
           </div>
-          {filteredProducts.length === 0 && !isLoading && (
+          {filteredGroups.length === 0 && !isLoading && (
             <div className="empty-table">
               <div className="empty-icon"><IconPackage /></div>
               <p>No products found{searchTerm ? ` for "${searchTerm}"` : ''}</p>
@@ -1192,27 +1316,26 @@ const RemainingProducts = () => {
 
   const renderPendingTab = () => {
     const pendingProductIds = new Set(pendingChecks.map(c => c.id));
-    const scopedProducts = scopedProductsForGroup;
     // Pending Review = Inaccurate (flagged wrong count) + Not Checked (no
     // check on record at all) + Stock-In Pending (an "Add Missing Item →
     // Stock" transaction still awaiting confirmation in Transactions). A
-    // product can land here for more than one of these reasons at once.
-    const pendingProducts = scopedProducts.filter(
-      p => pendingProductIds.has(p.id) || !allCheckedProductIds.has(p.id) || pendingStockInProductIds.has(p.id)
-    );
-    const inaccurateCount = pendingChecks.filter(c => {
-      const product = products.find(p => p.id === c.id);
-      return product && inStockGroup(product);
-    }).length;
-    const uncheckedCount  = scopedProducts.filter(p => !allCheckedProductIds.has(p.id)).length;
-    const stockInPendingCount = scopedProducts.filter(p => pendingStockInProductIds.has(p.id)).length;
+    // product can land here for more than one of these reasons at once, and
+    // is listed once with all its prices if any of them qualifies.
+    const groups = groupBatches(scopedProductsForGroup.filter(p => !p.held));
+    const isInaccurate = (g) => g.batches.some(b => pendingProductIds.has(b.id));
+    const isUnchecked = (g) => g.batches.some(b => !allCheckedProductIds.has(b.id));
+    const isStockInPending = (g) => g.batches.some(b => pendingStockInProductIds.has(b.id));
+    const pendingGroups = groups.filter(g => isInaccurate(g) || isUnchecked(g) || isStockInPending(g));
+    const inaccurateCount = groups.filter(isInaccurate).length;
+    const uncheckedCount  = groups.filter(g => !isInaccurate(g) && isUnchecked(g)).length;
+    const stockInPendingCount = groups.filter(isStockInPending).length;
 
     return (
       <div className="stock-tab-panel">
         <div className="header-section stock-panel-header">
           <div className="header-left">
             <h2 className="section-title">Pending Review</h2>
-            <div className="stats-badge badge-amber">{pendingProducts.length} Items</div>
+            <div className="stats-badge badge-amber">{pendingGroups.length} Items</div>
             {inaccurateCount > 0 && (
               <div className="stats-badge badge-red">{inaccurateCount} Inaccurate</div>
             )}
@@ -1250,81 +1373,11 @@ const RemainingProducts = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingProducts.map(product => {
-                    const isPending         = pendingProductIds.has(product.id);
-                    const isPendingStockIn  = pendingStockInProductIds.has(product.id);
-                    const inputVal          = countedQty[product.id] ?? '';
-                    const movementTotal     = getMovementTotal(product);
-                    const currentStock      = getCurrentStockForDisplay(product);
-                    const expectedRemaining = getExpectedRemaining(product);
-                    const hasDiff           = inputVal !== '' && parseFloat(inputVal) !== expectedRemaining;
-                    return (
-                      <tr key={product.id} className={isPending ? 'row-warning' : 'row-info'}>
-                        <td title={getBatchCode(product)}><span className="barcode-cell">{getBatchCode(product)}</span></td>
-                        <td title={product.name}>
-                        <span className="product-name-cell">{product.name}</span>
-                        {' '}
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>${toNumber(product.itemCost).toFixed(2)}</span>
-                        <BatchTag product={product} />
-                      </td>
-                        <td title={product.productType}><span className="type-cell">{product.productType}</span></td>
-                        <td className="text-right"><span className="quantity-cell">{currentStock}</span></td>
-                        <td className="text-right">
-                          <span className="quantity-cell" style={{ color: movementTotal > 0 ? '#dc3545' : '#6c757d' }}>{movementTotal}</span>
-                        </td>
-                        <td className="text-right">
-                          <span className="quantity-cell" style={{ fontWeight: 700, color: expectedRemaining < 0 ? '#dc3545' : '#198754' }}>
-                            {expectedRemaining}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <input
-                            type="number" min="0" placeholder="Enter count" value={inputVal}
-                            onChange={e => setCountedQty(prev => ({ ...prev, [product.id]: e.target.value }))}
-                            className="edit-input"
-                            style={{ width: 90, borderColor: hasDiff ? '#dc3545' : inputVal !== '' ? '#28a745' : undefined }}
-                          />
-                          {hasDiff && <div style={{ fontSize: 11, color: '#dc3545', marginTop: 2 }}>Δ {(parseFloat(inputVal) - expectedRemaining).toFixed(0)} vs expected</div>}
-                          <input
-                            type="date" value={checkDate[product.id] ?? ''}
-                            max={todayStr()}
-                            onChange={e => setCheckDate(prev => ({ ...prev, [product.id]: e.target.value }))}
-                            style={{ marginTop: 4, width: 90, padding: '2px 4px', borderRadius: 4, border: `1px solid ${checkDate[product.id] ? '#ccc' : '#dc3545'}`, fontSize: 11 }}
-                            title="Select the date you physically checked this product"
-                          />
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                            {isPending
-                              ? <span className="status-badge status-stock"><IconAlertTriangle /> Inaccurate</span>
-                              : <span className="status-badge status-stock-confirmed"><IconPackage /> Not Checked</span>}
-                            {isPendingStockIn && (
-                              <span className="status-badge status-stock" title="Unconfirmed stock-in transaction awaiting confirmation in Transactions">
-                                <IconClipboard /> Stock-In Pending
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="action-buttons">
-                            <span title="Mark this count as Accurate">
-                              <button className="btn-small btn-success" onClick={() => handleAccurate(product)} disabled={!checkDate[product.id]}><IconCheck /></button>
-                            </span>
-                            <span title="Flag this count as Inaccurate for review">
-                              <button className="btn-small btn-danger" onClick={() => handleInaccurate(product)} disabled={!checkDate[product.id]}><IconXCircle /></button>
-                            </span>
-                            <span title="Hold this product (move to Held)">
-                              <button className="btn-small btn-warning" onClick={() => handleHoldProduct(product)}><IconPause /></button>
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {pendingGroups.map(group => renderGroupRows(group, { pendingTab: true }))}
                 </tbody>
               </table>
             </div>
-            {pendingProducts.length === 0 && !isLoading && (
+            {pendingGroups.length === 0 && !isLoading && (
               <div className="empty-table">
                 <div className="empty-icon"><IconCheckCircle /></div>
                 <p>All products checked and confirmed!</p>
@@ -2085,10 +2138,13 @@ const RemainingProducts = () => {
   // ── Render: Scanner modal ──────────────────────────────────────────────────
 
   const renderScannerModal = () => {
-    const systemQty = scannedProduct ? getCurrentStockForDisplay(scannedProduct) : 0;
-    const movementSinceCheck = scannedProduct ? getMovementTotal(scannedProduct) : 0;
+    // The scan checks the whole product — every price batch together.
+    const scannedGroup = scannedProduct ? groupOf(scannedProduct) : null;
+    const scannedStats = scannedGroup ? groupStats(scannedGroup.batches) : { current: 0, movement: 0, expected: 0 };
+    const systemQty = scannedStats.current;
+    const movementSinceCheck = scannedStats.movement;
     const movementLabel = scannedProduct ? getMovementLabel(scannedProduct).replace(' Since Check', '') : 'Sold';
-    const expectedQty = scannedProduct ? getExpectedRemaining(scannedProduct) : 0;
+    const expectedQty = scannedStats.expected;
     const enteredQty = toNumber(scanQty);
     const hasEnteredQty = scanQty !== '' && !Number.isNaN(parseFloat(scanQty));
     const qtyDiff = enteredQty - expectedQty;
@@ -2120,8 +2176,11 @@ const RemainingProducts = () => {
               <div style={{ background: '#f8f9fa', borderRadius: 10, padding: 16, border: '1px solid #dee2e6' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>{scannedProduct.name}</div>
-                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{scannedProduct.id}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{scannedGroup.root.name}</div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                      {getBatchCode(scannedGroup.root)}
+                      {scannedGroup.batches.length > 1 && ` · ${scannedGroup.batches.length} prices combined`}
+                    </div>
                     <div style={{ fontSize: 12, color: '#888' }}>{scannedProduct.productType}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -2191,12 +2250,13 @@ const RemainingProducts = () => {
   // the Check / Pending tabs actually list below — previously these summed
   // across both Oil & Filter and Maghsal, which made the tabs look like they
   // were missing products whenever the other group also had pending items.
-  const checkedProductsCount = scopedProductsForGroup.filter(p => allCheckedProductIds.has(p.id)).length;
-  const uncheckedProductsCount = Math.max(scopedProductsForGroup.length - checkedProductsCount, 0);
-  const scopedPendingCount = pendingChecks.filter(c => {
-    const product = products.find(p => p.id === c.id);
-    return product && inStockGroup(product);
-  }).length;
+  // Counted per product (all its prices together), matching the rows below.
+  const scopedGroups = groupBatches(scopedProductsForGroup);
+  const pendingCheckIds = new Set(pendingChecks.map(c => c.id));
+  const checkedProductsCount = scopedGroups.filter(g => g.batches.every(b => allCheckedProductIds.has(b.id))).length;
+  const uncheckedProductsCount = Math.max(scopedGroups.length - checkedProductsCount, 0);
+  const scopedPendingCount = scopedGroups.filter(g => g.batches.some(b => pendingCheckIds.has(b.id))).length;
+  const filteredGroups = groupBatches(filteredProducts);
   const visibleStockQuantity = filteredProducts.reduce((sum, product) => sum + getCurrentStockForDisplay(product), 0);
 
   return (

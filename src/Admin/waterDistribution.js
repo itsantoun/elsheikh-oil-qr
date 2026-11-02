@@ -44,6 +44,10 @@ const WaterDistribution = () => {
 
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
+  // Free-text search across everything known about a customer (phone,
+  // address/building, city, remark, the employees who served them, entry
+  // remarks…) — narrows the table to the customers it matches.
+  const [customerSearch, setCustomerSearch] = useState('');
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
@@ -167,6 +171,8 @@ const WaterDistribution = () => {
             nameArabic: data[k].nameArabic || '',
             phone: data[k].phone || '',
             address: data[k].address || '',
+            city: data[k].city || '',
+            remark: data[k].remark || '',
             clientTypes: data[k].clientTypes || [],
             waterDistributionPricing: data[k].waterDistributionPricing || null,
             pickupWaterDistributionPricing: data[k].pickupWaterDistributionPricing || null,
@@ -253,9 +259,62 @@ const WaterDistribution = () => {
     ? { id: editingEntry.employeeId, label: entryEmployeeName(editingEntry) || 'Unknown (Removed)' }
     : null;
 
+  // ── Smart customer search ────────────────────────
+  // Each matching customer comes with the field(s) that matched, so the
+  // user sees why (e.g. "Phone: 03 12 2376"). Digits are also compared with
+  // spaces/dashes stripped, so "032376" finds "03 2376".
+  const customerSearchMatches = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return null;
+    const qDigits = q.replace(/\D/g, '');
+    const digitsOnly = qDigits.length > 0 && /^[\d\s\-+/]+$/.test(q);
+    const hit = (value) => {
+      const v = String(value || '').toLowerCase();
+      if (!v) return false;
+      if (v.includes(q)) return true;
+      return digitsOnly && v.replace(/\D/g, '').includes(qDigits);
+    };
+
+    // Employees and remarks from each customer's entries.
+    const fromEntries = new Map();
+    entries.forEach((e) => {
+      const id = recordCustomerId(e, customerIndex);
+      if (!id) return;
+      if (!fromEntries.has(id)) fromEntries.set(id, { employees: new Set(), remarks: new Set() });
+      const info = fromEntries.get(id);
+      const emp = entryEmployeeName(e);
+      if (emp) info.employees.add(emp);
+      if (e.remark) info.remarks.add(e.remark);
+    });
+
+    const results = [];
+    customers.forEach((c) => {
+      const reasons = [];
+      const check = (label, value) => { if (hit(value)) reasons.push(`${label}: ${value}`); };
+      check('Name', c.name);
+      check('Arabic Name', c.nameArabic);
+      check('Phone', c.phone);
+      check('Address', c.address);
+      check('City', c.city);
+      check('Remark', c.remark);
+      const info = fromEntries.get(c.id);
+      if (info) {
+        info.employees.forEach((n) => check('Employee', n));
+        info.remarks.forEach((r) => check('Entry Remark', r));
+      }
+      if (reasons.length > 0) results.push({ customer: c, reasons });
+    });
+    return results;
+  }, [customerSearch, customers, entries, customerIndex, entryEmployeeName]);
+
   // ── Filters ──────────────────────────────────────
   const filtered = useMemo(() => {
     let result = entries;
+
+    if (customerSearchMatches) {
+      const ids = new Set(customerSearchMatches.map((m) => m.customer.id));
+      result = result.filter((e) => ids.has(recordCustomerId(e, customerIndex)));
+    }
 
     if (customerFilter) {
       const cf = customerFilter.toLowerCase();
@@ -291,7 +350,7 @@ const WaterDistribution = () => {
     }
 
     return sortByDate(result, 'desc');
-  }, [entries, customerIndex, entryEmployeeName, customerFilter, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+  }, [entries, customerIndex, entryEmployeeName, customerSearchMatches, customerFilter, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // The saved selection is never pruned automatically — a refresh can deliver
   // entries in more than one snapshot, and pruning against an early one wiped
@@ -449,6 +508,7 @@ const WaterDistribution = () => {
 
   const clearAllFilters = () => {
     setCustomerFilter('');
+    setCustomerSearch('');
     setEmployeeFilter('');
     setTypeFilter('All');
     setPaymentStatusFilters([]);
@@ -865,6 +925,16 @@ const WaterDistribution = () => {
           </div>
 
           <div className="filter-group">
+            <label>Search Customer</label>
+            <input
+              type="text"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              placeholder="Name, phone, building, employee…"
+            />
+          </div>
+
+          <div className="filter-group">
             <label>Employee</label>
             <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
               <option value="">All Employees</option>
@@ -919,12 +989,39 @@ const WaterDistribution = () => {
         </div>
       </div>
 
+      {/* Smart search results — the customers the search matched, and why */}
+      {customerSearchMatches && (
+        <div className="active-filters" style={{ alignItems: 'flex-start' }}>
+          <span className="active-filters-title">
+            {customerSearchMatches.length === 0
+              ? `No customers match "${customerSearch.trim()}"`
+              : `${customerSearchMatches.length} customer${customerSearchMatches.length === 1 ? '' : 's'} match "${customerSearch.trim()}":`}
+          </span>
+          <div className="filter-tags">
+            {customerSearchMatches.map(({ customer, reasons }) => (
+              <button
+                key={customer.id}
+                type="button"
+                className="btn-secondary"
+                title="Show only this customer"
+                onClick={() => { setCustomerFilter(customer.name); setCustomerSearch(''); }}
+                style={{ padding: '4px 10px', fontSize: 12, textAlign: 'left' }}
+              >
+                <strong>{customer.name || customer.nameArabic}</strong>
+                <span style={{ color: 'var(--text-muted)' }}> — {reasons.join(' · ')}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Active filter tags */}
-      {(customerFilter || employeeFilter || typeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
+      {(customerFilter || customerSearch.trim() || employeeFilter || typeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
+            {customerSearch.trim() && <span className="filter-tag">Search: {customerSearch.trim()}<button onClick={() => setCustomerSearch('')}><IconX /></button></span>}
             {employeeFilter && <span className="filter-tag">Employee: {employeeFilter}<button onClick={() => setEmployeeFilter('')}><IconX /></button></span>}
             {typeFilter !== 'All' && <span className="filter-tag">Type: {getDistributionTypeLabel(typeFilter)}<button onClick={() => setTypeFilter('All')}><IconX /></button></span>}
             {paymentStatusFilters.map((s) => (

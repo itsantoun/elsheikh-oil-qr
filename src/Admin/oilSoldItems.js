@@ -11,7 +11,7 @@ import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
 import { saveBlobToExportFolder } from '../utils/exportFolder';
 import { printPdfDoc } from '../utils/printPdf';
-import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
+import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining, linkProductGroups } from '../utils/productBatches';
 import {
   addReceiptHeader,
   createReceiptDoc,
@@ -484,7 +484,7 @@ const OilSoldItems = () => {
           ...productsData[key],
         }));
         productList.sort((a, b) => a.name.localeCompare(b.name));
-        setProducts(productList);
+        setProducts(linkProductGroups(productList));
       }
     });
 
@@ -695,7 +695,7 @@ const OilSoldItems = () => {
           ...productsData[key],
         }));
         productList.sort((a, b) => a.name.localeCompare(b.name));
-        setProducts(productList);
+        setProducts(linkProductGroups(productList));
       }
 
       setErrorMessage(null);

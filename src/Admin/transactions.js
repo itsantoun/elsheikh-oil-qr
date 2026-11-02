@@ -481,7 +481,7 @@ import { IconRefresh, IconCheck, IconCornerUpLeft, IconSave, IconX, IconEdit, Ic
 import { useNotifications } from '../Auth/notificationContext';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
-import { isSamePrice, resolveOrCreateBatchForPrice } from '../utils/productBatches';
+import { isSamePrice, resolveOrCreateBatchForPrice, linkProductGroups } from '../utils/productBatches';
 import { UserContext } from '../Auth/userContext';
 import { activityUpdate, logActivity, fieldChanges, describeChanges } from '../utils/activityLog';
 
@@ -783,7 +783,7 @@ const Transactions = () => {
 
           let targetKey = resolvedKey;
           if (!priceMatches) {
-            const productsArray = Object.entries(products).map(([pid, p]) => ({ id: pid, ...p }));
+            const productsArray = linkProductGroups(Object.entries(products).map(([pid, p]) => ({ id: pid, ...p })));
             const rootId = product.baseProductId || resolvedKey;
             const { id: batchId } = await resolveOrCreateBatchForPrice(
               database,

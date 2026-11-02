@@ -23,7 +23,54 @@ const isMaghsalProduct = (product) => {
 
 // The group key that ties a root product and all its price-duplicates
 // together. The root itself has no baseProductId, so it is its own key.
-export const getBatchGroupKey = (product) => product?.baseProductId || product?.id;
+// Lists passed through linkProductGroups carry a precomputed `groupKey`
+// (which also merges same-name products) — that wins when present.
+export const getBatchGroupKey = (product) => product?.groupKey || product?.baseProductId || product?.id;
+
+const normName = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+// Returns `list` with a `groupKey` on every product, treating as one logical
+// product every batch linked by baseProductId AND every product with the
+// same name (Oil/Filter and Maghsal kept apart). That catches products added
+// twice under the same name, and batches orphaned when their root's barcode
+// was edited (the root moves to a new key; batches still point at the old
+// one). The key is always a real product id — the oldest root in the group —
+// so it can still be passed to findSiblingBatches or used as a select value.
+// `groupKey` is display/grouping only and must never be written to Firebase.
+export const linkProductGroups = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return list;
+  const parent = new Map();
+  const find = (x) => {
+    while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); }
+    return x;
+  };
+  const add = (x) => { if (!parent.has(x)) parent.set(x, x); };
+  const union = (a, b) => { add(a); add(b); parent.set(find(a), find(b)); };
+
+  list.forEach((p) => {
+    add(`id:${p.id}`);
+    if (p.baseProductId) union(`id:${p.id}`, `id:${p.baseProductId}`);
+    const name = normName(p.name);
+    if (name) union(`id:${p.id}`, `name:${isMaghsalProduct(p) ? 'm' : 'o'}:${name}`);
+  });
+
+  const createdMs = (p) => {
+    const ms = new Date(p.createdAt || 0).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  };
+  const keyByRoot = new Map();
+  list.forEach((p) => {
+    const r = find(`id:${p.id}`);
+    const best = keyByRoot.get(r);
+    // Prefer an original (no baseProductId), then the oldest, then by id.
+    const better = !best
+      || (!p.baseProductId && best.baseProductId)
+      || (!p.baseProductId === !best.baseProductId
+        && (createdMs(p) < createdMs(best) || (createdMs(p) === createdMs(best) && String(p.id) < String(best.id))));
+    if (better) keyByRoot.set(r, p);
+  });
+  return list.map((p) => ({ ...p, groupKey: keyByRoot.get(find(`id:${p.id}`)).id }));
+};
 
 // The physical scan code for an Oil/Filter product. Legacy records (created
 // before this feature existed) have no explicit `barcode` field — their

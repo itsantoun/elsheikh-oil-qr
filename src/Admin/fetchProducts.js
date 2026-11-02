@@ -452,6 +452,13 @@ const FetchProducts = () => {
 
       if (oldId !== newId) {
         await remove(oldProductRef);
+        // Its price batches link back by id — repoint them to the new key,
+        // or they'd show as a separate product from now on.
+        const batchUpdates = {};
+        products.forEach((p) => {
+          if (p.baseProductId === oldId) batchUpdates[`products/${p.id}/baseProductId`] = newId;
+        });
+        if (Object.keys(batchUpdates).length > 0) await update(ref(database), batchUpdates);
       }
 
       const existingSnap = await get(newProductRef);

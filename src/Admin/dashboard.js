@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { database } from '../Auth/firebase';
 import { ref, onValue, query, orderByChild, limitToLast } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
-import { getBatchGroupKey } from '../utils/productBatches';
+import { getBatchGroupKey, linkProductGroups } from '../utils/productBatches';
 import { useActivityLog, ActivityRow, ActivityDetailsModal } from '../Components/ActivityLog';
 import { isPrivateActivity } from '../utils/activityLog';
 
@@ -147,7 +147,7 @@ const Dashboard = ({ onNavigate }) => {
         if (!snap.exists()) { setProducts([]); return; }
         const data = snap.val();
         const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
-        setProducts(list);
+        setProducts(linkProductGroups(list));
       });
     };
 

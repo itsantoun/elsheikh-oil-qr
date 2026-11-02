@@ -10,7 +10,7 @@ import {
   IconEdit, IconSave, IconTrash,
 } from '../utils/icons';
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
-import { getBatchCode, getBatchGroupKey } from '../utils/productBatches';
+import { getBatchCode, getBatchGroupKey, linkProductGroups } from '../utils/productBatches';
 import BatchTag from './batchTag';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import PageHeader from '../Components/PageHeader';
@@ -275,7 +275,7 @@ const RemainingProducts = () => {
 
       let productScopeById = {};
       if (prodSnap.exists()) {
-        const list = Object.entries(prodSnap.val()).map(([id, v]) => ({ id, ...v }));
+        const list = linkProductGroups(Object.entries(prodSnap.val()).map(([id, v]) => ({ id, ...v })));
         list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         productScopeById = list.reduce((acc, product) => {
           acc[product.id] = productScope(product);
@@ -402,7 +402,7 @@ const RemainingProducts = () => {
     const productsRef = ref(database, 'products');
     const unsub = onValue(productsRef, (snap) => {
       if (!snap.exists()) { setProducts([]); return; }
-      const list = Object.entries(snap.val()).map(([id, v]) => ({ id, ...v }));
+      const list = linkProductGroups(Object.entries(snap.val()).map(([id, v]) => ({ id, ...v })));
       list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       setProducts(list);
     });

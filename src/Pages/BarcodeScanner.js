@@ -773,7 +773,7 @@ import { ref, get, update, child, push, onValue, off, query, orderByChild, start
 import '../CSS/BarcodeScanner.css';
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { useExpiryNotifications } from '../utils/useExpiryNotifications';
-import { findSiblingBatches, pickFifoBatch } from '../utils/productBatches';
+import { findSiblingBatches, pickFifoBatch, linkProductGroups } from '../utils/productBatches';
 import { activityUpdate, saveEntryWithLog, logSession, logPageVisit } from '../utils/activityLog';
 import {
   IconRefresh, IconCheck, IconX, IconXCircle, IconPause, IconCamera, IconPackage,
@@ -1122,7 +1122,7 @@ const BarcodeScanner = () => {
       ]);
 
       const productsArray = productsSnapshot.exists()
-        ? Object.entries(productsSnapshot.val()).map(([id, p]) => ({ id, ...p }))
+        ? linkProductGroups(Object.entries(productsSnapshot.val()).map(([id, p]) => ({ id, ...p })))
         : [];
       const soldItems = soldItemsSnapshot.exists() ? Object.values(soldItemsSnapshot.val()) : [];
 

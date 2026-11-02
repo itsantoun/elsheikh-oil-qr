@@ -8,7 +8,7 @@ import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { moveToTrash } from '../utils/trash';
 import { activityUpdate, saveEntryWithLog, recordLabel } from '../utils/activityLog';
-import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining } from '../utils/productBatches';
+import { findSiblingBatches, pickFifoBatch, filterSelectableBatches, getBatchGroupKey, computeBatchRemaining, linkProductGroups } from '../utils/productBatches';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
 
 const DEFAULT_CATEGORIES = ['Lubrication', 'Washing', 'Washing & Lubrication'];
@@ -211,7 +211,7 @@ const Maghsal = () => {
       const data = snap.val();
       const list = Object.keys(data).map((k) => ({ id: k, ...data[k] }));
       list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      setProducts(list);
+      setProducts(linkProductGroups(list));
     });
 
     const stockChecksRef = ref(database, 'stockChecks');

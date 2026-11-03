@@ -308,11 +308,17 @@ const ClientReports = () => {
     [reportEmployees, employeeId]
   );
 
-  // Whoever the report is about — the client, or the employee.
+  // Employee report: the Comment dropdown isn't tied to the employee — it
+  // always lists every Water Distribution comment. A comment picked with no
+  // employee reports that comment across all employees; with an employee,
+  // just that employee's entries carrying it.
+  const reportByComment = isEmployeeReport && !selectedEmployee && Boolean(commentFilter.trim());
+
+  // Whoever the report is about — the client, the employee, or the comment.
   const subjectName = isEmployeeReport
-    ? (selectedEmployee ? selectedEmployee.label : '')
+    ? (reportByComment ? `Comment "${commentFilter.trim()}"` : (selectedEmployee ? selectedEmployee.label : ''))
     : (selectedCustomer?.name || '');
-  const hasSubject = isEmployeeReport ? Boolean(selectedEmployee) : Boolean(selectedCustomer);
+  const hasSubject = isEmployeeReport ? Boolean(selectedEmployee) || reportByComment : Boolean(selectedCustomer);
   const subjectWord = isEmployeeReport ? 'employee' : 'client';
 
   const switchReportFor = (value) => {
@@ -342,10 +348,10 @@ const ClientReports = () => {
   // the Comment dropdown. "Mark as Paid" appends to a comment with " | ", so
   // each part is offered on its own.
   const commentOptions = useMemo(() => {
-    if (!(isEmployeeReport ? selectedEmployee : selectedCustomer)) return [];
+    if (!isEmployeeReport && !selectedCustomer) return [];
     const seen = new Map();
     waterDistributionEntries.forEach((e) => {
-      const mine = isEmployeeReport ? e.employeeId === selectedEmployee.id : matchesSelectedCustomer(e);
+      const mine = isEmployeeReport || matchesSelectedCustomer(e);
       if (!mine) return;
       remarkParts(e.remark).forEach((part) => {
         const key = part.toLowerCase();
@@ -355,10 +361,11 @@ const ClientReports = () => {
       });
     });
     return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
-  }, [waterDistributionEntries, isEmployeeReport, selectedEmployee, selectedCustomer, customerIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [waterDistributionEntries, isEmployeeReport, selectedCustomer, customerIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A picked comment only makes sense for the client/employee it came from.
-  useEffect(() => { setCommentFilter(''); }, [customerId, employeeId, reportFor]);
+  // A client's picked comment only makes sense for that client; an employee
+  // report's comment is independent of the employee, so it's kept.
+  useEffect(() => { setCommentFilter(''); }, [customerId, reportFor]);
   const showCommentFilter = (typeFilter === 'All' || typeFilter === 'Water Distribution') && commentOptions.length > 0;
   useEffect(() => { if (!showCommentFilter) setCommentFilter(''); }, [showCommentFilter]);
   // Opening a client's or employee's report is logged (Activity Log only).
@@ -417,13 +424,14 @@ const ClientReports = () => {
 
   // ── Client statement, grouped into sections (Oil, Filter, Maghsal, …) ─────────
   const statement = useMemo(() => {
-    if (!(isEmployeeReport ? selectedEmployee : selectedCustomer)) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
+    if (!hasSubject) return { sections: [], paid: 0, unpaid: 0, grandTotal: 0, totalQuantity: 0 };
 
     const records = [];
     // Client report: the client's records. Employee report: records assigned
-    // to that employee — the Item column then names the client served.
+    // to that employee — the Item column then names the client served. A
+    // comment picked with no employee matches every employee's records.
     const matchesSubject = (e) => (isEmployeeReport
-      ? e.employeeId === selectedEmployee.id
+      ? reportByComment || e.employeeId === selectedEmployee.id
       : matchesSelectedCustomer(e));
 
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
@@ -488,7 +496,9 @@ const ClientReports = () => {
         key: `wd-${e.id}`,
         date: e.date,
         section: 'Water Distribution',
-        item: isEmployeeReport ? (recordCustomerName(e, customerIndex) || 'N/A') : (e.truckType || 'Water Distribution'),
+        item: isEmployeeReport
+          ? `${recordCustomerName(e, customerIndex) || 'N/A'}${reportByComment && e.employeeName ? ` (${e.employeeName})` : ''}`
+          : (e.truckType || 'Water Distribution'),
         quantity: toNumber(e.quantity),
         total: totalUSD,
         status: e.paymentStatus || 'N/A',
@@ -540,7 +550,7 @@ const ClientReports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal, totalQuantity };
-  }, [selectedCustomer, selectedEmployee, isEmployeeReport, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, customerIndex, typeFilter, paymentStatusFilters, commentFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, selectedEmployee, isEmployeeReport, hasSubject, reportByComment, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, customerIndex, typeFilter, paymentStatusFilters, commentFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -584,7 +594,7 @@ const ClientReports = () => {
   );
 
   const generateReport = () => {
-    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee' : 'a client'} first.`, 'error'); return; }
+    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee or a comment' : 'a client'} first.`, 'error'); return; }
     if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
     setViewingHistoryId(null);
     setPendingSnapshot({
@@ -592,7 +602,7 @@ const ClientReports = () => {
       // customerName holds whoever the report is about (client or employee),
       // so history, view and PDF read it the same way for both kinds.
       ...(isEmployeeReport ? {
-        employeeId: selectedEmployee.id,
+        employeeId: reportByComment ? '' : selectedEmployee.id,
         customerName: subjectName,
       } : {
         customerId: selectedCustomer.id,
@@ -772,7 +782,7 @@ const ClientReports = () => {
   };
 
   const exportPDF = async ({ print = false } = {}) => {
-    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee' : 'a client'} first.`, 'error'); return; }
+    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee or a comment' : 'a client'} first.`, 'error'); return; }
     if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
     await buildAndSaveStatementPDF({
       sections: statement.sections,
@@ -821,7 +831,7 @@ const ClientReports = () => {
 
   // ── CSV export ────────────────────────────────────────────────────────────────
   const exportCSV = async () => {
-    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee' : 'a client'} first.`, 'error'); return; }
+    if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee or a comment' : 'a client'} first.`, 'error'); return; }
     if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
 
     const headers = ['Date', 'Type', isEmployeeReport ? 'Client' : 'Item', 'Quantity', 'Status', 'Total'];

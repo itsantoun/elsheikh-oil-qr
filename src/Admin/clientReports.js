@@ -117,6 +117,10 @@ const sanitizeCSVCell = (value) => {
 // Every section's total row shows the summed quantity of its line items.
 // A comment split into its parts ("Mark as Paid" appends with " | ").
 const remarkParts = (remark) => String(remark || '').split('|').map((p) => p.trim()).filter(Boolean);
+
+// Reports by comment alone span several employees, so their rows name the
+// employee — the screen, PDF and CSV then give that its own column.
+const hasEmployeeColumn = (sections) => (sections || []).some((g) => (g.rows || []).some((r) => r.employee));
 const sectionQuantity = (g) => g.rows.reduce((a, r) => a + toNumber(r.quantity), 0);
 
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60);
@@ -434,6 +438,11 @@ const ClientReports = () => {
       ? reportByComment || e.employeeId === selectedEmployee.id
       : matchesSelectedCustomer(e));
 
+    const rowEmployeeName = (e) => {
+      const assigned = employees.find((emp) => emp.id === e.employeeId);
+      return (assigned ? getEmployeeDisplayName(assigned) : e.employeeName) || '';
+    };
+
     const matchesStatusFilter = (status) => paymentStatusFilters.length === 0 || paymentStatusFilters.includes(status || 'N/A');
     // The comment filter is for Water Distribution: while a comment is
     // picked, only Water Distribution entries carrying it are shown.
@@ -496,9 +505,8 @@ const ClientReports = () => {
         key: `wd-${e.id}`,
         date: e.date,
         section: 'Water Distribution',
-        item: isEmployeeReport
-          ? `${recordCustomerName(e, customerIndex) || 'N/A'}${reportByComment && e.employeeName ? ` (${e.employeeName})` : ''}`
-          : (e.truckType || 'Water Distribution'),
+        item: isEmployeeReport ? (recordCustomerName(e, customerIndex) || 'N/A') : (e.truckType || 'Water Distribution'),
+        ...(reportByComment ? { employee: rowEmployeeName(e) } : {}),
         quantity: toNumber(e.quantity),
         total: totalUSD,
         status: e.paymentStatus || 'N/A',
@@ -550,7 +558,7 @@ const ClientReports = () => {
     });
 
     return { sections, paid, unpaid, grandTotal, totalQuantity };
-  }, [selectedCustomer, selectedEmployee, isEmployeeReport, hasSubject, reportByComment, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, customerIndex, typeFilter, paymentStatusFilters, commentFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCustomer, selectedEmployee, isEmployeeReport, hasSubject, reportByComment, employees, maghsalEntries, waterFillingEntries, waterDistributionEntries, soldItems, products, customerIndex, typeFilter, paymentStatusFilters, commentFilter, bounds, exchangeRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordCount = useMemo(
     () => statement.sections.reduce((acc, g) => acc + g.rows.length, 0),
@@ -706,22 +714,24 @@ const ClientReports = () => {
       compact: true,
     });
 
+    const showEmployee = hasEmployeeColumn(sections);
+    const totalColumn = showEmployee ? 6 : 5;
     const body = [];
     const groupHeaderIndexes = new Set();
     const groupTotalIndexes = new Set();
     sections.forEach((g) => {
       groupHeaderIndexes.add(body.length);
-      body.push([{ content: g.section, colSpan: 6 }]);
+      body.push([{ content: g.section, colSpan: totalColumn + 1 }]);
 
       g.rows.forEach((r) => {
         const qty = toNumber(r.quantity);
         const priceCell = qty > 0 ? money(r.total / qty) : '—';
-        body.push([formatDate(r.date), r.item, r.quantity || '—', priceCell, r.status, money(r.total)]);
+        body.push([formatDate(r.date), r.item, ...(showEmployee ? [r.employee || '—'] : []), r.quantity || '—', priceCell, r.status, money(r.total)]);
       });
 
       groupTotalIndexes.add(body.length);
       body.push([
-        { content: `${g.section} Total`, colSpan: 2, styles: { halign: 'right' } },
+        { content: `${g.section} Total`, colSpan: showEmployee ? 3 : 2, styles: { halign: 'right' } },
         { content: String(sectionQuantity(g)), styles: { halign: 'right' } },
         { content: '', colSpan: 2 },
         { content: money(g.subtotal) },
@@ -730,10 +740,10 @@ const ClientReports = () => {
 
     autoTable(doc, {
       ...receiptTableOptions({
-        head: ['Date', forEmployee ? 'Client' : 'Item', 'Quantity', 'Price per unit', 'Status', 'Total'],
+        head: ['Date', forEmployee ? 'Client' : 'Item', ...(showEmployee ? ['Employee'] : []), 'Quantity', 'Price per unit', 'Status', 'Total'],
         body,
         startY,
-        rightAlignedColumns: [2, 3, 5],
+        rightAlignedColumns: showEmployee ? [3, 4, 6] : [2, 3, 5],
         density,
         // Leaves room at the top of page 2+ for the repeating client-name
         // header drawn below, so a multi-page report is still identifiable
@@ -745,7 +755,15 @@ const ClientReports = () => {
         },
       }),
       // Column widths scaled up from the A5 default to use A4's extra width.
-      columnStyles: {
+      columnStyles: showEmployee ? {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 62 },
+        2: { cellWidth: 42 },
+        3: { halign: 'right', cellWidth: 25 },
+        4: { halign: 'right', cellWidth: 34 },
+        5: { cellWidth: 36 },
+        6: { halign: 'right', cellWidth: 48 },
+      } : {
         0: { cellWidth: 36 },
         1: { cellWidth: 67 },
         2: { halign: 'right', cellWidth: 25 },
@@ -757,8 +775,8 @@ const ClientReports = () => {
         if (data.section === 'body' && (groupHeaderIndexes.has(data.row.index) || groupTotalIndexes.has(data.row.index))) {
           data.cell.styles.fillColor = GROUP_FILL;
           data.cell.styles.fontStyle = 'bold';
-          if (data.column.index === 5) data.cell.styles.halign = 'right';
-        } else if (data.section === 'body' && data.column.index === 5) {
+          if (data.column.index === totalColumn) data.cell.styles.halign = 'right';
+        } else if (data.section === 'body' && data.column.index === totalColumn) {
           // Line-item totals stay small so the Grand Total banner below
           // reads as the headline figure on the receipt.
           data.cell.styles.fontSize = Math.max(density.fontSize - 1.5, 5.5);
@@ -834,16 +852,18 @@ const ClientReports = () => {
     if (!hasSubject) { flash(`Select ${isEmployeeReport ? 'an employee or a comment' : 'a client'} first.`, 'error'); return; }
     if (recordCount === 0) { flash(`No activity for this ${subjectWord} in range.`, 'error'); return; }
 
-    const headers = ['Date', 'Type', isEmployeeReport ? 'Client' : 'Item', 'Quantity', 'Status', 'Total'];
+    const showEmployee = hasEmployeeColumn(statement.sections);
+    const blankEmployee = showEmployee ? [''] : [];
+    const headers = ['Date', 'Type', isEmployeeReport ? 'Client' : 'Item', ...(showEmployee ? ['Employee'] : []), 'Quantity', 'Status', 'Total'];
     const rows = [];
     statement.sections.forEach((g) => {
-      g.rows.forEach((r) => rows.push([formatDate(r.date), g.section, r.item, r.quantity || '', r.status, r.total.toFixed(2)]));
-      rows.push(['', `${g.section} Subtotal`, '', sectionQuantity(g), '', g.subtotal.toFixed(2)]);
+      g.rows.forEach((r) => rows.push([formatDate(r.date), g.section, r.item, ...(showEmployee ? [r.employee || ''] : []), r.quantity || '', r.status, r.total.toFixed(2)]));
+      rows.push(['', `${g.section} Subtotal`, '', ...blankEmployee, sectionQuantity(g), '', g.subtotal.toFixed(2)]);
       rows.push([]);
     });
-    rows.push(['Total Paid', '', '', '', '', statement.paid.toFixed(2)]);
-    rows.push(['Total Unpaid', '', '', '', '', statement.unpaid.toFixed(2)]);
-    rows.push(['Grand Total', '', '', '', '', statement.grandTotal.toFixed(2)]);
+    rows.push(['Total Paid', '', '', ...blankEmployee, '', '', statement.paid.toFixed(2)]);
+    rows.push(['Total Unpaid', '', '', ...blankEmployee, '', '', statement.unpaid.toFixed(2)]);
+    rows.push(['Grand Total', '', '', ...blankEmployee, '', '', statement.grandTotal.toFixed(2)]);
 
     const csv = '﻿' +
       [headers, ...rows]
@@ -1009,6 +1029,7 @@ const ClientReports = () => {
                   <tr>
                     <th>Date</th>
                     <th>{isEmployeeReport ? 'Client' : 'Item'}</th>
+                    {hasEmployeeColumn(statement.sections) && <th>Employee</th>}
                     <th className="text-right">Quantity</th>
                     <th className="text-right">Price per unit</th>
                     <th>Status</th>
@@ -1019,12 +1040,13 @@ const ClientReports = () => {
                   {statement.sections.map((g) => (
                     <React.Fragment key={g.section}>
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={6} style={{ fontWeight: 700 }}>{g.section}</td>
+                        <td colSpan={hasEmployeeColumn(statement.sections) ? 7 : 6} style={{ fontWeight: 700 }}>{g.section}</td>
                       </tr>
                       {g.rows.map((r) => (
                         <tr key={r.key}>
                           <td>{formatDate(r.date)}</td>
                           <td>{r.item}</td>
+                          {hasEmployeeColumn(statement.sections) && <td>{r.employee || '—'}</td>}
                           <td className="text-right">{r.quantity || '—'}</td>
                           <td className="text-right">
                             {toNumber(r.quantity) > 0 ? `$${formatCurrency(r.total / toNumber(r.quantity))}` : '—'}
@@ -1034,7 +1056,7 @@ const ClientReports = () => {
                         </tr>
                       ))}
                       <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                        <td colSpan={2} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                        <td colSpan={hasEmployeeColumn(statement.sections) ? 3 : 2} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
                         <td className="text-right" style={{ fontWeight: 700 }}>{sectionQuantity(g)}</td>
                         <td colSpan={2}></td>
                         <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>
@@ -1123,6 +1145,7 @@ const ClientReports = () => {
                     <tr>
                       <th>Date</th>
                       <th>{viewedEntry.reportFor === 'employee' ? 'Client' : 'Item'}</th>
+                      {hasEmployeeColumn(viewedEntry.sections) && <th>Employee</th>}
                       <th className="text-right">Quantity</th>
                       <th className="text-right">Price per unit</th>
                       <th>Status</th>
@@ -1133,12 +1156,13 @@ const ClientReports = () => {
                     {viewedEntry.sections.map((g) => (
                       <React.Fragment key={g.section}>
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={6} style={{ fontWeight: 700 }}>{g.section}</td>
+                          <td colSpan={hasEmployeeColumn(viewedEntry.sections) ? 7 : 6} style={{ fontWeight: 700 }}>{g.section}</td>
                         </tr>
                         {g.rows.map((r) => (
                           <tr key={r.key}>
                             <td>{formatDate(r.date)}</td>
                             <td>{r.item}</td>
+                            {hasEmployeeColumn(viewedEntry.sections) && <td>{r.employee || '—'}</td>}
                             <td className="text-right">{r.quantity || '—'}</td>
                             <td className="text-right">
                               {toNumber(r.quantity) > 0 ? `$${formatCurrency(r.total / toNumber(r.quantity))}` : '—'}
@@ -1148,7 +1172,7 @@ const ClientReports = () => {
                           </tr>
                         ))}
                         <tr style={{ background: 'var(--surface-2, #e9f0fa)' }}>
-                          <td colSpan={2} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
+                          <td colSpan={hasEmployeeColumn(viewedEntry.sections) ? 3 : 2} style={{ textAlign: 'right', fontWeight: 700 }}>{g.section} Total</td>
                           <td className="text-right" style={{ fontWeight: 700 }}>{sectionQuantity(g)}</td>
                           <td colSpan={2}></td>
                           <td className="text-right" style={{ fontWeight: 700 }}>${formatCurrency(g.subtotal)}</td>

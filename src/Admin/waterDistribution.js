@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { database } from '../Auth/firebase';
 import { ref, get, update, onValue } from 'firebase/database';
 import { UserContext } from '../Auth/userContext';
 import '../CSS/soldItems.css';
-import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash } from '../utils/icons';
+import { IconRefresh, IconX, IconPlus, IconEdit, IconTrash, IconArrowUpDown } from '../utils/icons';
 import PageHeader from '../Components/PageHeader';
 import { useConfirmDialog } from '../Components/ConfirmDialog';
 import { moveToTrash } from '../utils/trash';
-import { activityUpdate, saveEntryWithLog, recordLabel } from '../utils/activityLog';
+import { activityUpdate, saveEntryWithLog, recordLabel, logExport } from '../utils/activityLog';
+import { printPdfDoc } from '../utils/printPdf';
+import { addReceiptHeader, createReceiptDoc, getReceiptDensity, receiptTableOptions } from '../utils/pdfReceipt';
 import { useExchangeRate, formatUSD, formatLBP, formatNumberInput, stripCommas } from '../utils/exchangeRate';
 import { getEmployeeDisplayName } from './employees';
 import { buildCustomerIndex, recordCustomerId, recordCustomerName } from '../utils/customerLink';
@@ -48,6 +52,30 @@ const WaterDistribution = () => {
   // address/building, city, remark, the employees who served them, entry
   // remarks…) — narrows the table to the customers it matches.
   const [customerSearch, setCustomerSearch] = useState('');
+  // Entries whose remark contains this text — blank = no filter.
+  const [remarksFilter, setRemarksFilter] = useState('');
+  // Clicking the Customer, Employee or Status header cycles A→Z, Z→A, then
+  // back to newest first; clicking another header starts that one at A→Z.
+  const [tableSort, setTableSort] = useState({ field: '', order: '' });
+  const cycleSort = (field) => setTableSort((prev) => {
+    if (prev.field !== field) return { field, order: 'asc' };
+    return prev.order === 'asc' ? { field, order: 'desc' } : { field: '', order: '' };
+  });
+  const sortableHeader = (field, label) => {
+    const order = tableSort.field === field ? tableSort.order : '';
+    return (
+      <th
+        className="sortable-header"
+        onClick={() => cycleSort(field)}
+        title={order === 'asc' ? 'Sorted A→Z — click for Z→A' : order === 'desc' ? 'Sorted Z→A — click for newest first' : `Sort by ${label.toLowerCase()} A→Z`}
+      >
+        <div className="header-content">
+          {label}
+          <span className="sort-icon">{order === 'asc' ? '↑' : order === 'desc' ? '↓' : <IconArrowUpDown />}</span>
+        </div>
+      </th>
+    );
+  };
   const [employeeFilter, setEmployeeFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   // Empty array = no filter (show all statuses). Multi-select: any status in
@@ -325,6 +353,11 @@ const WaterDistribution = () => {
       );
     }
 
+    if (remarksFilter.trim()) {
+      const rf = remarksFilter.trim().toLowerCase();
+      result = result.filter((e) => (e.remark || '').toLowerCase().includes(rf));
+    }
+
     if (employeeFilter) {
       result = result.filter((e) => entryEmployeeName(e) === employeeFilter);
     }
@@ -349,8 +382,23 @@ const WaterDistribution = () => {
       });
     }
 
-    return sortByDate(result, 'desc');
-  }, [entries, customerIndex, entryEmployeeName, customerSearchMatches, customerFilter, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
+    const byDate = sortByDate(result, 'desc');
+    if (!tableSort.field) return byDate;
+    // Stable sort, so entries with the same value stay newest first; entries
+    // with no value always go last.
+    const sortValue = {
+      customer: (e) => recordCustomerName(e, customerIndex),
+      employee: (e) => entryEmployeeName(e),
+      status: (e) => e.paymentStatus || 'Unpaid',
+    }[tableSort.field];
+    const dir = tableSort.order === 'asc' ? 1 : -1;
+    return [...byDate].sort((a, b) => {
+      const va = String(sortValue(a) || '').trim();
+      const vb = String(sortValue(b) || '').trim();
+      if (!va || !vb) return (va ? 0 : 1) - (vb ? 0 : 1);
+      return dir * va.localeCompare(vb, undefined, { sensitivity: 'base' });
+    });
+  }, [entries, customerIndex, entryEmployeeName, customerSearchMatches, customerFilter, remarksFilter, tableSort, employeeFilter, typeFilter, paymentStatusFilters, dateFromFilter, dateToFilter]);
 
   // The saved selection is never pruned automatically — a refresh can deliver
   // entries in more than one snapshot, and pruning against an early one wiped
@@ -509,11 +557,93 @@ const WaterDistribution = () => {
   const clearAllFilters = () => {
     setCustomerFilter('');
     setCustomerSearch('');
+    setRemarksFilter('');
     setEmployeeFilter('');
     setTypeFilter('All');
     setPaymentStatusFilters([]);
     setDateFromFilter('');
     setDateToFilter('');
+  };
+
+  // Prints the entries exactly as currently filtered, with the active filters
+  // in the header. Each price stays in the currency it was entered in, so
+  // USD and LBP are totalled separately (no conversion, like the page).
+  const handlePrint = async () => {
+    if (filtered.length === 0) { flash('No entries to print.', 'error'); return; }
+
+    const rows = filtered.map((e) => [
+      formatDate(e.date),
+      customerNameOf(e) || 'N/A',
+      entryEmployeeName(e) || '—',
+      getDistributionTypeLabel(e.distributionType),
+      String(toNumber(e.quantity)),
+      formatPrice(toNumber(e.unitPrice), e.priceCurrency),
+      formatPrice(toNumber(e.totalPrice), e.priceCurrency),
+      e.paymentStatus || 'Unpaid',
+      e.remark || '',
+    ]);
+
+    const filterParts = [
+      customerSearch.trim() && `Search: "${customerSearch.trim()}"`,
+      employeeFilter && `Employee: ${employeeFilter}`,
+      typeFilter !== 'All' && `Type: ${getDistributionTypeLabel(typeFilter)}`,
+      paymentStatusFilters.length > 0 && `Status: ${paymentStatusFilters.join(', ')}`,
+      remarksFilter.trim() && `Remarks: "${remarksFilter.trim()}"`,
+    ].filter(Boolean);
+    const dateRange = dateFromFilter || dateToFilter
+      ? `${dateFromFilter ? getDateDisplay(dateFromFilter) : 'Start'} to ${dateToFilter ? getDateDisplay(dateToFilter) : 'Today'}`
+      : 'All time';
+
+    const doc = createReceiptDoc(jsPDF, { format: 'a4' });
+    const density = getReceiptDensity(rows.length);
+    const startY = await addReceiptHeader(doc, {
+      title: 'WATER DISTRIBUTION',
+      clientLabel: 'Customer',
+      client: [customerFilter || 'All Customers', ...filterParts].join(' · '),
+      dateRange,
+      compact: true,
+    });
+
+    autoTable(doc, {
+      ...receiptTableOptions({
+        head: ['Date', 'Customer', 'Employee', 'Type', 'Qty', 'Unit Price', 'Total', 'Status', 'Remarks'],
+        body: rows,
+        startY,
+        rightAlignedColumns: [4, 5, 6],
+        density,
+      }),
+      columnStyles: {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 45 },
+        2: { cellWidth: 30 },
+        3: { cellWidth: 30 },
+        4: { halign: 'right', cellWidth: 14 },
+        5: { halign: 'right', cellWidth: 24 },
+        6: { halign: 'right', cellWidth: 26 },
+        7: { cellWidth: 18 },
+        8: { cellWidth: 66 },
+      },
+    });
+
+    const summary = [
+      ['Entries', String(totals.count)],
+      ['Total Quantity', String(totals.quantity)],
+      ...(totals.totalPriceUSD ? [['Total (USD)', formatUSD(totals.totalPriceUSD)]] : []),
+      ...(totals.totalPriceLBP ? [['Total (LBP)', formatLBP(totals.totalPriceLBP)]] : []),
+    ];
+    const pageWidth = doc.internal.pageSize.getWidth();
+    autoTable(doc, {
+      body: summary,
+      startY: doc.lastAutoTable.finalY + 4,
+      theme: 'plain',
+      tableWidth: 80,
+      margin: { left: pageWidth - 90 },
+      styles: { fontSize: density.fontSize + 1, cellPadding: 1.2 },
+      columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } },
+    });
+
+    logExport(user, 'Water Distribution', `entries (${filtered.length})`, 'PDF', true);
+    printPdfDoc(doc);
   };
 
   const handleRefresh = async () => {
@@ -865,6 +995,9 @@ const WaterDistribution = () => {
             <button className="btn-secondary" onClick={handleRefresh} disabled={isRefreshing}>
               <IconRefresh /> {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
+            <button className="btn-secondary" onClick={handlePrint} disabled={filtered.length === 0}>
+              Print
+            </button>
             <button className="btn-primary" onClick={openAddModal}>
               <IconPlus /> Add Entry
             </button>
@@ -931,6 +1064,16 @@ const WaterDistribution = () => {
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
               placeholder="Name, phone, building, employee…"
+            />
+          </div>
+
+          <div className="filter-group">
+            <label>Remarks</label>
+            <input
+              type="text"
+              value={remarksFilter}
+              onChange={(e) => setRemarksFilter(e.target.value)}
+              placeholder="Remark contains…"
             />
           </div>
 
@@ -1016,12 +1159,13 @@ const WaterDistribution = () => {
       )}
 
       {/* Active filter tags */}
-      {(customerFilter || customerSearch.trim() || employeeFilter || typeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
+      {(customerFilter || customerSearch.trim() || remarksFilter.trim() || employeeFilter || typeFilter !== 'All' || paymentStatusFilters.length > 0 || dateFromFilter || dateToFilter) && (
         <div className="active-filters">
           <span className="active-filters-title">Active Filters:</span>
           <div className="filter-tags">
             {customerFilter && <span className="filter-tag">Customer: {customerFilter}<button onClick={() => setCustomerFilter('')}><IconX /></button></span>}
             {customerSearch.trim() && <span className="filter-tag">Search: {customerSearch.trim()}<button onClick={() => setCustomerSearch('')}><IconX /></button></span>}
+            {remarksFilter.trim() && <span className="filter-tag">Remarks: {remarksFilter.trim()}<button onClick={() => setRemarksFilter('')}><IconX /></button></span>}
             {employeeFilter && <span className="filter-tag">Employee: {employeeFilter}<button onClick={() => setEmployeeFilter('')}><IconX /></button></span>}
             {typeFilter !== 'All' && <span className="filter-tag">Type: {getDistributionTypeLabel(typeFilter)}<button onClick={() => setTypeFilter('All')}><IconX /></button></span>}
             {paymentStatusFilters.map((s) => (
@@ -1152,13 +1296,13 @@ const WaterDistribution = () => {
                   <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAll} title="Select all" />
                 </th>
                 <th>Date</th>
-                <th>Customer</th>
-                <th>Employee</th>
+                {sortableHeader('customer', 'Customer')}
+                {sortableHeader('employee', 'Employee')}
                 <th>Type</th>
                 <th className="text-right">Quantity</th>
                 <th>Unit Price</th>
                 <th>Total Price</th>
-                <th>Status</th>
+                {sortableHeader('status', 'Status')}
                 <th>Date Paid</th>
                 <th>Remark</th>
                 <th>Actions</th>
